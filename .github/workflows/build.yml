@@ -39,7 +39,7 @@ jobs:
         zip -r firefox-build.zip output/firefox-dist
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: firefox-build
         path: firefox-build.zip

@@ -10,8 +10,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Button
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,8 +27,7 @@ import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.distributions.DefaultDistributionProviderChecker
-import org.mozilla.fenix.distributions.SecondaryDistributionProviderChecker
-import org.mozilla.fenix.distributions.ThirdDistributionProviderChecker
+import org.mozilla.fenix.distributions.LegacyDistributionProviderChecker
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.theme.FirefoxTheme
 
@@ -149,9 +148,8 @@ private fun DebugInfo(
 
         Button(
             onClick = {
-                SecondaryDistributionProviderChecker(context).queryProvider()
-                ThirdDistributionProviderChecker(context).queryProvider()
                 DefaultDistributionProviderChecker(context).queryProvider()
+                LegacyDistributionProviderChecker(context).queryProvider()
             },
         ) {
             Text(

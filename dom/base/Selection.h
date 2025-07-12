@@ -50,6 +50,7 @@ struct AutoPrepareFocusRange;
 struct PrimaryFrameData;
 namespace dom {
 class DocGroup;
+class ShadowRootOrGetComposedRangesOptions;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -463,12 +464,11 @@ class Selection final : public nsSupportsWeakReference,
     }
 
     AbstractRange* range = mStyledRanges.mRanges[0].mRange;
-    MOZ_ASSERT_IF(
-        range->MayCrossShadowBoundary(),
-        !range->AsDynamicRange()->CrossShadowBoundaryRangeCollapsed());
-    // Returns false if nsRange::mCrossBoundaryRange exists,
-    // true otherwise.
-    return !range->MayCrossShadowBoundary();
+    if (range->MayCrossShadowBoundary()) {
+      return range->AsDynamicRange()->CrossShadowBoundaryRangeCollapsed();
+    }
+
+    return true;
   }
 
   // *JS() methods are mapped to Selection.*().
@@ -507,7 +507,10 @@ class Selection final : public nsSupportsWeakReference,
 
   MOZ_CAN_RUN_SCRIPT void RemoveAllRanges(mozilla::ErrorResult& aRv);
 
+  // https://www.w3.org/TR/selection-api/#ref-for-dom-selection-getcomposedranges-1
   void GetComposedRanges(
+      const ShadowRootOrGetComposedRangesOptions&
+          aShadowRootOrGetComposedRangesOptions,
       const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots,
       nsTArray<RefPtr<StaticRange>>& aComposedRanges);
 

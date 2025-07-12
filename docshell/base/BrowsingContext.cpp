@@ -18,6 +18,7 @@
 #    include "mozilla/a11y/nsWinUtils.h"
 #  endif
 #endif
+#include "js/LocaleSensitive.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/BindingIPCUtils.h"
@@ -476,7 +477,7 @@ already_AddRefed<BrowsingContext> BrowsingContext::CreateDetached(
 
   fields.Get<IDX_IPAddressSpace>() = inherit
                                          ? inherit->GetIPAddressSpace()
-                                         : nsILoadInfo::IPAddressSpace::Public;
+                                         : nsILoadInfo::IPAddressSpace::Unknown;
 
   fields.Get<IDX_IsPopupRequested>() = aOptions.isPopupRequested;
 
@@ -2915,6 +2916,40 @@ void BrowsingContext::DidSet(FieldIndex<IDX_ForcedColorsOverride>,
   PresContextAffectingFieldChanged();
 }
 
+void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
+                             nsString&& aOldValue) {
+  MOZ_ASSERT(IsTop());
+  if (GetLanguageOverride() == aOldValue) {
+    return;
+  }
+
+  PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
+    RefPtr<WindowContext> windowContext =
+        aBrowsingContext->GetCurrentWindowContext();
+
+    if (nsCOMPtr<nsPIDOMWindowInner> window = windowContext->GetInnerWindow()) {
+      AutoJSAPI jsapi;
+      if (jsapi.Init(window)) {
+        JSContext* context = jsapi.cx();
+
+        if (mDefaultLocale == nullptr) {
+          mDefaultLocale = JS_GetDefaultLocale(context);
+        }
+
+        JSRuntime* runtime = JS_GetRuntime(context);
+        if (GetLanguageOverride().IsEmpty()) {
+          JS_SetDefaultLocale(runtime, mDefaultLocale.get());
+
+          mDefaultLocale = nullptr;
+        } else {
+          JS_SetDefaultLocale(
+              runtime, NS_ConvertUTF16toUTF8(GetLanguageOverride()).get());
+        }
+      }
+    }
+  });
+}
+
 void BrowsingContext::DidSet(FieldIndex<IDX_MediumOverride>,
                              nsString&& aOldValue) {
   MOZ_ASSERT(IsTop());
@@ -3791,38 +3826,46 @@ bool BrowsingContext::ShouldAddEntryForRefresh(nsIURI* aPreviousURI,
   return !equalsURI;
 }
 
+bool BrowsingContext::AddSHEntryWouldIncreaseLength(
+    SessionHistoryInfo* aCurrentEntry) const {
+  // nsSHistory::AddEntry and AddNestedSHEntry do a replace load if the current
+  // entry is marked as transient.
+  const bool isCurrentTransientEntry =
+      aCurrentEntry && aCurrentEntry->IsTransient();
+
+  // If this is the first entry for an iframe, it would be added to the parent
+  // entry instead of creating a new top-level entry.
+  const bool wouldAddToParentEntry = !IsTop() && !aCurrentEntry;
+
+  return !isCurrentTransientEntry && !wouldAddToParentEntry;
+}
+
 void BrowsingContext::SessionHistoryCommit(
     const LoadingSessionHistoryInfo& aInfo, uint32_t aLoadType,
     nsIURI* aPreviousURI, SessionHistoryInfo* aPreviousActiveEntry,
-    bool aPersist, bool aCloneEntryChildren, bool aChannelExpired,
-    uint32_t aCacheKey, nsIPrincipal* aPartitionedPrincipal) {
+    bool aCloneEntryChildren, bool aChannelExpired, uint32_t aCacheKey) {
   nsID changeID = {};
   if (XRE_IsContentProcess()) {
     RefPtr<ChildSHistory> rootSH = Top()->GetChildSessionHistory();
     if (rootSH) {
       if (!aInfo.mLoadIsFromSessionHistory) {
-        // We try to mimic as closely as possible what will happen in
-        // CanonicalBrowsingContext::SessionHistoryCommit. We'll be
-        // incrementing the session history length if we're not replacing,
-        // this is a top-level load or it's not the initial load in an iframe,
-        // ShouldUpdateSessionHistory(loadType) returns true and it's not a
-        // refresh for which ShouldAddEntryForRefresh returns false.
+        // We try to mimic as closely as possible whether
+        // CanonicalBrowsingContext::SessionHistoryCommit will increase
+        // the session history length.
         // It is possible that this leads to wrong length temporarily, but
-        // so would not having the check for replace.
-        // Note that nsSHistory::AddEntry does a replace load if the current
-        // entry is not marked as a persisted entry. The child process does
-        // not have access to the current entry, so we use the previous active
-        // entry as the best approximation. When that's not the current entry
-        // then the length might be wrong briefly, until the parent process
-        // commits the actual length.
-        if (!LOAD_TYPE_HAS_FLAGS(
-                aLoadType, nsIWebNavigation::LOAD_FLAGS_REPLACE_HISTORY) &&
-            (IsTop()
-                 ? (!aPreviousActiveEntry || aPreviousActiveEntry->GetPersist())
-                 : !!aPreviousActiveEntry) &&
+        // so would not having these checks.
+        // The child process does not have access to the current entry, so we
+        // use the previous active entry as the best approximation. When that's
+        // not the current entry then the length might be wrong briefly, until
+        // the parent process commits the actual length.
+        const bool isReplaceLoad = LOAD_TYPE_HAS_FLAGS(
+                       aLoadType, nsIWebNavigation::LOAD_FLAGS_REPLACE_HISTORY),
+                   isRefreshLoad = LOAD_TYPE_HAS_FLAGS(
+                       aLoadType, nsIWebNavigation::LOAD_FLAGS_IS_REFRESH);
+        if (!isReplaceLoad &&
+            AddSHEntryWouldIncreaseLength(aPreviousActiveEntry) &&
             ShouldUpdateSessionHistory(aLoadType) &&
-            (!LOAD_TYPE_HAS_FLAGS(aLoadType,
-                                  nsIWebNavigation::LOAD_FLAGS_IS_REFRESH) ||
+            (!isRefreshLoad ||
              ShouldAddEntryForRefresh(aPreviousURI, aInfo.mInfo))) {
           changeID = rootSH->AddPendingHistoryChange();
         }
@@ -3832,19 +3875,24 @@ void BrowsingContext::SessionHistoryCommit(
       }
     }
     ContentChild* cc = ContentChild::GetSingleton();
-    mozilla::Unused << cc->SendHistoryCommit(
-        this, aInfo.mLoadId, changeID, aLoadType, aPersist, aCloneEntryChildren,
-        aChannelExpired, aCacheKey, aPartitionedPrincipal);
+    mozilla::Unused << cc->SendHistoryCommit(this, aInfo.mLoadId, changeID,
+                                             aLoadType, aCloneEntryChildren,
+                                             aChannelExpired, aCacheKey);
   } else {
-    Canonical()->SessionHistoryCommit(
-        aInfo.mLoadId, changeID, aLoadType, aPersist, aCloneEntryChildren,
-        aChannelExpired, aCacheKey, aPartitionedPrincipal);
+    Canonical()->SessionHistoryCommit(aInfo.mLoadId, changeID, aLoadType,
+                                      aCloneEntryChildren, aChannelExpired,
+                                      aCacheKey);
   }
 }
 
 void BrowsingContext::SetActiveSessionHistoryEntry(
     const Maybe<nsPoint>& aPreviousScrollPos, SessionHistoryInfo* aInfo,
-    uint32_t aLoadType, uint32_t aUpdatedCacheKey, bool aUpdateLength) {
+    SessionHistoryInfo* aPreviousActiveEntry, uint32_t aLoadType,
+    uint32_t aUpdatedCacheKey, bool aUpdateLength) {
+  if (IsTop() &&
+      !nsDocShell::ShouldAddToSessionHistory(aInfo->GetURI(), nullptr)) {
+    aInfo->SetTransient();
+  }
   if (XRE_IsContentProcess()) {
     // XXX Why we update cache key only in content process case?
     if (aUpdatedCacheKey != 0) {
@@ -3855,7 +3903,11 @@ void BrowsingContext::SetActiveSessionHistoryEntry(
     if (aUpdateLength) {
       RefPtr<ChildSHistory> shistory = Top()->GetChildSessionHistory();
       if (shistory) {
-        changeID = shistory->AddPendingHistoryChange();
+        // We try to mimic what will happen in
+        // CanonicalBrowsingContext::SendSetActiveSessionHistoryEntry
+        if (AddSHEntryWouldIncreaseLength(aPreviousActiveEntry)) {
+          changeID = shistory->AddPendingHistoryChange();
+        }
       }
     }
     ContentChild::GetSingleton()->SendSetActiveSessionHistoryEntry(
@@ -3988,19 +4040,21 @@ void BrowsingContext::ClearCachedValuesOfLocations() {
 
 void BrowsingContext::GetContiguousHistoryEntries(
     SessionHistoryInfo& aActiveEntry, Navigation* aNavigation) {
+  MOZ_LOG(GetLog(), LogLevel::Verbose,
+          ("GetContiguousHistoryEntries for aNavigation=%p", aNavigation));
   if (!aNavigation) {
     return;
   }
   if (XRE_IsContentProcess()) {
     MOZ_ASSERT(ContentChild::GetSingleton());
     ContentChild::GetSingleton()->SendGetContiguousSessionHistoryInfos(
-        this, aActiveEntry,
+        this,
         [aActiveEntry, navigation = RefPtr(aNavigation)](auto aInfos) mutable {
           navigation->InitializeHistoryEntries(aInfos, &aActiveEntry);
         },
         [](auto aReason) { MOZ_ASSERT(false, "How did this happen?"); });
   } else {
-    auto infos = Canonical()->GetContiguousSessionHistoryInfos(aActiveEntry);
+    auto infos = Canonical()->GetContiguousSessionHistoryInfos();
     aNavigation->InitializeHistoryEntries(infos, &aActiveEntry);
   }
 }

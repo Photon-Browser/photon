@@ -304,15 +304,21 @@ class NetworkEventWatcher {
       resourceId: resource.resourceId,
       isBlocked,
       receivedUpdates: [],
-      resourceUpdates: {
-        // Requests already come with request cookies and headers, so those
-        // should always be considered as available. But the client still
-        // heavily relies on those `Available` flags to fetch additional data,
-        // so it is better to keep them for consistency.
-        requestCookiesAvailable: true,
-        requestHeadersAvailable: true,
-      },
+      resourceUpdates: {},
     };
+
+    // Requests already come with request cookies and headers, so those
+    // should always be considered as available. But the client still
+    // heavily relies on those `Available` flags to fetch additional data,
+    // so it is better to keep them for consistency.
+
+    // Set the flags on the resource so that the front-end can fetch
+    // and display request headers and cookies details asap.
+    lazy.NetworkUtils.setEventAsAvailable(resource, [
+      lazy.NetworkUtils.NETWORK_EVENT_TYPES.REQUEST_COOKIES,
+      lazy.NetworkUtils.NETWORK_EVENT_TYPES.REQUEST_HEADERS,
+    ]);
+
     this.networkEvents.set(resource.resourceId, networkEvent);
 
     this.onNetworkEventAvailable([resource]);
@@ -323,6 +329,9 @@ class NetworkEventWatcher {
     // request as completed. TODO: lift this restriction so that we can only
     // emit a resource available notification if no update is needed.
     if (isBlocked) {
+      lazy.NetworkUtils.setEventAsAvailable(networkEvent.resourceUpdates, [
+        lazy.NetworkUtils.NETWORK_EVENT_TYPES.RESPONSE_END,
+      ]);
       this._emitUpdate(networkEvent);
     }
 
@@ -335,15 +344,20 @@ class NetworkEventWatcher {
     if (!networkEvent) {
       return;
     }
-
+    const { NETWORK_EVENT_TYPES } = lazy.NetworkUtils;
     const { resourceUpdates, receivedUpdates } = networkEvent;
 
+    const networkEventTypes = [
+      NETWORK_EVENT_TYPES.RESPONSE_COOKIES,
+      NETWORK_EVENT_TYPES.RESPONSE_HEADERS,
+    ];
+
     switch (updateResource.updateType) {
-      case "cacheDetails":
+      case NETWORK_EVENT_TYPES.CACHE_DETAILS:
         resourceUpdates.fromCache = updateResource.fromCache;
         resourceUpdates.fromServiceWorker = updateResource.fromServiceWorker;
         break;
-      case "responseStart":
+      case NETWORK_EVENT_TYPES.RESPONSE_START:
         resourceUpdates.httpVersion = updateResource.httpVersion;
         resourceUpdates.status = updateResource.status;
         resourceUpdates.statusText = updateResource.statusText;
@@ -360,38 +374,60 @@ class NetworkEventWatcher {
         resourceUpdates.proxyStatus = updateResource.proxyStatus;
         resourceUpdates.proxyStatusText = updateResource.proxyStatusText;
 
-        resourceUpdates.responseHeadersAvailable = true;
-        resourceUpdates.responseCookiesAvailable = true;
         if (resourceUpdates.earlyHintsStatus.length) {
-          resourceUpdates.earlyHintsResponseHeadersAvailable = true;
+          networkEventTypes.push(
+            NETWORK_EVENT_TYPES.EARLY_HINT_RESPONSE_HEADERS
+          );
         }
+
+        lazy.NetworkUtils.setEventAsAvailable(
+          resourceUpdates,
+          networkEventTypes
+        );
+
         break;
-      case "responseContent":
+      case NETWORK_EVENT_TYPES.RESPONSE_CONTENT:
         resourceUpdates.contentSize = updateResource.contentSize;
         resourceUpdates.transferredSize = updateResource.transferredSize;
         resourceUpdates.mimeType = updateResource.mimeType;
         resourceUpdates.blockingExtension = updateResource.blockingExtension;
         resourceUpdates.blockedReason = updateResource.blockedReason;
         break;
-      case "eventTimings":
+      case NETWORK_EVENT_TYPES.EVENT_TIMINGS:
         resourceUpdates.totalTime = updateResource.totalTime;
         break;
-      case "securityInfo":
+      case NETWORK_EVENT_TYPES.SECURITY_INFO:
         resourceUpdates.securityState = updateResource.state;
         resourceUpdates.isRacing = updateResource.isRacing;
         break;
     }
 
-    resourceUpdates[`${updateResource.updateType}Available`] = true;
+    lazy.NetworkUtils.setEventAsAvailable(resourceUpdates, [
+      updateResource.updateType,
+    ]);
+
     receivedUpdates.push(updateResource.updateType);
 
-    const isComplete =
-      receivedUpdates.includes("eventTimings") &&
-      receivedUpdates.includes("responseContent") &&
-      receivedUpdates.includes("securityInfo");
+    const isResponseComplete =
+      receivedUpdates.includes(NETWORK_EVENT_TYPES.EVENT_TIMINGS) &&
+      receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_CONTENT) &&
+      receivedUpdates.includes(NETWORK_EVENT_TYPES.SECURITY_INFO);
 
-    if (isComplete) {
+    if (isResponseComplete) {
+      // Lets add an event to clearly define the last update expected to be
+      // emitted. There will be no more updates after this.
+      lazy.NetworkUtils.setEventAsAvailable(resourceUpdates, [
+        lazy.NetworkUtils.NETWORK_EVENT_TYPES.RESPONSE_END,
+      ]);
+    }
+
+    if (
+      updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_START ||
+      isResponseComplete
+    ) {
       this._emitUpdate(networkEvent);
+      // clean up already sent updates
+      networkEvent.resourceUpdates = {};
     }
   }
 

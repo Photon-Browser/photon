@@ -8,6 +8,7 @@
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ConnectedAncestorTracker.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventForwards.h"
@@ -1097,7 +1098,7 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       break;
     }
     case eMouseEnterIntoWidget:
-      PointerEventHandler::UpdateActivePointerState(mouseEvent, aTargetContent);
+      PointerEventHandler::UpdatePointerActiveState(mouseEvent, aTargetContent);
       // In some cases on e10s eMouseEnterIntoWidget
       // event was sent twice into child process of content.
       // (From specific widget code (sending is not permanent) and
@@ -1152,7 +1153,7 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       [[fallthrough]];
     case ePointerDown:
       if (aEvent->mMessage == ePointerDown) {
-        PointerEventHandler::UpdateActivePointerState(mouseEvent,
+        PointerEventHandler::UpdatePointerActiveState(mouseEvent,
                                                       aTargetContent);
         PointerEventHandler::ImplicitlyCapturePointer(aTargetFrame, aEvent);
         // https://html.spec.whatwg.org/multipage/interaction.html#activation-triggering-input-event
@@ -1168,7 +1169,7 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     case ePointerMove:
     case ePointerRawUpdate: {
       if (aEvent->mMessage == ePointerMove) {
-        PointerEventHandler::UpdateActivePointerState(mouseEvent,
+        PointerEventHandler::UpdatePointerActiveState(mouseEvent,
                                                       aTargetContent);
       }
       if (!mInTouchDrag &&
@@ -2217,13 +2218,13 @@ void EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
       uint32_t dropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
       uint32_t action = nsIDragService::DRAGDROP_ACTION_NONE;
       nsCOMPtr<nsIPrincipal> principal;
-      nsCOMPtr<nsIContentSecurityPolicy> csp;
+      nsCOMPtr<nsIPolicyContainer> policyContainer;
 
       if (dragSession) {
         dragSession->DragEventDispatchedToChildProcess();
         dragSession->GetDragAction(&action);
         dragSession->GetTriggeringPrincipal(getter_AddRefs(principal));
-        dragSession->GetCsp(getter_AddRefs(csp));
+        dragSession->GetPolicyContainer(getter_AddRefs(policyContainer));
         RefPtr<DataTransfer> initialDataTransfer =
             dragSession->GetDataTransfer();
         if (initialDataTransfer) {
@@ -2232,7 +2233,7 @@ void EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
       }
 
       browserParent->SendRealDragEvent(*aEvent->AsDragEvent(), action,
-                                       dropEffect, principal, csp);
+                                       dropEffect, principal, policyContainer);
       return;
     }
     default: {
@@ -2621,53 +2622,34 @@ void EventStateManager::FillInEventFromGestureDown(WidgetMouseEvent* aEvent) {
   }
 }
 
-void EventStateManager::MaybeFirePointerCancel(WidgetInputEvent* aEvent) {
-  // If aEvent is a synthesized mouse event, it does not have enough information
-  // to initialize ePointerCancel.
-  MOZ_ASSERT_IF(aEvent->AsMouseEvent(), aEvent->AsMouseEvent()->IsReal());
-  // The caller must want to dispatch ePointerCancel even if an event listener
-  // of the preceding event may update the layout.  So, the caller should
-  // guarantee the target frame.
-  MOZ_ASSERT(mCurrentTarget);
-
-  RefPtr<PresShell> presShell = mPresContext->GetPresShell();
+void EventStateManager::MaybeDispatchPointerCancel(
+    const WidgetInputEvent& aSourceEvent, nsIContent& aTargetContent) {
+  // Dispatching ePointerCancel clears out mCurrentTarget, which may be used in
+  // the caller GenerateDragGesture. We have to restore mCurrentTarget.
   AutoWeakFrame targetFrame = mCurrentTarget;
-  if (!presShell || !targetFrame) {
-    return;
-  }
+  const auto restoreCurrentTarget =
+      MakeScopeExit([&]() { mCurrentTarget = targetFrame; });
 
-  nsCOMPtr<nsIContent> content = targetFrame->GetContentForEvent(aEvent);
+  const RefPtr<Element> targetElement =
+      aTargetContent.GetAsElementOrParentElement();
   // XXX If there is no proper event target, should we retarget ePointerCancel
   // somewhere else?
-  if (NS_WARN_IF(!content)) {
+  if (NS_WARN_IF(!targetElement)) {
     return;
   }
 
-  nsEventStatus status = nsEventStatus_eIgnore;
-
-  if (WidgetMouseEvent* aMouseEvent = aEvent->AsMouseEvent()) {
-    WidgetPointerEvent event(*aMouseEvent);
-    PointerEventHandler::InitPointerEventFromMouse(&event, aMouseEvent,
-                                                   ePointerCancel);
-
-    event.convertToPointer = false;
-    presShell->HandleEventWithTarget(&event, targetFrame, content, &status);
-  } else if (WidgetTouchEvent* aTouchEvent = aEvent->AsTouchEvent()) {
-    WidgetPointerEvent event(aTouchEvent->IsTrusted(), ePointerCancel,
-                             aTouchEvent->mWidget);
-
-    PointerEventHandler::InitPointerEventFromTouch(event, *aTouchEvent,
-                                                   *aTouchEvent->mTouches[0]);
-
-    event.convertToPointer = false;
-    presShell->HandleEventWithTarget(&event, targetFrame, content, &status);
+  if (const WidgetMouseEvent* const mouseEvent = aSourceEvent.AsMouseEvent()) {
+    PointerEventHandler::DispatchPointerEventWithTarget(
+        ePointerCancel, *mouseEvent, AutoWeakFrame{}, targetElement);
+  } else if (const WidgetTouchEvent* const touchEvent =
+                 aSourceEvent.AsTouchEvent()) {
+    PointerEventHandler::DispatchPointerEventWithTarget(
+        ePointerCancel, *touchEvent, 0, AutoWeakFrame{}, targetElement);
   } else {
-    MOZ_ASSERT(false);
+    MOZ_ASSERT_UNREACHABLE(
+        "MaybeDispatchPointerCancel() should be called with a mouse event or a "
+        "touch event");
   }
-
-  // HandleEventWithTarget clears out mCurrentTarget, which may be used in the
-  // caller GenerateDragGesture. We have to restore mCurrentTarget.
-  mCurrentTarget = targetFrame;
 }
 
 bool EventStateManager::IsEventOutsideDragThreshold(
@@ -2779,7 +2761,7 @@ void EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
   RefPtr<Selection> selection;
   RefPtr<RemoteDragStartData> remoteDragStartData;
   nsCOMPtr<nsIPrincipal> principal;
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  nsCOMPtr<nsIPolicyContainer> policyContainer;
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   nsCOMPtr<nsIContent> eventContent =
       mCurrentTarget->GetContentForEvent(aEvent);
@@ -2807,7 +2789,7 @@ void EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
         window, eventContent, dataTransfer, &allowEmptyDataTransfer,
         getter_AddRefs(selection), getter_AddRefs(remoteDragStartData),
         getter_AddRefs(targetContent), getter_AddRefs(principal),
-        getter_AddRefs(csp), getter_AddRefs(cookieJarSettings));
+        getter_AddRefs(policyContainer), getter_AddRefs(cookieJarSettings));
   }
 
   // Stop tracking the drag gesture now. This should stop us from
@@ -2816,7 +2798,9 @@ void EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
   // drag should be starting.
   StopTrackingDragGesture(false);
 
-  if (!targetContent) return;
+  if (MOZ_UNLIKELY(!targetContent)) {
+    return;
+  }
 
   // Use our targetContent, now that we've determined it, as the
   // parent object of the DataTransfer.
@@ -2851,34 +2835,40 @@ void EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
   // Hold onto old target content through the event and reset after.
   nsCOMPtr<nsIContent> targetBeforeEvent = mCurrentTargetContent;
 
-  // Set the current target to the content for the mouse down
-  mCurrentTargetContent = targetContent;
+  {
+    AutoConnectedAncestorTracker trackTargetContent(*targetContent);
+    // Set the current target to the content for the mouse down
+    mCurrentTargetContent = targetContent;
 
-  // Dispatch the dragstart event to the DOM.
-  nsEventStatus status = nsEventStatus_eIgnore;
-  EventDispatcher::Dispatch(targetContent, aPresContext, &startEvent, nullptr,
-                            &status);
+    // Dispatch the dragstart event to the DOM.
+    nsEventStatus status = nsEventStatus_eIgnore;
+    EventDispatcher::Dispatch(targetContent, aPresContext, &startEvent, nullptr,
+                              &status);
 
-  WidgetDragEvent* event = &startEvent;
+    WidgetDragEvent* event = &startEvent;
 
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-  // Emit observer event to allow addons to modify the DataTransfer
-  // object.
-  if (observerService) {
-    observerService->NotifyObservers(dataTransfer, "on-datatransfer-available",
-                                     nullptr);
-  }
+    // Emit observer event to allow addons to modify the DataTransfer
+    // object.
+    if (nsCOMPtr<nsIObserverService> observerService =
+            mozilla::services::GetObserverService()) {
+      observerService->NotifyObservers(dataTransfer,
+                                       "on-datatransfer-available", nullptr);
+    }
 
-  if (status != nsEventStatus_eConsumeNoDefault) {
-    bool dragStarted = DoDefaultDragStart(aPresContext, event, dataTransfer,
-                                          allowEmptyDataTransfer, targetContent,
-                                          selection, remoteDragStartData,
-                                          principal, csp, cookieJarSettings);
-    if (dragStarted) {
-      sActiveESM = nullptr;
-      MaybeFirePointerCancel(aEvent);
-      aEvent->StopPropagation();
+    if (status != nsEventStatus_eConsumeNoDefault) {
+      bool dragStarted = DoDefaultDragStart(
+          aPresContext, event, dataTransfer, allowEmptyDataTransfer,
+          targetContent, selection, remoteDragStartData, principal,
+          policyContainer, cookieJarSettings);
+      if (dragStarted) {
+        sActiveESM = nullptr;
+        aEvent->StopPropagation();
+        // XXX If all elements were removed from the document, we may need to
+        // dispatch ePointerCancel on the Document node.
+        if ((targetContent = trackTargetContent.GetConnectedContent())) {
+          MaybeDispatchPointerCancel(*aEvent, *targetContent);
+        }
+      }
     }
   }
 
@@ -2895,7 +2885,7 @@ void EventStateManager::DetermineDragTargetAndDefaultData(
     DataTransfer* aDataTransfer, bool* aAllowEmptyDataTransfer,
     Selection** aSelection, RemoteDragStartData** aRemoteDragStartData,
     nsIContent** aTargetNode, nsIPrincipal** aPrincipal,
-    nsIContentSecurityPolicy** aCsp,
+    nsIPolicyContainer** aPolicyContainer,
     nsICookieJarSettings** aCookieJarSettings) {
   *aTargetNode = nullptr;
   *aAllowEmptyDataTransfer = false;
@@ -2911,8 +2901,8 @@ void EventStateManager::DetermineDragTargetAndDefaultData(
     if (mGestureDownDragStartData) {
       // A child process started a drag so use any data it assigned for the dnd
       // session.
-      mGestureDownDragStartData->AddInitialDnDDataTo(aDataTransfer, aPrincipal,
-                                                     aCsp, aCookieJarSettings);
+      mGestureDownDragStartData->AddInitialDnDDataTo(
+          aDataTransfer, aPrincipal, aPolicyContainer, aCookieJarSettings);
       mGestureDownDragStartData.forget(aRemoteDragStartData);
       *aAllowEmptyDataTransfer = true;
     }
@@ -2929,7 +2919,7 @@ void EventStateManager::DetermineDragTargetAndDefaultData(
     bool wasAlt = (mGestureModifiers & MODIFIER_ALT) != 0;
     nsresult rv = nsContentAreaDragDrop::GetDragData(
         aWindow, mGestureDownContent, aSelectionTarget, wasAlt, aDataTransfer,
-        &canDrag, aSelection, getter_AddRefs(dragDataNode), aCsp,
+        &canDrag, aSelection, getter_AddRefs(dragDataNode), aPolicyContainer,
         aCookieJarSettings);
     if (NS_FAILED(rv) || !canDrag) {
       return;
@@ -2997,7 +2987,8 @@ bool EventStateManager::DoDefaultDragStart(
     DataTransfer* aDataTransfer, bool aAllowEmptyDataTransfer,
     nsIContent* aDragTarget, Selection* aSelection,
     RemoteDragStartData* aDragStartData, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings) {
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings) {
   nsCOMPtr<nsIDragService> dragService =
       do_GetService("@mozilla.org/widget/dragservice;1");
   if (!dragService) return false;
@@ -3092,17 +3083,17 @@ bool EventStateManager::DoDefaultDragStart(
   // other than a selection is being dragged.
   if (!dragImage && aSelection) {
     dragService->InvokeDragSessionWithSelection(
-        aSelection, aPrincipal, aCsp, aCookieJarSettings, transArray, action,
-        event, dataTransfer, dragTarget);
+        aSelection, aPrincipal, aPolicyContainer, aCookieJarSettings,
+        transArray, action, event, dataTransfer, dragTarget);
   } else if (aDragStartData) {
     MOZ_ASSERT(XRE_IsParentProcess());
     dragService->InvokeDragSessionWithRemoteImage(
-        dragTarget, aPrincipal, aCsp, aCookieJarSettings, transArray, action,
-        aDragStartData, event, dataTransfer);
+        dragTarget, aPrincipal, aPolicyContainer, aCookieJarSettings,
+        transArray, action, aDragStartData, event, dataTransfer);
   } else {
     dragService->InvokeDragSessionWithImage(
-        dragTarget, aPrincipal, aCsp, aCookieJarSettings, transArray, action,
-        dragImage, imageX, imageY, event, dataTransfer);
+        dragTarget, aPrincipal, aPolicyContainer, aCookieJarSettings,
+        transArray, action, dragImage, imageX, imageY, event, dataTransfer);
   }
 
   return true;
@@ -4211,7 +4202,7 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       // Implicitly releasing capture for given pointer. ePointerLostCapture
       // should be send after ePointerUp or ePointerCancel.
       PointerEventHandler::ImplicitlyReleasePointerCapture(pointerEvent);
-      PointerEventHandler::UpdateActivePointerState(pointerEvent);
+      PointerEventHandler::UpdatePointerActiveState(pointerEvent);
 
       if (
           // After pointercancel, pointer becomes invalid so we can remove
@@ -4648,7 +4639,7 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       break;
 
     case eMouseExitFromWidget:
-      PointerEventHandler::UpdateActivePointerState(aEvent->AsMouseEvent());
+      PointerEventHandler::UpdatePointerActiveState(aEvent->AsMouseEvent());
       break;
 
 #ifdef XP_MACOSX
@@ -4756,7 +4747,7 @@ static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
   }
 
   auto input = DOMIntersectionObserver::ComputeInput(*aPresContext->Document(),
-                                                     nullptr, nullptr);
+                                                     nullptr, nullptr, nullptr);
 
   if (!input.mRootFrame) {
     return false;

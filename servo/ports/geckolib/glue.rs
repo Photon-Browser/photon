@@ -16,6 +16,7 @@ use selectors::matching::{ElementSelectorFlags, MatchingForInvalidation, Selecto
 use selectors::{Element, OpaqueElement};
 use servo_arc::{Arc, ArcBorrow};
 use smallvec::SmallVec;
+use style::values::computed::length_percentage::AllowAnchorPosResolutionInCalcPercentage;
 use style::values::generics::Optional;
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -67,7 +68,7 @@ use style::gecko_bindings::structs::nsCSSPropertyID;
 use style::gecko_bindings::structs::nsChangeHint;
 use style::gecko_bindings::structs::nsCompatibility;
 use style::gecko_bindings::structs::nsresult;
-use style::gecko_bindings::structs::AnchorPosResolutionParams;
+use style::gecko_bindings::structs::{AnchorPosResolutionParams, AnchorPosOffsetResolutionParams};
 use style::gecko_bindings::structs::CallerType;
 use style::gecko_bindings::structs::CompositeOperation;
 use style::gecko_bindings::structs::DeclarationBlockMutationClosure;
@@ -97,7 +98,7 @@ use style::global_style_data::{
 };
 use style::invalidation::element::element_wrapper::{ElementSnapshot, ElementWrapper};
 use style::invalidation::element::invalidation_map::{
-    RelativeSelectorInvalidationMap, TSStateForInvalidation,
+    InvalidationMap, TSStateForInvalidation
 };
 use style::invalidation::element::invalidator::{InvalidationResult, SiblingTraversalMap};
 use style::invalidation::element::relative_selector::{
@@ -105,7 +106,7 @@ use style::invalidation::element::relative_selector::{
 };
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::invalidation::stylesheets::RuleChangeKind;
-use style::logical_geometry::PhysicalSide;
+use style::logical_geometry::{PhysicalAxis, PhysicalSide};
 use style::media_queries::MediaList;
 use style::parser::{Parse, ParserContext};
 #[cfg(feature = "gecko_debug")]
@@ -154,11 +155,10 @@ use style::values::computed::font::{
 };
 use style::values::computed::length::AnchorSizeFunction;
 use style::values::computed::position::AnchorFunction;
-use style::values::computed::{self, ContentVisibility, Context, PositionProperty, ToComputedValue};
+use style::values::computed::{self, ContentVisibility, Context, ToComputedValue};
 use style::values::distance::ComputeSquaredDistance;
 use style::values::generics::color::ColorMixFlags;
 use style::values::generics::easing::BeforeFlag;
-use style::values::generics::length::AnchorResolutionResult;
 use style::values::resolved;
 use style::values::specified::intersection_observer::IntersectionObserverMargin;
 use style::values::specified::source_size_list::SourceSizeList;
@@ -4449,11 +4449,29 @@ pub extern "C" fn Servo_ComputedValues_SpecifiesAnimationsOrTransitions(
     ui.specifies_animations() || ui.specifies_transitions()
 }
 
+#[repr(u8)]
+pub enum MatchingDeclarationBlockOrigin {
+    UserAgent,
+    User,
+    Author,
+    PresHints,
+    Animations,
+    Transitions,
+    SMIL,
+}
+
+#[repr(C)]
+pub struct MatchingDeclarationBlock {
+    block: *const LockedDeclarationBlock,
+    origin: MatchingDeclarationBlockOrigin,
+}
+
 #[no_mangle]
 pub extern "C" fn Servo_ComputedValues_GetMatchingDeclarations(
     values: &ComputedValues,
-    rules: &mut nsTArray<*const LockedDeclarationBlock>,
+    rules: &mut nsTArray<MatchingDeclarationBlock>,
 ) {
+    use style::rule_tree::CascadeLevel;
     let rule_node = match values.rules {
         Some(ref r) => r,
         None => return,
@@ -4470,7 +4488,20 @@ pub extern "C" fn Servo_ComputedValues_GetMatchingDeclarations(
 
         let Some(source) = node.style_source() else { continue };
 
-        rules.push(&**source.get());
+        let origin = match node.cascade_level() {
+            CascadeLevel::UANormal | CascadeLevel::UAImportant => MatchingDeclarationBlockOrigin::UserAgent,
+            CascadeLevel::UserNormal | CascadeLevel::UserImportant => MatchingDeclarationBlockOrigin::User,
+            CascadeLevel::AuthorNormal { .. } | CascadeLevel::AuthorImportant { .. }=> MatchingDeclarationBlockOrigin::Author,
+            CascadeLevel::PresHints => MatchingDeclarationBlockOrigin::PresHints,
+            CascadeLevel::Animations => MatchingDeclarationBlockOrigin::Animations,
+            CascadeLevel::Transitions => MatchingDeclarationBlockOrigin::Transitions,
+            CascadeLevel::SMILOverride => MatchingDeclarationBlockOrigin::SMIL,
+        };
+
+        rules.push(MatchingDeclarationBlock {
+            block: &**source.get(),
+            origin,
+        });
     }
 }
 
@@ -4818,7 +4849,7 @@ pub extern "C" fn Servo_ParsePseudoElement(
     }
 
     let (pseudo_type, name) = pseudo.pseudo_type_and_argument();
-    let name_ptr = name.map_or(std::ptr::null_mut(), |name| name.0.as_ptr());
+    let name_ptr = name.map_or(std::ptr::null_mut(), |name| name.as_ptr());
     request.mType = pseudo_type;
     request.mIdentifier = unsafe { RefPtr::new(name_ptr).forget() };
 
@@ -6273,7 +6304,7 @@ pub extern "C" fn Servo_ResolveStyleLazily(
     );
 
     let matching_fn = |pseudo_selector: &PseudoElement| match pseudo_element {
-        Some(ref p) => p.matches(pseudo_selector),
+        Some(ref p) => p.matches(pseudo_selector, &element),
         _ => false,
     };
 
@@ -7294,12 +7325,11 @@ fn relative_selector_invalidated_at(element: GeckoElement, result: &Invalidation
 fn add_relative_selector_attribute_dependency<'a>(
     element: &GeckoElement<'a>,
     scope: &Option<OpaqueElement>,
-    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    invalidation_map: &'a InvalidationMap,
     attribute: &AtomIdent,
     collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
 ) {
     match invalidation_map
-        .map
         .other_attribute_affecting_selectors
         .get(attribute)
     {
@@ -7486,7 +7516,6 @@ pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorStateDependency(
         |element, scope, data, quirks_mode, collector| {
             let invalidation_map = data.relative_selector_invalidation_map();
             invalidation_map
-                .map
                 .state_affecting_selectors
                 .lookup_with_additional(*element, quirks_mode, None, &[], state, |dependency| {
                     if !dependency.state.intersects(state) {
@@ -7597,8 +7626,8 @@ fn invalidate_relative_selector_ts_dependency(
     invalidator.invalidate_relative_selectors_for_this(
         stylist,
         |element, scope, data, quirks_mode, collector| {
-            let invalidation_map = data.relative_selector_invalidation_map();
-            invalidation_map
+            let invalidation_map_attributes = data.relative_invalidation_map_attributes();
+            invalidation_map_attributes
                 .ts_state_to_selector
                 .lookup_with_additional(
                     *element,
@@ -8037,7 +8066,7 @@ fn relative_selector_dependencies_for_id<'a>(
     element: &GeckoElement<'a>,
     scope: Option<OpaqueElement>,
     quirks_mode: QuirksMode,
-    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    invalidation_map: &'a InvalidationMap,
     collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
 ) {
     [old_id, new_id]
@@ -8045,7 +8074,7 @@ fn relative_selector_dependencies_for_id<'a>(
         .filter(|id| !id.is_null())
         .for_each(|id| unsafe {
             AtomIdent::with(*id, |atom| {
-                match invalidation_map.map.id_to_selector.get(atom, quirks_mode) {
+                match invalidation_map.id_to_selector.get(atom, quirks_mode) {
                     Some(v) => {
                         for dependency in v {
                             collector.add_dependency(dependency, *element, scope);
@@ -8062,12 +8091,11 @@ fn relative_selector_dependencies_for_class<'a>(
     element: &GeckoElement<'a>,
     scope: Option<OpaqueElement>,
     quirks_mode: QuirksMode,
-    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    invalidation_map: &'a InvalidationMap,
     collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
 ) {
     classes_changed.iter().for_each(|atom| {
         match invalidation_map
-            .map
             .class_to_selector
             .get(atom, quirks_mode)
         {
@@ -8085,13 +8113,12 @@ fn relative_selector_dependencies_for_custom_state<'a>(
     state: *const nsAtom,
     element: GeckoElement<'a>,
     scope: Option<OpaqueElement>,
-    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    invalidation_map: &'a InvalidationMap,
     collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
 ) {
     unsafe {
         AtomIdent::with(state, |atom| {
             match invalidation_map
-                .map
                 .custom_state_affecting_selectors
                 .get(atom)
             {
@@ -8171,7 +8198,6 @@ fn process_relative_selector_invalidations(
                 )
             });
             invalidation_map
-                .map
                 .state_affecting_selectors
                 .lookup_with_additional(*element, quirks_mode, None, &[], states, |dependency| {
                     if !dependency.state.intersects(states) {
@@ -8492,11 +8518,11 @@ pub enum CalcAnchorPositioningFunctionResolution {
 #[no_mangle]
 pub extern "C" fn Servo_ResolveAnchorFunctionsInCalcPercentage(
     calc: &computed::length_percentage::CalcLengthPercentage,
-    prop_side: Option<&PhysicalSide>,
-    params: &AnchorPosResolutionParams,
+    allowed: &AllowAnchorPosResolutionInCalcPercentage,
+    params: &AnchorPosOffsetResolutionParams,
     out: &mut CalcAnchorPositioningFunctionResolution,
 ) {
-    let resolved = calc.resolve_anchor(prop_side.copied(), params);
+    let resolved = calc.resolve_anchor(*allowed, params);
 
     match resolved {
         Err(()) => *out = CalcAnchorPositioningFunctionResolution::Invalid,
@@ -9895,18 +9921,6 @@ pub enum AnchorPositioningFunctionResolution {
     Resolved(computed::LengthPercentage),
 }
 
-impl AnchorPositioningFunctionResolution {
-    fn new(result: AnchorResolutionResult<'_, computed::LengthPercentage>) -> Self {
-        match result {
-            AnchorResolutionResult::Resolved(l) => AnchorPositioningFunctionResolution::Resolved(l),
-            AnchorResolutionResult::Fallback(l) => {
-                AnchorPositioningFunctionResolution::ResolvedReference(l as *const _)
-            },
-            AnchorResolutionResult::Invalid => AnchorPositioningFunctionResolution::Invalid,
-        }
-    }
-}
-
 fn resolve_anchor_fallback(
     fallback: &Optional<computed::LengthPercentage>
 ) -> AnchorPositioningFunctionResolution {
@@ -9918,11 +9932,11 @@ fn resolve_anchor_fallback(
 #[no_mangle]
 pub extern "C" fn Servo_ResolveAnchorFunction(
     func: &AnchorFunction,
-    params: &AnchorPosResolutionParams,
+    params: &AnchorPosOffsetResolutionParams,
     prop_side: PhysicalSide,
     out: &mut AnchorPositioningFunctionResolution,
 ) {
-    if !func.valid_for(prop_side, params.mPosition) {
+    if !func.valid_for(prop_side, params.mBaseParams.mPosition) {
         *out = resolve_anchor_fallback(&func.fallback);
         return;
     }
@@ -9941,8 +9955,22 @@ pub extern "C" fn Servo_ResolveAnchorFunction(
 #[no_mangle]
 pub extern "C" fn Servo_ResolveAnchorSizeFunction(
     func: &AnchorSizeFunction,
-    prop: PositionProperty,
+    params: &AnchorPosResolutionParams,
+    prop_axis: PhysicalAxis,
     out: &mut AnchorPositioningFunctionResolution,
 ) {
-    *out = AnchorPositioningFunctionResolution::new(func.resolve(prop));
+    if !func.valid_for(params.mPosition) {
+        *out = resolve_anchor_fallback(&func.fallback);
+        return;
+    }
+    let result = AnchorSizeFunction::resolve(
+        &func.target_element,
+        prop_axis,
+        func.size,
+        params,
+    );
+    *out = match result {
+        Ok(l) => AnchorPositioningFunctionResolution::Resolved(computed::LengthPercentage::new_length(l)),
+        Err(()) => resolve_anchor_fallback(&func.fallback),
+    };
 }

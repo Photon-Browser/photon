@@ -23,7 +23,7 @@
 #include "nsString.h"
 #include "mozilla/dom/Tensor.h"
 #include "mozilla/Attributes.h"
-mozilla::LazyLogModule gONNXLog("ONNXNative");
+mozilla::LazyLogModule gONNXLog("GeckoMLONNXNative");
 #define LOGV(fmt, ...) \
   MOZ_LOG_FMT(gONNXLog, LogLevel::Verbose, fmt, ##__VA_ARGS__)
 #define LOGD(fmt, ...) \
@@ -256,8 +256,7 @@ OrtCustomThreadHandle WrapProfilerRegister(void* options, void (*func)(void*),
   // We don't use options for now
   MOZ_ASSERT(!options);
   auto wrapperFunc = [func](void* param) {
-    char stacktop;
-    profiler_register_thread("onnx_worker", &stacktop);
+    PROFILER_REGISTER_THREAD("onnx_worker");
     LOGD("Starting thread");
     (static_cast<OrtThreadWorkerFn>(func))(param);
   };

@@ -67,7 +67,6 @@ export var UrlbarUtils = {
     HEURISTIC_SEARCH_TIP: "heuristicSearchTip",
     HEURISTIC_TEST: "heuristicTest",
     HEURISTIC_TOKEN_ALIAS_ENGINE: "heuristicTokenAliasEngine",
-    HISTORY_SEMANTIC: "historySemantic",
     INPUT_HISTORY: "inputHistory",
     OMNIBOX: "extension",
     RECENT_SEARCH: "recentSearch",
@@ -318,9 +317,10 @@ export var UrlbarUtils = {
       return { url, postData, mayInheritPrincipal };
     }
 
+    /** @type {nsISearchEngine} */
     let engine = await Services.search.getEngineByAlias(keyword);
     if (engine) {
-      let submission = engine.getSubmission(param, null, "keyword");
+      let submission = engine.getSubmission(param, null);
       return {
         url: submission.uri.spec,
         postData: submission.postData,
@@ -574,8 +574,6 @@ export var UrlbarUtils = {
         return this.RESULT_GROUP.ABOUT_PAGES;
       case "InputHistory":
         return this.RESULT_GROUP.INPUT_HISTORY;
-      case "SemanticHistorySearch":
-        return this.RESULT_GROUP.HISTORY_SEMANTIC;
       case "UrlbarProviderQuickSuggest":
         return this.RESULT_GROUP.GENERAL_PARENT;
       default:
@@ -1084,6 +1082,7 @@ export var UrlbarUtils = {
       userContextId: parseInt(
         window.gBrowser.selectedBrowser.getAttribute("usercontextid") || 0
       ),
+      tabGroup: window.gBrowser.selectedTab.group?.id ?? null,
       prohibitRemoteResults: true,
       providers: ["AliasEngines", "BookmarkKeywords", "HeuristicFallback"],
     };
@@ -1494,6 +1493,22 @@ export var UrlbarUtils = {
       return "experimental_addon";
     }
 
+    // Appends subtype to certain result types.
+    function checkForSubType(type, res) {
+      if (res.providerName == "SemanticHistorySearch") {
+        type += "_semantic";
+      }
+      if (
+        lazy.UrlbarSearchUtils.resultIsSERP(res, [
+          UrlbarUtils.RESULT_SOURCE.HISTORY,
+          UrlbarUtils.RESULT_SOURCE.TABS,
+        ])
+      ) {
+        type += "_serp";
+      }
+      return type;
+    }
+
     switch (result.type) {
       case this.RESULT_TYPE.DYNAMIC:
         switch (result.providerName) {
@@ -1538,7 +1553,7 @@ export var UrlbarUtils = {
         }
         return "search_engine";
       case this.RESULT_TYPE.TAB_SWITCH:
-        return "tab";
+        return checkForSubType("tab", result);
       case this.RESULT_TYPE.TIP:
         if (result.providerName === "UrlbarProviderInterventions") {
           switch (result.payload.type) {
@@ -1586,9 +1601,10 @@ export var UrlbarUtils = {
         if (result.providerName === "UrlbarProviderClipboard") {
           return "clipboard";
         }
-        return result.source === this.RESULT_SOURCE.BOOKMARKS
-          ? "bookmark"
-          : "history";
+        if (result.source === this.RESULT_SOURCE.BOOKMARKS) {
+          return "bookmark";
+        }
+        return checkForSubType("history", result);
       case this.RESULT_TYPE.RESTRICT:
         if (result.payload.keyword === lazy.UrlbarTokenizer.RESTRICT.BOOKMARK) {
           return "restrict_keyword_bookmarks";
@@ -1745,6 +1761,47 @@ export var UrlbarUtils = {
       index = highlightIndex + highlightLength;
     }
   },
+
+  /**
+   * Formats the numerical portion of unit conversion results.
+   *
+   * @param {number} result
+   *  The raw unformatted unit conversion result.
+   */
+  formatUnitConversionResult(result) {
+    const DECIMAL_PRECISION = 10;
+    const MAX_SIG_FIGURES = 10;
+    const FULL_NUMBER_MAX_THRESHOLD = 1 * 10 ** 10;
+    const FULL_NUMBER_MIN_THRESHOLD = 10 ** -5;
+
+    let locale = Services.locale.appLocaleAsBCP47;
+
+    if (
+      Math.abs(result) >= FULL_NUMBER_MAX_THRESHOLD ||
+      (Math.abs(result) <= FULL_NUMBER_MIN_THRESHOLD && result !== 0)
+    ) {
+      return new Intl.NumberFormat(locale, {
+        style: "decimal",
+        notation: "scientific",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: DECIMAL_PRECISION,
+        numberingSystem: "latn",
+      })
+        .format(result)
+        .toLowerCase();
+    } else if (Math.abs(result) >= 1) {
+      return new Intl.NumberFormat(locale, {
+        style: "decimal",
+        maximumFractionDigits: DECIMAL_PRECISION,
+        numberingSystem: "latn",
+      }).format(result);
+    }
+    return new Intl.NumberFormat(locale, {
+      style: "decimal",
+      maximumSignificantDigits: MAX_SIG_FIGURES,
+      numberingSystem: "latn",
+    }).format(result);
+  },
 };
 
 ChromeUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
@@ -1821,6 +1878,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       displayUrl: {
         type: "string",
       },
+      frecency: {
+        type: "number",
+      },
       icon: {
         type: "string",
       },
@@ -1832,6 +1892,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       lastVisit: {
         type: "number",
+      },
+      tabGroup: {
+        type: "string",
       },
       title: {
         type: "string",
@@ -1943,6 +2006,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       fallbackTitle: {
         type: "string",
+      },
+      frecency: {
+        type: "number",
       },
       helpL10n: L10N_SCHEMA,
       helpUrl: {
@@ -2240,6 +2306,8 @@ export class UrlbarQueryContext {
    *   Whether or not to allow providers to include autofill results.
    * @param {number} [options.userContextId]
    *   The container id where this context was generated, if any.
+   * @param {string | null} [options.tabGroup]
+   *   The tab group where this context was generated, if any.
    * @param {Array} [options.sources]
    *   A list of acceptable UrlbarUtils.RESULT_SOURCE for the context.
    * @param {object} [options.searchMode]
@@ -2304,6 +2372,7 @@ export class UrlbarQueryContext {
         options.userContextId,
         this.isPrivate
       ) || Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
+    this.tabGroup = options.tabGroup || null;
 
     // Used to store glean timing distribution timer ids.
     this.firstTimerId = 0;

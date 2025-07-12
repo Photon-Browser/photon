@@ -133,6 +133,10 @@ static MsaaAccessible* GetTextPatternProviderFor(Accessible* aOrigin) {
   return MsaaAccessible::GetFrom(GetTextContainer(aOrigin));
 }
 
+static bool MustSelectUsingDoAction(Accessible* aAcc) {
+  return IsRadio(aAcc) || aAcc->Role() == roles::PAGETAB;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // uiaRawElmProvider
 ////////////////////////////////////////////////////////////////////////////////
@@ -701,6 +705,12 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
           (acc->State() & states::FOCUSABLE) ? VARIANT_TRUE : VARIANT_FALSE;
       return S_OK;
 
+    case UIA_IsOffscreenPropertyId:
+      aPropertyValue->vt = VT_BOOL;
+      aPropertyValue->boolVal =
+          (acc->State() & states::OFFSCREEN) ? VARIANT_TRUE : VARIANT_FALSE;
+      return S_OK;
+
     case UIA_LabeledByPropertyId:
       if (Accessible* target = GetLabeledBy()) {
         aPropertyValue->vt = VT_UNKNOWN;
@@ -1189,7 +1199,7 @@ uiaRawElmProvider::Select() {
   if (!acc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  if (IsRadio(acc)) {
+  if (MustSelectUsingDoAction(acc)) {
     acc->DoAction(0);
   } else {
     acc->TakeSelection();
@@ -1203,7 +1213,7 @@ uiaRawElmProvider::AddToSelection() {
   if (!acc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  if (IsRadio(acc)) {
+  if (MustSelectUsingDoAction(acc)) {
     acc->DoAction(0);
   } else {
     acc->SetSelected(true);

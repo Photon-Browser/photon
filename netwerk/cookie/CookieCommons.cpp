@@ -206,61 +206,6 @@ void CookieCommons::NotifyRejected(nsIURI* aHostURI, nsIChannel* aChannel,
       aRejectedReason);
 }
 
-bool CookieCommons::CheckPathSize(const CookieStruct& aCookieData) {
-  return aCookieData.path().Length() <= kMaxBytesPerPath;
-}
-
-bool CookieCommons::CheckNameAndValueSize(const CookieStruct& aCookieData) {
-  // reject cookie if it's over the size limit, per RFC2109
-  return (aCookieData.name().Length() + aCookieData.value().Length()) <=
-         kMaxBytesPerCookie;
-}
-
-bool CookieCommons::CheckName(const CookieStruct& aCookieData) {
-  const char illegalNameCharacters[] = {
-      0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0A, 0x0B, 0x0C, 0x0D,
-      0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
-      0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x3B, 0x3D, 0x7F, 0x00};
-
-  const auto* start = aCookieData.name().BeginReading();
-  const auto* end = aCookieData.name().EndReading();
-
-  auto charFilter = [&](unsigned char c) {
-    if (StaticPrefs::network_cookie_blockUnicode() && c >= 0x80) {
-      return true;
-    }
-    return std::find(std::begin(illegalNameCharacters),
-                     std::end(illegalNameCharacters),
-                     c) != std::end(illegalNameCharacters);
-  };
-
-  return std::find_if(start, end, charFilter) == end;
-}
-
-bool CookieCommons::CheckValue(const CookieStruct& aCookieData) {
-  // reject cookie if value contains an RFC 6265 disallowed character - see
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1191423
-  // NOTE: this is not the full set of characters disallowed by 6265 - notably
-  // 0x09, 0x20, 0x22, 0x2C, and 0x5C are missing from this list.
-  const char illegalCharacters[] = {
-      0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0A, 0x0B, 0x0C,
-      0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-      0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x3B, 0x7F, 0x00};
-
-  const auto* start = aCookieData.value().BeginReading();
-  const auto* end = aCookieData.value().EndReading();
-
-  auto charFilter = [&](unsigned char c) {
-    if (StaticPrefs::network_cookie_blockUnicode() && c >= 0x80) {
-      return true;
-    }
-    return std::find(std::begin(illegalCharacters), std::end(illegalCharacters),
-                     c) != std::end(illegalCharacters);
-  };
-
-  return std::find_if(start, end, charFilter) == end;
-}
-
 // static
 bool CookieCommons::CheckCookiePermission(nsIChannel* aChannel,
                                           CookieStruct& aCookieData) {
@@ -432,7 +377,7 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
   aCookieParser.Parse(baseDomain, requireHostMatch, cookieStatus, cookieString,
                       EmptyCString(), false, isForeignAndNotAddon,
                       mustBePartitioned, aDocument->IsInPrivateBrowsing(),
-                      on3pcbException);
+                      on3pcbException, PR_Now() / PR_USEC_PER_MSEC);
 
   if (!aCookieParser.ContainsCookie()) {
     return nullptr;
@@ -949,9 +894,6 @@ CookieCommons::CheckGlobalAndRetrieveCookiePrincipals(
         workerPrivate->StorageAccess() == StorageAccess::eAllow;
 
     if (isCHIPS && workerHasStorageAccess) {
-      // Assert that the cookie principal is unpartitioned.
-      MOZ_ASSERT(
-          cookiePrincipal->OriginAttributesRef().mPartitionKey.IsEmpty());
       // Only retrieve the partitioned originAttributes if the partitionKey is
       // set. The partitionKey could be empty for partitionKey in partitioned
       // originAttributes if the aWorker is for privilege context, such as the
@@ -1017,9 +959,6 @@ CookieCommons::CheckGlobalAndRetrieveCookiePrincipals(
     }
 
     if (isCHIPS && documentHasStorageAccess) {
-      // Assert that the cookie principal is unpartitioned.
-      MOZ_ASSERT(
-          cookiePrincipal->OriginAttributesRef().mPartitionKey.IsEmpty());
       // Only append the partitioned originAttributes if the partitionKey is
       // set. The partitionKey could be empty for partitionKey in partitioned
       // originAttributes if the aDocument is for privilege context, such as the
@@ -1060,15 +999,41 @@ void CookieCommons::GetServerDateHeader(nsIChannel* aChannel,
 }
 
 // static
-int64_t CookieCommons::MaybeReduceExpiry(int64_t aCurrentTimeInSec,
-                                         int64_t aExpiryInSec) {
+int64_t CookieCommons::MaybeCapExpiry(int64_t aCurrentTimeInMSec,
+                                      int64_t aExpiryInMSec) {
   int64_t maxageCap = StaticPrefs::network_cookie_maxageCap();
 
   if (maxageCap) {
-    aExpiryInSec = std::min(aExpiryInSec, aCurrentTimeInSec + maxageCap);
+    aExpiryInMSec =
+        std::min(aExpiryInMSec, aCurrentTimeInMSec + maxageCap * 1000);
   }
 
-  return aExpiryInSec;
+  return aExpiryInMSec;
+}
+
+// static
+bool CookieCommons::IsSubdomainOf(const nsACString& a, const nsACString& b) {
+  if (a == b) {
+    return true;
+  }
+  if (a.Length() > b.Length()) {
+    return a[a.Length() - b.Length() - 1] == '.' && StringEndsWith(a, b);
+  }
+  return false;
+}
+
+// static
+int64_t CookieCommons::GetCurrentTimeFromChannel(nsIChannel* aChannel) {
+  nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(aChannel);
+  if (timedChannel) {
+    PRTime currentTimeInUSec = 0;
+    nsresult rv = timedChannel->GetResponseStartTime(&currentTimeInUSec);
+    if (NS_SUCCEEDED(rv) && currentTimeInUSec) {
+      return currentTimeInUSec / PR_USEC_PER_MSEC;
+    }
+  }
+
+  return PR_Now() / PR_USEC_PER_MSEC;
 }
 
 }  // namespace net

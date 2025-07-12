@@ -17,6 +17,45 @@ export const DAYS_TO_MS = 60 * 60 * 24 * 1000;
 const MAX_INT_32 = 2 ** 32;
 
 /**
+ * Divides numerator fields by the denominator. Value is set to 0 if denominator is missing or 0.
+ * Adds 0 value for all situations where there is a denominator but no numerator value.
+ * @param {Object.<string, number>} numerator
+ * @param {Object.<string, number>} denominator
+ * returns {Object.<string, number>}
+ */
+export function divideDict(numerator, denominator) {
+  const result = {};
+  Object.keys(numerator).forEach(k => {
+    result[k] = denominator[k] ? numerator[k] / denominator[k] : 0;
+  });
+  Object.keys(denominator).forEach(k => {
+    if (!(k in result)) {
+      result[k] = 0.0;
+    }
+  });
+  return result;
+}
+
+/**
+ * Returns a secure random value between 0 and 1
+ */
+function secureRandomNumber() {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return array[0] / MAX_INT_32;
+}
+
+/**
+ * Applies laplace noise at a given scale
+ * @param {number} scale value
+ * @returns noisy value
+ */
+function laplaceNoise(scale) {
+  const u = secureRandomNumber() - 0.5;
+  return -scale * Math.sign(u) * Math.log(1 - 2 * Math.abs(u));
+}
+
+/**
  * Unary encoding with randomized response for differential privacy.
  * The output must be decoded to back to an integer when aggregating a historgram on a server
  * @param {number} x - Integer input (0 <= x < N)
@@ -227,6 +266,8 @@ export class FeatureModel {
     modelType,
     rescale = true,
     logScale = false,
+    noiseScale = 0,
+    laplaceNoiseFn = laplaceNoise,
   }) {
     this.modelId = modelId;
     this.tileImportance = tileImportance;
@@ -235,6 +276,8 @@ export class FeatureModel {
     this.rescale = rescale;
     this.logScale = logScale;
     this.modelType = modelType;
+    this.noiseScale = noiseScale;
+    this.laplaceNoiseFn = laplaceNoiseFn;
   }
 
   static fromJSON(json) {
@@ -255,6 +298,7 @@ export class FeatureModel {
       logScale: json.log_scale,
       clickScale: json.clickScale,
       modelType: json.model_type,
+      noiseScale: json.noise_scale,
     });
   }
 
@@ -358,39 +402,144 @@ export class FeatureModel {
       totalResults = dictApply(totalResults, x => x / numClicks);
     }
 
+    const zeroFilledResult = {};
+    // Set non-click or impression values in a way that preserves original key order
+    Object.values(this.interestVectorModel).forEach(interestFeature => {
+      zeroFilledResult[interestFeature.name] =
+        totalResults[interestFeature.name] || 0;
+    });
+    totalResults = zeroFilledResult;
+
     if (numClicks >= 0) {
+      // Optional
       totalResults[SPECIAL_FEATURE_CLICK] = numClicks;
     }
-
     if (applyThresholding) {
-      if (applyDifferentialPrivacy) {
-        // Zero values need to be shown so they can be randomized
-        Object.values(this.interestVectorModel).forEach(interestFeature => {
-          if (!(interestFeature.name in totalResults)) {
-            totalResults[interestFeature.name] = 0;
-          }
-        });
-      }
-      for (const key of Object.keys(totalResults)) {
-        if (key in this.interestVectorModel) {
-          totalResults[key] = this.interestVectorModel[key].applyThresholds(
-            totalResults[key],
-            applyDifferentialPrivacy
-          );
-          if (applyDifferentialPrivacy) {
-            totalResults[key] = this.interestVectorModel[
-              key
-            ].applyDifferentialPrivacy(
-              totalResults[key],
-              applyDifferentialPrivacy
-            );
-          }
-        }
-      }
+      this.applyThresholding(totalResults, applyDifferentialPrivacy);
     }
     return totalResults;
   }
 
+  /**
+   * Convert float to discrete values, based on threshold parmaters for each feature in the model.
+   * Values are modifified in place on provided dictionary.
+   *
+   * @param {Object} valueDict of all values in model
+   * @param {Boolean} applyDifferentialPrivacy whether to apply differential privacy as well as thresholding.
+   */
+  applyThresholding(valueDict, applyDifferentialPrivacy = false) {
+    for (const key of Object.keys(valueDict)) {
+      if (key in this.interestVectorModel) {
+        valueDict[key] = this.interestVectorModel[key].applyThresholds(
+          valueDict[key],
+          applyDifferentialPrivacy
+        );
+        if (applyDifferentialPrivacy) {
+          valueDict[key] = this.interestVectorModel[
+            key
+          ].applyDifferentialPrivacy(valueDict[key], applyDifferentialPrivacy);
+        }
+      }
+    }
+  }
+
+  /**
+   * Computes interest vectors based on click-through rate (CTR) by dividing the click dictionary
+   * by the impression dictionary. Applies differential privacy using Laplace noise, and optionally
+   * computes coarse (without noise) and coarse-private interest vectors if supported by the model.
+   *
+   * In all cases model_id is returned.
+   *
+   * @param {Object} params - Function parameters.
+   * @param {Object<string, number>} params.clickDict - A dictionary of interest keys to click counts.
+   * @param {Object<string, number>} params.impressionDict - A dictionary of interest keys to impression counts.
+   * @param {string} [params.model_id="unknown"] - Identifier for the model used in generating the vectors.
+   * @param {boolean} [params.condensePrivateValues=true] - If true, condenses coarse private interest values into an array format.
+   *
+   * @returns {Object} result - An object containing one or more of the following:
+   * @returns {Object} result.inferredInterest - A dictionary of private inferred interest scores
+   * @returns {Object} [result.coarseInferredInterests] - A dictionary of thresholded interest scores (non-private), if supported.
+   * @returns {Object} [result.coarsePrivateInferredInterests] - A dictionary of thresholded interest scores with differential privacy, if supported.
+   */
+  computeCTRInterestVectors({
+    clicks,
+    impressions,
+    model_id = "unknown",
+    condensePrivateValues = true,
+  }) {
+    const inferredInterests = divideDict(clicks, impressions);
+    const originalInterestValues = { ...inferredInterests };
+
+    this.applyLaplaceNoise(inferredInterests);
+    const resultObject = {
+      inferredInterests: { ...inferredInterests, model_id },
+    };
+
+    if (this.supportsCoarseInterests()) {
+      const coarseValues = { ...originalInterestValues };
+      this.applyThresholding(coarseValues, false);
+      resultObject.coarseInferredInterests = { ...coarseValues, model_id };
+    }
+
+    if (this.supportsCoarsePrivateInterests()) {
+      const coarsePrivateValues = { ...originalInterestValues };
+      this.applyThresholding(coarsePrivateValues, true);
+
+      if (condensePrivateValues) {
+        resultObject.coarsePrivateInferredInterests = {
+          // Key order preserved in Gecko
+          values: Object.values(coarsePrivateValues),
+          model_id,
+        };
+      } else {
+        resultObject.coarsePrivateInferredInterests = {
+          ...coarsePrivateValues,
+          model_id,
+        };
+      }
+    }
+    return resultObject;
+  }
+
+  /**
+   * Applies laplace noise to values in a dictionary if specified in the model
+   * @param {Object} inputDict key-value pairs
+   * @param {boolean} clipZero If true clip less than zero values to zero
+   * @returns
+   */
+  applyLaplaceNoise(inputDict, clipZero = true) {
+    if (!this.noiseScale) {
+      return;
+    }
+    for (const key in inputDict) {
+      if (typeof inputDict[key] === "number") {
+        const noise = this.laplaceNoiseFn(this.noiseScale);
+        if (clipZero) {
+          inputDict[key] = Math.max(inputDict[key] + noise, 0);
+        } else {
+          inputDict[key] += noise;
+        }
+      }
+    }
+  }
+
+  /**
+   * Computes various types of interest vectors from user interaction data across intervals.
+   * Returns standard inferred interests (with Laplace noise), and optionally returns
+   * coarse-grained and private-coarse versions depending on model support.
+   *
+   * @param {Object} params - The function parameters.
+   * @param {Array<Object>} params.dataForIntervals - An array of data points grouped by time intervals (e.g., clicks, impressions).
+   * @param {Object} params.indexSchema - Schema that defines how interest indices should be computed.
+   * @param {string} [params.model_id="unknown"] - Identifier for the model used to produce these vectors.
+   * @param {boolean} [params.condensePrivateValues=true] - If true, condenses coarse private interest values into an array format.
+   *
+   * @returns {Object} result - An object containing the computed interest vectors.
+   * @returns {Object} result.inferredInterests - A dictionary of private inferred interest values, with `model_id`.
+   * @returns {Object} [result.coarseInferredInterests] - Coarse thresholded (non-private) interest vector, if supported.
+   * @returns {Object|{values: Array<number>, model_id: string}} [result.coarsePrivateInferredInterests] - Coarse and differentially private interests.
+   *           If `condensePrivateValues` is true, returned as an object with a `values` array; otherwise, as a dictionary.
+   */
   computeInterestVectors({
     dataForIntervals,
     indexSchema,
@@ -406,7 +555,9 @@ export class FeatureModel {
       dataForIntervals,
       indexSchema,
     });
-    result.inferredInterests = { ...inferredInterests, model_id };
+    const updatedFuzzyInterests = { ...inferredInterests };
+    this.applyLaplaceNoise(updatedFuzzyInterests);
+    result.inferredInterests = { ...updatedFuzzyInterests, model_id };
 
     if (this.supportsCoarseInterests()) {
       coarseInferredInterests = this.computeInterestVector({
@@ -432,7 +583,8 @@ export class FeatureModel {
       if (coarsePrivateInferredInterests) {
         if (condensePrivateValues) {
           result.coarsePrivateInferredInterests = {
-            values: Object.values(coarsePrivateInferredInterests), // Key order presrved in Gecko
+            // Key order preserved in Gecko
+            values: Object.values(coarsePrivateInferredInterests),
             model_id,
           };
         } else {

@@ -76,6 +76,7 @@ if CONFIG["CC_TYPE"] == "clang-cl":
 if CONFIG["OS_ARCH"] == "WINNT":
     RCINCLUDE = "splash.rc"
     DIRS += [
+        "installation_dir_layout",
         "pbproxy",
         "winlauncher",
     ]
@@ -174,3 +175,8 @@ for icon in ("firefox", "document", "newwindow", "newtab", "pbmode", "document_p
         CONFIG["MOZ_BRANDING_DIRECTORY"],
         icon,
     )
+
+if CONFIG["MOZ_ASAN"] or CONFIG["MOZ_DEBUG"]:
+    WINCONSOLE = True
+else:
+    WINCONSOLE = False

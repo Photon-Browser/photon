@@ -22,6 +22,8 @@ import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.ktx.android.net.isHttpOrHttps
 import mozilla.components.support.ktx.kotlin.isIpv4OrIpv6
 
+private const val BLOB_URL_PREFIX = "blob:"
+
 /**
  * Asynchronous URL renderer.
  *
@@ -76,8 +78,9 @@ internal class URLRenderer(
         toolbar.url = when (configuration.renderStyle) {
             // Display only the eTLD+1 (direct subdomain of the public suffix), uncolored
             ToolbarFeature.RenderStyle.RegistrableDomain -> {
-                val host = url.toUri().host?.ifEmpty { null }
-                host?.let { getRegistrableDomain(host, configuration) } ?: url
+                getRegistrableDomainOrHostSpan(url, configuration.publicSuffixList)?.let { (start, end) ->
+                    url.substring(start, end)
+                } ?: url
             }
             // Display the registrableDomain with color and URL with another color
             ToolbarFeature.RenderStyle.ColoredUrl -> SpannableStringBuilder(url).apply {
@@ -96,9 +99,6 @@ internal class URLRenderer(
         }
     }
 }
-
-private suspend fun getRegistrableDomain(host: String, configuration: ToolbarFeature.UrlRenderConfiguration) =
-    configuration.publicSuffixList.getPublicSuffixPlusOne(host).await()
 
 /**
  * Determines the position span of the registrable domain within a host string.
@@ -135,6 +135,7 @@ internal suspend fun getRegistrableDomainSpanInHost(
  *
  * @param url The complete URL to analyze
  * @param publicSuffixList The [PublicSuffixList] used to get the eTLD+1 for the host
+ * @param allowBlobUnwrapping Whether to allow unwrapping blob URLs
  * @return A Pair of (startIndex, endIndex) for either:
  *         - The registrable domain's position within the URL, or
  *         - The host's position within the URL if no registrable domain was found, or
@@ -145,7 +146,21 @@ internal suspend fun getRegistrableDomainSpanInHost(
 internal suspend fun getRegistrableDomainOrHostSpan(
     url: String,
     publicSuffixList: PublicSuffixList,
+    allowBlobUnwrapping: Boolean = true,
 ): Pair<Int, Int>? {
+    if (url.startsWith(BLOB_URL_PREFIX)) {
+        if (!allowBlobUnwrapping) return null
+
+        val innerUrl = url.substring(BLOB_URL_PREFIX.length)
+        return getRegistrableDomainOrHostSpan(
+            innerUrl,
+            publicSuffixList,
+            allowBlobUnwrapping = false,
+        )?.let { (start, end) ->
+            BLOB_URL_PREFIX.length + start to BLOB_URL_PREFIX.length + end
+        }
+    }
+
     val uri = url.toUri()
     if (!uri.isHttpOrHttps) return null
 

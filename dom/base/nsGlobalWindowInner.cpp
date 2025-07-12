@@ -44,6 +44,7 @@
 #include "mozIDOMWindow.h"
 #include "moz_external_vr.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ArrayIterator.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
@@ -151,6 +152,7 @@
 #include "mozilla/dom/PartitionedLocalStorage.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceMainThread.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/PopStateEvent.h"
 #include "mozilla/dom/PopStateEventBinding.h"
 #include "mozilla/dom/PopupBlocker.h"
@@ -183,6 +185,7 @@
 #include "mozilla/dom/VRDisplayEventBinding.h"
 #include "mozilla/dom/VREventObserver.h"
 #include "mozilla/dom/VisualViewport.h"
+#include "mozilla/dom/WebIdentityHandler.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/WindowContext.h"
@@ -1186,14 +1189,14 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   mScreen = nullptr;
 
   if (mDoc) {
-    // Remember the document's principal, URI, and CSP.
+    // Remember the document's principal, URI, and policyContainer.
     mDocumentPrincipal = mDoc->NodePrincipal();
     mDocumentCookiePrincipal = mDoc->EffectiveCookiePrincipal();
     mDocumentStoragePrincipal = mDoc->EffectiveStoragePrincipal();
     mDocumentPartitionedPrincipal = mDoc->PartitionedPrincipal();
     mDocumentURI = mDoc->GetDocumentURI();
     mDocBaseURI = mDoc->GetDocBaseURI();
-    mDocumentCsp = mDoc->GetCsp();
+    mDocumentPolicyContainer = mDoc->GetPolicyContainer();
 
     while (mDoc->EventHandlingSuppressed()) {
       mDoc->UnsuppressEventHandlingAndFireEvents(false);
@@ -1440,9 +1443,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentCookiePrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentStoragePrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentPartitionedPrincipal)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentCsp)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentPolicyContainer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowserChild)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDoc)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebIdentityHandler)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIdleRequestExecutor)
   for (IdleRequest* request : tmp->mIdleRequestCallbacks) {
@@ -1561,7 +1565,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentCookiePrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentStoragePrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentPartitionedPrincipal)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentCsp)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentPolicyContainer)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowserChild)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDoc)
 
@@ -2049,11 +2053,12 @@ nsresult nsGlobalWindowInner::EnsureClientSource() {
   }
 
   if (mClientSource) {
-    // Generally the CSP is stored within the Client and cached on the document.
-    // At the time of CSP parsing however, the Client has not been created yet,
-    // hence we store the CSP on the document and propagate/sync the CSP with
-    // Client here when we create the Client.
-    mClientSource->SetCsp(mDoc->GetCsp());
+    // Generally the policyContainer is stored within the Client and cached on
+    // the document. At the time of policyContainer parsing however, the Client
+    // has not been created yet, hence we store the policyContainer on the
+    // document and propagate/sync the policyContainer with Client here when we
+    // create the Client.
+    mClientSource->SetPolicyContainer(mDoc->GetPolicyContainer());
 
     DocGroup* docGroup = GetDocGroup();
     MOZ_DIAGNOSTIC_ASSERT(docGroup);
@@ -2535,16 +2540,17 @@ Maybe<ServiceWorkerDescriptor> nsPIDOMWindowInner::GetController() const {
   return nsGlobalWindowInner::Cast(this)->GetController();
 }
 
-void nsPIDOMWindowInner::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  return nsGlobalWindowInner::Cast(this)->SetCsp(aCsp);
+void nsPIDOMWindowInner::SetPolicyContainer(
+    nsIPolicyContainer* aPolicyContainer) {
+  return nsGlobalWindowInner::Cast(this)->SetPolicyContainer(aPolicyContainer);
 }
 
 void nsPIDOMWindowInner::SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp) {
   return nsGlobalWindowInner::Cast(this)->SetPreloadCsp(aPreloadCsp);
 }
 
-nsIContentSecurityPolicy* nsPIDOMWindowInner::GetCsp() {
-  return nsGlobalWindowInner::Cast(this)->GetCsp();
+nsIPolicyContainer* nsPIDOMWindowInner::GetPolicyContainer() {
+  return nsGlobalWindowInner::Cast(this)->GetPolicyContainer();
 }
 
 void nsPIDOMWindowInner::NoteCalledRegisterForServiceWorkerScope(
@@ -3355,21 +3361,6 @@ bool nsGlobalWindowInner::DeviceSensorsEnabled(JSContext*, JSObject*) {
   return Preferences::GetBool("device.sensors.enabled");
 }
 
-/* static */
-bool nsGlobalWindowInner::IsGleanNeeded(JSContext* aCx, JSObject* aObj) {
-  // Glean is needed in ChromeOnly contexts and also in privileged about pages.
-  nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
-  if (principal->IsSystemPrincipal()) {
-    return true;
-  }
-
-  uint32_t flags = 0;
-  if (NS_FAILED(principal->GetAboutModuleFlags(&flags))) {
-    return false;
-  }
-  return flags & nsIAboutModule::IS_SECURE_CHROME_UI;
-}
-
 Crypto* nsGlobalWindowInner::GetCrypto(ErrorResult& aError) {
   if (!mCrypto) {
     mCrypto = new Crypto(this);
@@ -3839,15 +3830,13 @@ void nsGlobalWindowInner::ScrollTo(double aXScroll, double aYScroll) {
 }
 
 void nsGlobalWindowInner::ScrollTo(const ScrollToOptions& aOptions) {
-  Maybe<int32_t> left;
-  Maybe<int32_t> top;
+  Maybe<double> left;
+  Maybe<double> top;
   if (aOptions.mLeft.WasPassed()) {
-    left.emplace(static_cast<int32_t>(
-        mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value())));
+    left.emplace(ToZeroIfNonfinite(aOptions.mLeft.Value()));
   }
   if (aOptions.mTop.WasPassed()) {
-    top.emplace(static_cast<int32_t>(
-        mozilla::ToZeroIfNonfinite(aOptions.mTop.Value())));
+    top.emplace(ToZeroIfNonfinite(aOptions.mTop.Value()));
   }
 
   // When scrolling to a non-zero offset, we need to determine whether that
@@ -3861,7 +3850,7 @@ void nsGlobalWindowInner::ScrollTo(const ScrollToOptions& aOptions) {
   if (!sf) {
     return;
   }
-  CSSIntPoint scrollPos = sf->GetRoundedScrollPositionCSSPixels();
+  CSSPoint scrollPos = sf->GetScrollPositionCSSPixels();
   if (left) {
     scrollPos.x = *left;
   }
@@ -3873,7 +3862,10 @@ void nsGlobalWindowInner::ScrollTo(const ScrollToOptions& aOptions) {
   // twips conversion factor, and subtracting 4, the 4 comes from
   // experimenting with this value, anything less makes the view
   // code not scroll correctly, I have no idea why. -- jst
-  const int32_t maxpx = nsPresContext::AppUnitsToIntCSSPixels(0x7fffffff) - 4;
+  //
+  // FIXME(emilio): This seems like if needed it should be done by the
+  // scrolling code itself...
+  const double maxpx = CSSPixel::FromAppUnits(0x7fffffff) - 4;
   if (scrollPos.x > maxpx) {
     scrollPos.x = maxpx;
   }
@@ -3897,14 +3889,12 @@ void nsGlobalWindowInner::ScrollBy(double aXScrollDif, double aYScrollDif) {
 }
 
 void nsGlobalWindowInner::ScrollBy(const ScrollToOptions& aOptions) {
-  CSSIntPoint scrollDelta;
+  CSSPoint scrollDelta;
   if (aOptions.mLeft.WasPassed()) {
-    scrollDelta.x = static_cast<int32_t>(
-        mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value()));
+    scrollDelta.x = ToZeroIfNonfinite(aOptions.mLeft.Value());
   }
   if (aOptions.mTop.WasPassed()) {
-    scrollDelta.y =
-        static_cast<int32_t>(mozilla::ToZeroIfNonfinite(aOptions.mTop.Value()));
+    scrollDelta.y = ToZeroIfNonfinite(aOptions.mTop.Value());
   }
 
   if (!scrollDelta.x && !scrollDelta.y) {
@@ -4998,6 +4988,11 @@ void nsGlobalWindowInner::FireOfflineStatusEventIfChanged() {
     return;
   }
 
+  if (ShouldResistFingerprinting(RFPTarget::NetworkConnection)) {
+    // We always report online=true when resistFingerprinting is enabled.
+    return;
+  }
+
   mWasOffline = !mWasOffline;
 
   nsAutoString name;
@@ -5074,10 +5069,12 @@ nsGlobalWindowInner::ShowSlowScriptDialog(JSContext* aCx,
       RefPtr<nsGlobalWindowOuter> outer = GetOuterWindowInternal();
       outer->EnterModalState();
       SpinEventLoopUntil("nsGlobalWindowInner::ShowSlowScriptDialog"_ns, [&]() {
-        return monitor->IsDebuggerStartupComplete();
+        return monitor->IsDebuggerStartupComplete() ||
+               AppShutdown::IsShutdownImpending();
       });
       outer->LeaveModalState();
-      return ContinueSlowScript;
+      return (AppShutdown::IsShutdownImpending()) ? KillSlowScript
+                                                  : ContinueSlowScript;
     }
 
     return ContinueSlowScriptAndKeepNotifying;
@@ -5881,17 +5878,31 @@ Maybe<ServiceWorkerDescriptor> nsGlobalWindowInner::GetController() const {
   return controller;
 }
 
-void nsGlobalWindowInner::SetCsp(nsIContentSecurityPolicy* aCsp) {
+void nsGlobalWindowInner::SetPolicyContainer(
+    nsIPolicyContainer* aPolicyContainer) {
   if (!mClientSource) {
     return;
   }
-  mClientSource->SetCsp(aCsp);
-  // Also cache the CSP within the document
-  mDoc->SetCsp(aCsp);
+  mClientSource->SetPolicyContainer(aPolicyContainer);
+  // Also cache the PolicyContainer within the document
+  mDoc->SetPolicyContainer(aPolicyContainer);
 
   if (mWindowGlobalChild) {
     mWindowGlobalChild->SendSetClientInfo(mClientSource->Info().ToIPC());
   }
+}
+
+nsIPolicyContainer* nsGlobalWindowInner::GetPolicyContainer() {
+  if (mDoc) {
+    return mDoc->GetPolicyContainer();
+  }
+
+  // If the window is partially torn down and has its document nulled out,
+  // we query the policy container we snapshot in FreeInnerObjects.
+  if (mDocumentPolicyContainer) {
+    return mDocumentPolicyContainer;
+  }
+  return nullptr;
 }
 
 void nsGlobalWindowInner::SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp) {
@@ -5905,19 +5916,6 @@ void nsGlobalWindowInner::SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp) {
   if (mWindowGlobalChild) {
     mWindowGlobalChild->SendSetClientInfo(mClientSource->Info().ToIPC());
   }
-}
-
-nsIContentSecurityPolicy* nsGlobalWindowInner::GetCsp() {
-  if (mDoc) {
-    return mDoc->GetCsp();
-  }
-
-  // If the window is partially torn down and has its document nulled out,
-  // we query the CSP we snapshot in FreeInnerObjects.
-  if (mDocumentCsp) {
-    return mDocumentCsp;
-  }
-  return nullptr;
 }
 
 already_AddRefed<ServiceWorkerContainer>
@@ -7790,11 +7788,37 @@ bool nsPIDOMWindowInner::UsingStorageAccess() {
   return wc->GetUsingStorageAccess();
 }
 
+WebIdentityHandler* nsPIDOMWindowInner::GetOrCreateWebIdentityHandler() {
+  if (mWebIdentityHandler) {
+    return mWebIdentityHandler;
+  }
+  mWebIdentityHandler = new WebIdentityHandler(this);
+  bool success = mWebIdentityHandler->MaybeCreateActor();
+  if (!success) {
+    mWebIdentityHandler = nullptr;
+  }
+  return mWebIdentityHandler;
+}
+
 CloseWatcherManager* nsPIDOMWindowInner::EnsureCloseWatcherManager() {
   if (!mCloseWatcherManager) {
     mCloseWatcherManager = new CloseWatcherManager();
   }
   return mCloseWatcherManager;
+}
+
+void nsPIDOMWindowInner::NotifyCloseWatcherAdded() {
+  MOZ_ASSERT(mCloseWatcherManager && !mCloseWatcherManager->IsEmpty());
+  if (WindowContext* top = TopWindowContext(*this)) {
+    Unused << top->SetHasActiveCloseWatcher(true);
+  }
+}
+
+void nsPIDOMWindowInner::NotifyCloseWatcherRemoved() {
+  MOZ_ASSERT(mCloseWatcherManager);
+  if (WindowContext* top = TopWindowContext(*this)) {
+    Unused << top->SetHasActiveCloseWatcher(!mCloseWatcherManager->IsEmpty());
+  }
 }
 
 nsPIDOMWindowInner::nsPIDOMWindowInner(nsPIDOMWindowOuter* aOuterWindow,

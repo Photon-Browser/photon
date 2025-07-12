@@ -365,9 +365,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController()
       const override;
 
-  void SetCsp(nsIContentSecurityPolicy* aCsp);
+  void SetPolicyContainer(nsIPolicyContainer* aPolicyContainer);
+  nsIPolicyContainer* GetPolicyContainer();
   void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp);
-  nsIContentSecurityPolicy* GetCsp();
 
   virtual already_AddRefed<mozilla::dom::ServiceWorkerContainer>
   GetServiceWorkerContainer() override;
@@ -428,9 +428,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   static bool IsPrivilegedChromeWindow(JSContext*, JSObject* aObj);
 
   static bool DeviceSensorsEnabled(JSContext*, JSObject*);
-
-  // WebIDL permission Func for whether Glean APIs are permitted.
-  static bool IsGleanNeeded(JSContext*, JSObject*);
 
   bool DoResolve(
       JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
@@ -1101,7 +1098,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   void FlushPendingNotifications(mozilla::FlushType aType);
 
-  void ScrollTo(const mozilla::CSSIntPoint& aScroll,
+  void ScrollTo(const mozilla::CSSPoint& aScroll,
                 const mozilla::dom::ScrollOptions& aOptions);
 
   already_AddRefed<nsIWidget> GetMainWidget();
@@ -1402,13 +1399,13 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   RefPtr<mozilla::dom::VisualViewport> mVisualViewport;
 
-  // The document's principals and CSP are only stored if
+  // The document's principals and policyContainer are only stored if
   // FreeInnerObjects has been called.
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   nsCOMPtr<nsIPrincipal> mDocumentCookiePrincipal;
   nsCOMPtr<nsIPrincipal> mDocumentStoragePrincipal;
   nsCOMPtr<nsIPrincipal> mDocumentPartitionedPrincipal;
-  nsCOMPtr<nsIContentSecurityPolicy> mDocumentCsp;
+  nsCOMPtr<nsIPolicyContainer> mDocumentPolicyContainer;
 
   // Used to cache the result of StorageAccess::StorageAllowedForWindow.
   // Don't use this field directly, use StorageAccess::StorageAllowedForWindow

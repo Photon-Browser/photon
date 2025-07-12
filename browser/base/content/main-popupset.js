@@ -49,7 +49,9 @@ document.addEventListener(
           );
           break;
         case "context_pinTab":
-          gBrowser.pinTab(TabContextMenu.contextTab);
+          gBrowser.pinTab(TabContextMenu.contextTab, {
+            telemetrySource: lazy.TabMetrics.METRIC_SOURCE.TAB_MENU,
+          });
           break;
         case "context_unpinTab":
           gBrowser.unpinTab(TabContextMenu.contextTab);
@@ -436,11 +438,13 @@ document.addEventListener(
 
         const tabGroupId = event.target.getAttribute("tab-group-id");
         const group = gBrowser.getTabGroupById(tabGroupId);
-        if (!group) {
-          return;
+        if (group) {
+          TabContextMenu.moveTabsToGroup(group);
         }
 
-        TabContextMenu.moveTabsToGroup(group);
+        if (SessionStore.getSavedTabGroup(tabGroupId)) {
+          TabContextMenu.addTabsToSavedGroup(tabGroupId);
+        }
       });
 
     document

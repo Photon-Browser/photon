@@ -547,13 +547,8 @@ bool DCLayerTree::UseNativeCompositor() const {
 }
 
 bool DCLayerTree::UseLayerCompositor() const {
-// Only allow the layer compositor in nightly builds, for now.
-#ifdef NIGHTLY_BUILD
   return UseNativeCompositor() &&
          StaticPrefs::gfx_webrender_layer_compositor_AtStartup();
-#else
-  return false;
-#endif
 }
 
 void DCLayerTree::DisableNativeCompositor() {
@@ -647,9 +642,14 @@ void DCLayerTree::CompositorEndFrame() {
     // Ensure surface is trimmed to updated tile valid rects
     surface->UpdateAllocatedRect();
     if (!same) {
-      // Add surfaces in z-order they were added to the scene.
       const auto visual = surface->GetRootVisual();
-      mRootVisual->AddVisual(visual, false, nullptr);
+      if (UseLayerCompositor()) {
+        // Layer compositor expects front to back.
+        mRootVisual->AddVisual(visual, true, nullptr);
+      } else {
+        // Native compositor expects back to front.
+        mRootVisual->AddVisual(visual, false, nullptr);
+      }
     }
   }
 
@@ -806,20 +806,23 @@ void DCLayerTree::CreateSurface(wr::NativeSurfaceId aId,
 
 void DCLayerTree::CreateSwapChainSurface(wr::NativeSurfaceId aId,
                                          wr::DeviceIntSize aSize,
-                                         bool aIsOpaque) {
+                                         bool aIsOpaque,
+                                         bool aNeedsSyncDcompCommit) {
+  MOZ_ASSERT_IF(mEnableAsyncScreenshot, !aNeedsSyncDcompCommit);
+
   auto it = mDCSurfaces.find(aId);
   MOZ_RELEASE_ASSERT(it == mDCSurfaces.end());
 
   UniquePtr<DCSurface> surface;
   if (!mEnableAsyncScreenshot &&
-      StaticPrefs::
-          gfx_webrender_layer_compositor_use_composition_surface_AtStartup()) {
+      (aNeedsSyncDcompCommit ||
+       StaticPrefs::
+           gfx_webrender_layer_compositor_force_composition_surface_AtStartup())) {
     surface = MakeUnique<DCLayerCompositionSurface>(aSize, aIsOpaque, this);
     if (!surface->Initialize()) {
       gfxCriticalNote << "Failed to initialize DCLayerSurface: "
                       << wr::AsUint64(aId);
       RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
-      return;
     }
   } else {
     surface = MakeUnique<DCSwapChain>(aSize, aIsOpaque, this);
@@ -827,7 +830,6 @@ void DCLayerTree::CreateSwapChainSurface(wr::NativeSurfaceId aId,
       gfxCriticalNote << "Failed to initialize DCSwapChain: "
                       << wr::AsUint64(aId);
       RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
-      return;
     }
   }
 
@@ -842,7 +844,9 @@ void DCLayerTree::ResizeSwapChainSurface(wr::NativeSurfaceId aId,
   MOZ_RELEASE_ASSERT(it != mDCSurfaces.end());
   auto surface = it->second.get();
 
-  surface->AsDCLayerSurface()->Resize(aSize);
+  if (!surface->AsDCLayerSurface()->Resize(aSize)) {
+    RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
+  }
 }
 
 void DCLayerTree::CreateExternalSurface(wr::NativeSurfaceId aId,
@@ -1380,8 +1384,10 @@ void DCSurface::SetClip(wr::DeviceIntRect aClipRect,
     mClip->SetBottomRightRadiusX(aClipRadius.bottom_right);
     mClip->SetBottomRightRadiusY(aClipRadius.bottom_right);
 
+    mRootVisual->SetBorderMode(DCOMPOSITION_BORDER_MODE_SOFT);
     mRootVisual->SetClip(mClip);
   } else {
+    mRootVisual->SetBorderMode(DCOMPOSITION_BORDER_MODE_INHERIT);
     mRootVisual->SetClip(nullptr);
   }
 }
@@ -1827,6 +1833,10 @@ void DCLayerCompositionSurface::Present(const wr::DeviceIntRect* aDirtyRects,
                                         size_t aNumDirtyRects) {
   MOZ_ASSERT(mEGLSurface);
   MOZ_ASSERT(mCompositionSurface);
+
+  if (!mCompositionSurface) {
+    return;
+  }
 
   mCompositionSurface->EndDraw();
 

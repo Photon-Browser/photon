@@ -140,7 +140,10 @@ export class InferredPersonalizationFeed {
       return interests;
     }
 
-    if (model.modelType === MODEL_TYPE.CLICK_IMP_PAIR) {
+    if (
+      model.modelType === MODEL_TYPE.CLICK_IMP_PAIR ||
+      model.modelType === MODEL_TYPE.CTR
+    ) {
       // This model type does not support differential privacy or thresholding
       const aggImpressionsPerInterval =
         await this.queryDatabaseForTimeIntervals(intervals, IMPRESSION_TABLE);
@@ -148,6 +151,17 @@ export class InferredPersonalizationFeed {
         dataForIntervals: aggImpressionsPerInterval,
         indexSchema: schema,
       });
+
+      if (model.modelType === MODEL_TYPE.CTR) {
+        // eslint-disable-next-line no-unused-vars
+        const { model_id, ...clickTotals } = interests.inferredInterests;
+        const inferredInterests = model.computeCTRInterestVectors({
+          clicks: clickTotals,
+          impressions: ivImpressions,
+          model_id: inferredModel.model_id,
+        });
+        return inferredInterests;
+      }
       const res = {
         c: interests.inferredInterests,
         i: ivImpressions,

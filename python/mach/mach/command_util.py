@@ -13,7 +13,7 @@ import types
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from mozfile import load_source
 
@@ -91,6 +91,7 @@ MACH_COMMANDS = {
     "data-review": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
+    "devtools-node-test": MachCommandReference("devtools/mach_commands.py"),
     "doc": MachCommandReference("tools/moztreedocs/mach_commands.py"),
     "doctor": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "environment": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
@@ -134,6 +135,7 @@ MACH_COMMANDS = {
     "ide": MachCommandReference("python/mozbuild/mozbuild/backend/mach_commands.py"),
     "import-pr": MachCommandReference("tools/vcs/mach_commands.py"),
     "install": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
+    "intermittents": MachCommandReference("testing/intermittents_mach_commands.py"),
     "install-moz-phab": MachCommandReference("tools/phabricator/mach_commands.py"),
     "jit-test": MachCommandReference("testing/mach_commands.py"),
     "jsapi-tests": MachCommandReference("testing/mach_commands.py"),
@@ -149,6 +151,7 @@ MACH_COMMANDS = {
     ),
     "macos-sign": MachCommandReference("tools/signing/macos/mach_commands.py"),
     "manifest": MachCommandReference("testing/mach_commands.py"),
+    "platform-diff": MachCommandReference("testing/mach_commands.py"),
     "marionette-test": MachCommandReference("testing/marionette/mach_commands.py"),
     "mochitest": MachCommandReference("testing/mochitest/mach_commands.py", ["test"]),
     "mots": MachCommandReference("tools/mach_commands.py"),
@@ -160,6 +163,7 @@ MACH_COMMANDS = {
     "newtab": MachCommandReference("browser/extensions/newtab/mach_commands.py"),
     "node": MachCommandReference("tools/mach_commands.py"),
     "npm": MachCommandReference("tools/mach_commands.py"),
+    "nss-uplift": MachCommandReference("security/mach_commands.py"),
     "package": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "package-multi-locale": MachCommandReference(
         "python/mozbuild/mozbuild/mach_commands.py"
@@ -187,6 +191,9 @@ MACH_COMMANDS = {
     "release-history": MachCommandReference("taskcluster/mach_commands.py"),
     "remote": MachCommandReference("remote/mach_commands.py"),
     "repackage": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
+    "repackage-single-locales": MachCommandReference(
+        "python/mozbuild/mozbuild/mach_commands.py"
+    ),
     "resource-usage": MachCommandReference(
         "python/mozbuild/mozbuild/build_commands.py",
     ),
@@ -202,9 +209,6 @@ MACH_COMMANDS = {
         "browser/components/storybook/mach_commands.py", ["run"]
     ),
     "talos-test": MachCommandReference("testing/talos/mach_commands.py"),
-    "taskcluster-build-image": MachCommandReference("taskcluster/mach_commands.py"),
-    "taskcluster-image-digest": MachCommandReference("taskcluster/mach_commands.py"),
-    "taskcluster-load-image": MachCommandReference("taskcluster/mach_commands.py"),
     "taskgraph": MachCommandReference("taskcluster/mach_commands.py"),
     "telemetry-tests-client": MachCommandReference(
         "toolkit/components/telemetry/tests/marionette/mach_commands.py"
@@ -475,7 +479,7 @@ def load_commands_from_file(path: Union[str, Path], module_name=None):
 
 
 def load_commands_from_spec(
-    spec: Dict[str, MachCommandReference], topsrcdir: str, missing_ok=False
+    spec: dict[str, MachCommandReference], topsrcdir: str, missing_ok=False
 ):
     """Load mach commands based on the given spec.
 

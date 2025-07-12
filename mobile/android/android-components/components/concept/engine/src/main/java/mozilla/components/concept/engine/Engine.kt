@@ -14,6 +14,7 @@ import mozilla.components.concept.engine.activity.ActivityDelegate
 import mozilla.components.concept.engine.activity.OrientationDelegate
 import mozilla.components.concept.engine.content.blocking.TrackerLog
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionExceptionStorage
+import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
 import mozilla.components.concept.engine.serviceworker.ServiceWorkerDelegate
 import mozilla.components.concept.engine.translate.TranslationsRuntime
 import mozilla.components.concept.engine.utils.EngineVersion
@@ -26,7 +27,7 @@ import org.json.JSONObject
 /**
  * Entry point for interacting with the engine implementation.
  */
-interface Engine : WebExtensionRuntime, TranslationsRuntime, DataCleanable {
+interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesRuntime, DataCleanable {
 
     /**
      * Describes a combination of browsing data types stored by the engine.
@@ -260,10 +261,11 @@ interface Engine : WebExtensionRuntime, TranslationsRuntime, DataCleanable {
      *
      * @param webNotification [Parcelable] representing a web notification.
      * If the `Parcelable` is not a web notification this method will be no-op.
+     * @param action The action name if an action button is clicked, otherwise null.
      *
      * @see <a href="https://developer.mozilla.org/en-US/docs/Web/API/Notification">MDN Notification docs</a>
      */
-    fun handleWebNotificationClick(webNotification: Parcelable): Unit =
+    fun handleWebNotificationClick(webNotification: Parcelable, action: String?): Unit =
         throw UnsupportedOperationException("Web notification clicks not yet supported in this engine")
 
     /**

@@ -5,12 +5,14 @@
 package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
+import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.TestAssetHelper.getEnhancedTrackingProtectionAsset
@@ -21,6 +23,7 @@ import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.addonsMenu
 import org.mozilla.fenix.ui.robots.homeScreen
+import org.mozilla.fenix.ui.robots.navigationToolbar
 
 /**
  *  Tests for verifying the functionality of installing or removing addons
@@ -58,7 +61,7 @@ class SettingsAddonsTest : TestSetup() {
     // Installs an add-on from the Add-ons menu and verifies the prompts
     @Test
     fun installAddonFromMainMenuTest() {
-        val addonName = "uBlock Origin"
+        val addonName = "AdGuard AdBlocker"
 
         homeScreen {}
             .openThreeDotMenu {}
@@ -128,7 +131,10 @@ class SettingsAddonsTest : TestSetup() {
         }.enterURLAndEnterToBrowser(trackingProtectionPage.url) {
             verifyUrl(trackingProtectionPage.url.toString())
         }.goToHomescreen(activityTestRule) {
-        }.openTopSiteTabWithTitle(activityTestRule, "Top Articles") {
+        }.openTopSiteTabWithTitle(
+            activityTestRule,
+            getStringResource(R.string.default_top_site_wikipedia),
+        ) {
         }.openThreeDotMenu {
         }.openSettings {
             verifySettingsView()
@@ -141,14 +147,16 @@ class SettingsAddonsTest : TestSetup() {
     fun verifyUBlockWorksInPrivateModeTest() {
         TestHelper.appContext.settings().shouldShowCookieBannersCFR = false
         val addonName = "uBlock Origin"
+        val webPage = "https://mozilla-mobile.github.io/testapp/"
 
         addonsMenu {
             installAddonInPrivateMode(addonName, activityTestRule.activityRule)
             closeAddonInstallCompletePrompt()
         }.goBack {
-        }.openContextMenuOnTopSitesWithTitle(activityTestRule, "Top Articles") {
-        }.openTopSiteInPrivateTab(activityTestRule) {
-            verifyPocketPageContent()
+        }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(webPage.toUri()) {
+            verifyPageContent("Lets test!")
         }.openThreeDotMenu {
             openAddonsSubList()
             verifyAddonAvailableInMainMenu(addonName)
@@ -160,13 +168,16 @@ class SettingsAddonsTest : TestSetup() {
     @Test
     fun verifyUBlockWorksInNormalModeTest() {
         val addonName = "uBlock Origin"
+        val webPage = "https://mozilla-mobile.github.io/testapp/"
 
         addonsMenu {
             installAddon(addonName, activityTestRule.activityRule)
             closeAddonInstallCompletePrompt()
         }.goBack {
-        }.openTopSiteTabWithTitle(activityTestRule, "Top Articles") {
-            verifyUrl("getpocket.com/explore")
+        }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(webPage.toUri()) {
+            verifyPageContent("Lets test!")
         }.openThreeDotMenu {
             openAddonsSubList()
             verifyTrackersBlockedByUblock()

@@ -44,6 +44,7 @@ import org.mozilla.fenix.benchmark.utils.measureRepeatedDefault
  **/
 @RunWith(AndroidJUnit4::class)
 @RequiresApi(Build.VERSION_CODES.N)
+@BaselineProfileMacrobenchmark
 class BaselineProfilesStartupBenchmark {
 
     @get:Rule
@@ -53,7 +54,7 @@ class BaselineProfilesStartupBenchmark {
     fun startupNone() = startupBenchmark(CompilationMode.None())
 
     @Test
-    fun startupPartialWithBaselineProfiles() =
+    fun startup() =
         startupBenchmark(CompilationMode.Partial(baselineProfileMode = BaselineProfileMode.Require))
 
     private fun startupBenchmark(compilationMode: CompilationMode) =

@@ -10,7 +10,6 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ServoBindings.h"
-
 #include "nsCSSAnonBoxes.h"
 #include "nsDOMString.h"
 #include "nsGkAtomConsts.h"
@@ -64,15 +63,6 @@ Maybe<PseudoStyleRequest> nsCSSPseudoElements::ParsePseudoElement(
       !IsEnabled(result.mType, aEnabledState)) {
     return Nothing();
   }
-
-  // The universal selector is pre-defined and should not be a valid name for
-  // a named view-transition pseudo element (i.e. we accept it only in CSS
-  // selectors).
-  if (PseudoStyle::IsNamedViewTransitionPseudoElement(result.mType) &&
-      result.mIdentifier == nsGkAtoms::_asterisk) {
-    return Nothing();
-  }
-
   return Some(result);
 }
 

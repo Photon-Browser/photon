@@ -272,9 +272,13 @@ export class UrlbarInput {
     this.view.panel.addEventListener("command", this, true);
 
     lazy.CustomizableUI.addListener(this);
+    lazy.UrlbarPrefs.addObserver(this);
+
     this.window.addEventListener("unload", this);
 
     this.window.gBrowser.tabContainer.addEventListener("TabSelect", this);
+    this.window.gBrowser.tabContainer.addEventListener("TabClose", this);
+
     this.window.gBrowser.addTabsProgressListener(this);
 
     this.window.addEventListener("customizationstarting", this);
@@ -302,6 +306,10 @@ export class UrlbarInput {
 
     this.#updateLayoutBreakout();
 
+    // The engine name is not known yet, but update placeholder
+    // anyway to reflect value of keyword.enabled.
+    this._setPlaceholder("");
+
     this._initCopyCutController();
     this._initPasteAndGo();
     this._initStripOnShare();
@@ -317,6 +325,23 @@ export class UrlbarInput {
     ChromeUtils.defineLazyGetter(this, "logger", () =>
       lazy.UrlbarUtils.getLogger({ prefix: "Input" })
     );
+  }
+
+  /**
+   * Called when a urlbar or urlbar related pref changes.
+   *
+   * @param {string} pref
+   *   The name of the pref. Relative to `browser.urlbar` for urlbar prefs.
+   */
+  onPrefChanged(pref) {
+    switch (pref) {
+      case "keyword.enabled":
+        this._updatePlaceholderFromDefaultEngine().catch(e =>
+          // This can happen if the search service failed.
+          console.warn("Falied to update urlbar placeholder:", e)
+        );
+        break;
+    }
   }
 
   /**
@@ -441,54 +466,13 @@ export class UrlbarInput {
     }
 
     let state = this.getBrowserState(this.window.gBrowser.selectedBrowser);
-    if (lazy.UrlbarPrefs.isPersistedSearchTermsEnabled()) {
-      // The first time the browser URI has been loaded to the input. If
-      // persist is not defined, it is likely due to the tab being created in
-      // the background or an existing tab moved to a new window and we have to
-      // do the work for the first time.
-      let firstView = (!isSameDocument && !dueToTabSwitch) || !state.persist;
-      if (firstView) {
-        lazy.UrlbarSearchTermsPersistence.setPersistenceState(
-          state,
-          this.window.gBrowser.selectedBrowser.originalURI
-        );
-      }
-      let shouldPersist =
-        !hideSearchTerms &&
-        lazy.UrlbarSearchTermsPersistence.shouldPersist(state, {
-          dueToTabSwitch,
-          isSameDocument,
-          uri,
-          userTypedValue: this.window.gBrowser.userTypedValue,
-          firstView,
-        });
-
-      // When persisting, userTypedValue should have a value consistent with the
-      // search terms to mimic a user typing the search terms.
-      // When turning off persist, check if the userTypedValue needs to be
-      // removed in order for the URL to return to the address bar. Single page
-      // application SERPs will load secondary search pages (e.g. Maps, Images)
-      // with the same document, which won't unset userTypedValue.
-      if (shouldPersist) {
-        this.window.gBrowser.userTypedValue = state.persist.searchTerms;
-      } else if (
-        isSameDocument &&
-        state.persist.shouldPersist &&
-        !shouldPersist
-      ) {
-        this.window.gBrowser.userTypedValue = null;
-      }
-      state.persist.shouldPersist = shouldPersist;
-      this.toggleAttribute("persistsearchterms", state.persist.shouldPersist);
-      if (state.persist.shouldPersist && !isSameDocument) {
-        Glean.urlbarPersistedsearchterms.viewCount.add(1);
-      }
-    } else if (state.persist) {
-      // Ensure the persist search state is unloaded for tabs that had state
-      // related to Persisted Search but disabled the feature.
-      this.removeAttribute("persistsearchterms");
-      delete state.persist;
-    }
+    this.#handlePersistedSearchTerms({
+      state,
+      uri,
+      dueToTabSwitch,
+      hideSearchTerms,
+      isSameDocument,
+    });
 
     let value = this.window.gBrowser.userTypedValue;
     let valid = false;
@@ -681,14 +665,23 @@ export class UrlbarInput {
    *   The URI of the location that is being loaded.
    */
   onLocationChange(browser, webProgress, request, location) {
+    if (!webProgress.isTopLevel) {
+      return;
+    }
+
     if (
-      webProgress.isTopLevel &&
       browser != this.window.gBrowser.selectedBrowser &&
       !this.window.isBlankPageURL(location.spec)
     ) {
       // If the page is loaded on background tab, make Unified Search Button
       // unavailable when back to the tab.
       this.getBrowserState(browser).isUnifiedSearchButtonAvailable = false;
+    }
+
+    // Using browser navigation buttons should potentially trigger a bounce
+    // telemetry event.
+    if (webProgress.loadType & Ci.nsIDocShell.LOAD_CMD_HISTORY) {
+      this.controller.engagementEvent.handleBounceEventTrigger(browser);
     }
   }
 
@@ -933,6 +926,10 @@ export class UrlbarInput {
     // the appropriate engine submission url.
     let browser = this.window.gBrowser.selectedBrowser;
     let lastLocationChange = browser.lastLocationChange;
+
+    // Increment rate denominator measuring how often Address Bar handleCommand fallback path is hit.
+    Glean.urlbar.heuristicResultMissing.addToDenominator(1);
+
     lazy.UrlbarUtils.getHeuristicResultFor(url, this.window)
       .then(newResult => {
         // Because this happens asynchronously, we must verify that the browser
@@ -951,6 +948,10 @@ export class UrlbarInput {
           // some parts of the profile are corrupt.
           // The urlbar should still allow to search or visit the typed string,
           // so that the user can look for help to resolve the problem.
+
+          // Increment rate numerator measuring how often Address Bar handleCommand fallback path is hit.
+          Glean.urlbar.heuristicResultMissing.addToNumerator(1);
+
           let flags =
             Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
             Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -1231,7 +1232,10 @@ export class UrlbarInput {
           element,
           searchString,
           searchMode,
-          selType: "tabswitch",
+          selType: this.controller.engagementEvent.typeFromElement(
+            result,
+            element
+          ),
         });
 
         let switched = this.window.switchToTabHavingURI(
@@ -1261,10 +1265,11 @@ export class UrlbarInput {
         // tabs that are not currently open. Find out why tabs are not being
         // properly unregistered when they are being closed.
         if (!switched) {
-          console.error(`Tried to switch to non existant tab: ${url}`);
+          console.error(`Tried to switch to non-existent tab: ${url}`);
           lazy.UrlbarProviderOpenTabs.unregisterOpenTab(
             url,
             result.payload.userContextId,
+            result.payload.tabGroup,
             this.isPrivate
           );
         }
@@ -1454,6 +1459,14 @@ export class UrlbarInput {
         lazy.UrlbarUtils.addToInputHistory(url, input).catch(console.error);
       }
     }
+
+    this.controller.engagementEvent.startTrackingBounceEvent(browser, event, {
+      result,
+      element,
+      searchString: this._lastSearchString,
+      selType: this.controller.engagementEvent.typeFromElement(result, element),
+      searchSource: this.getSearchSource(event),
+    });
 
     this.controller.engagementEvent.record(event, {
       result,
@@ -1879,6 +1892,14 @@ export class UrlbarInput {
     }
   }
 
+  /**
+   * Opens a search page if the value is non-empty, otherwise opens the
+   * search engine homepage (searchform).
+   *
+   * @param {string} value
+   * @param {object} options
+   * @param {nsISearchEngine} options.searchEngine
+   */
   openEngineHomePage(value, { searchEngine }) {
     if (!searchEngine) {
       console.warn("No searchEngine parameter");
@@ -1888,11 +1909,7 @@ export class UrlbarInput {
     let trimmedValue = value.trim();
     let url;
     if (trimmedValue) {
-      url = searchEngine.getSubmission(
-        trimmedValue,
-        null,
-        "search-mode-switcher"
-      ).uri.spec;
+      url = searchEngine.getSubmission(trimmedValue, null).uri.spec;
       // TODO: record SAP telemetry, see Bug 1961789.
     } else {
       url = searchEngine.searchForm;
@@ -3392,6 +3409,9 @@ export class UrlbarInput {
     // Notify about the start of navigation.
     this._notifyStartNavigation(resultDetails);
 
+    // Specifies that the URL load was initiated by the URL bar.
+    params.initiatedByURLBar = true;
+
     try {
       this.window.openTrustedLinkIn(url, openUILinkWhere, params);
     } catch (ex) {
@@ -3878,6 +3898,86 @@ export class UrlbarInput {
   }
 
   /**
+   * Handles persisted search terms logic for the current browser. This manages
+   * state and updates the UI accordingly.
+   *
+   * @param {object} options
+   * @param {object} options.state
+   *   The state object for the currently viewed browser.
+   * @param {boolean} options.hideSearchTerms
+   *   True if we must hide the search terms and instead show the page URL.
+   * @param {boolean} options.dueToTabSwitch
+   *   True if the browser was revealed again due to a tab switch.
+   * @param {boolean} options.isSameDocument
+   *   True if the page load was same document.
+   * @param {nsIURI} [options.uri]
+   *   The latest URI of the page.
+   * @returns {boolean}
+   *   Whether search terms should persist.
+   */
+  #handlePersistedSearchTerms({
+    state,
+    hideSearchTerms,
+    dueToTabSwitch,
+    isSameDocument,
+    uri,
+  }) {
+    if (!lazy.UrlbarPrefs.isPersistedSearchTermsEnabled()) {
+      if (state.persist) {
+        this.removeAttribute("persistsearchterms");
+        delete state.persist;
+      }
+      return false;
+    }
+
+    // The first time the browser URI has been loaded to the input. If
+    // persist is not defined, it is likely due to the tab being created in
+    // the background or an existing tab moved to a new window and we have to
+    // do the work for the first time.
+    let firstView = (!isSameDocument && !dueToTabSwitch) || !state.persist;
+
+    // Capture the shouldPersist property if it exists before
+    // setPersistenceState potentially modifies it.
+    let wasPersisting = state.persist?.shouldPersist ?? false;
+
+    if (firstView) {
+      lazy.UrlbarSearchTermsPersistence.setPersistenceState(
+        state,
+        this.window.gBrowser.selectedBrowser.originalURI
+      );
+    }
+    let shouldPersist =
+      !hideSearchTerms &&
+      lazy.UrlbarSearchTermsPersistence.shouldPersist(state, {
+        dueToTabSwitch,
+        isSameDocument,
+        uri: uri ?? this.window.gBrowser.currentURI,
+        userTypedValue: this.window.gBrowser.userTypedValue,
+        firstView,
+      });
+    // When persisting, userTypedValue should have a value consistent with the
+    // search terms to mimic a user typing the search terms.
+    // When turning off persist, check if the userTypedValue needs to be
+    // removed in order for the URL to return to the address bar. Single page
+    // application SERPs will load secondary search pages (e.g. Maps, Images)
+    // with the same document, which won't unset userTypedValue.
+    if (shouldPersist) {
+      this.window.gBrowser.userTypedValue = state.persist.searchTerms;
+    } else if (wasPersisting && !shouldPersist) {
+      this.window.gBrowser.userTypedValue = null;
+    }
+
+    state.persist.shouldPersist = shouldPersist;
+    this.toggleAttribute("persistsearchterms", state.persist.shouldPersist);
+
+    if (state.persist.shouldPersist && !isSameDocument) {
+      Glean.urlbarPersistedsearchterms.viewCount.add(1);
+    }
+
+    return shouldPersist;
+  }
+
+  /**
    * Initializes the urlbar placeholder to the pre-saved engine name. We do this
    * via a preference, to avoid needing to synchronously init the search service.
    *
@@ -4023,10 +4123,17 @@ export class UrlbarInput {
    * The name of the engine or an empty string to use the default placeholder.
    */
   _setPlaceholder(name) {
+    let l10nId;
+    if (lazy.UrlbarPrefs.get("keyword.enabled")) {
+      l10nId = name ? "urlbar-placeholder-with-name" : "urlbar-placeholder";
+    } else {
+      l10nId = "urlbar-placeholder-keyword-disabled";
+    }
+
     this.document.l10n.setAttributes(
       this.inputField,
-      name ? "urlbar-placeholder-with-name" : "urlbar-placeholder",
-      name ? { name } : undefined
+      l10nId,
+      l10nId == "urlbar-placeholder-with-name" ? { name } : undefined
     );
   }
 
@@ -4629,6 +4736,7 @@ export class UrlbarInput {
       userContextId: parseInt(
         this.window.gBrowser.selectedBrowser.getAttribute("usercontextid") || 0
       ),
+      tabGroup: this.window.gBrowser.selectedTab.group?.id ?? null,
       currentPage: this.window.gBrowser.currentURI.spec,
       formHistoryName: this.formHistoryName,
       prohibitRemoteResults:
@@ -4658,6 +4766,12 @@ export class UrlbarInput {
     this._untrimOnFocusAfterKeydown = false;
     this._gotTabSelect = true;
     this._afterTabSelectAndFocusChange();
+  }
+
+  _on_TabClose(event) {
+    this.controller.engagementEvent.handleBounceEventTrigger(
+      event.target.linkedBrowser
+    );
   }
 
   _on_beforeinput(event) {

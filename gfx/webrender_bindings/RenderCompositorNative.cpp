@@ -245,8 +245,7 @@ void RenderCompositorNative::CompositorBeginFrame() {
 void RenderCompositorNative::CompositorEndFrame() {
   if (profiler_thread_is_being_profiled_for_markers()) {
     auto bufferSize = GetBufferSize();
-    [[maybe_unused]] uint64_t windowPixelCount =
-        uint64_t(bufferSize.width) * bufferSize.height;
+    uint64_t windowPixelCount = uint64_t(bufferSize.width) * bufferSize.height;
     if (windowPixelCount) {
       int nativeLayerCount = 0;
       for (const auto& it : mSurfaces) {
@@ -269,7 +268,10 @@ void RenderCompositorNative::CompositorEndFrame() {
   }
   mDrawnPixelCount = 0;
 
+#if defined(XP_DARWIN)
+  // MacOS fails rendering without the flush here.
   DoFlush();
+#endif
 
   mNativeLayerRoot->SetLayers(mAddedLayers);
   mNativeLayerRoot->CommitToScreen();
@@ -436,6 +438,14 @@ void RenderCompositorNative::AddSurface(
     gfx::IntRect clipRect(aClipRect.min.x, aClipRect.min.y, aClipRect.width(),
                           aClipRect.height());
     layer->SetClipRect(Some(clipRect));
+    gfx::Rect roundedClipRect(aRoundedClipRect.min.x, aRoundedClipRect.min.y,
+                              aRoundedClipRect.width(),
+                              aRoundedClipRect.height());
+    gfx::RectCornerRadii clipRadius(aClipRadius.top_left, aClipRadius.top_right,
+                                    aClipRadius.bottom_right,
+                                    aClipRadius.bottom_left);
+    gfx::RoundedRect roundedClip(roundedClipRect, clipRadius);
+    layer->SetRoundedClipRect(Some(roundedClip));
     layer->SetTransform(transform);
     layer->SetSamplingFilter(ToSamplingFilter(aImageRendering));
     mAddedLayers.AppendElement(layer);

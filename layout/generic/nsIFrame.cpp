@@ -9,8 +9,12 @@
 #include "nsIFrame.h"
 
 #include <stdarg.h>
+
 #include <algorithm>
 
+#include "LayoutLogging.h"
+#include "RubyUtils.h"
+#include "TextOverflow.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
 #include "mozilla/Attributes.h"
@@ -20,125 +24,117 @@
 #include "mozilla/DisplayPortUtils.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/FocusModel.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/CSSAnimation.h"
-#include "mozilla/dom/CSSTransition.h"
-#include "mozilla/dom/ContentVisibilityAutoStateChangeEvent.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/AncestorIterator.h"
-#include "mozilla/dom/ElementInlines.h"
-#include "mozilla/dom/HTMLDetailsElement.h"
-#include "mozilla/dom/ImageTracker.h"
-#include "mozilla/dom/Selection.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/IntegerRange.h"
-#include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/RestyleManager.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/SVGIntegrationUtils.h"
+#include "mozilla/SVGMaskFrame.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGTextFrame.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/SelectionMovementUtils.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticAnalysisFunctions.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "mozilla/StaticPrefs_ui.h"
-#include "mozilla/SVGMaskFrame.h"
-#include "mozilla/SVGObserverUtils.h"
-#include "mozilla/SVGTextFrame.h"
-#include "mozilla/SVGIntegrationUtils.h"
-#include "mozilla/SVGUtils.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/ToString.h"
 #include "mozilla/Try.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/WritingModes.h"
-
+#include "mozilla/dom/AncestorIterator.h"
+#include "mozilla/dom/CSSAnimation.h"
+#include "mozilla/dom/CSSTransition.h"
+#include "mozilla/dom/ContentVisibilityAutoStateChangeEvent.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/HTMLDetailsElement.h"
+#include "mozilla/dom/Selection.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/PathHelpers.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "nsAnimationManager.h"
+#include "nsAtom.h"
+#include "nsBidiPresUtils.h"
 #include "nsCOMPtr.h"
-#include "nsFieldSetFrame.h"
-#include "nsFlexContainerFrame.h"
-#include "nsFocusManager.h"
-#include "nsFrameList.h"
-#include "nsFrameState.h"
-#include "nsTextControlFrame.h"
-#include "nsPlaceholderFrame.h"
-#include "nsIBaseWindow.h"
-#include "nsIContent.h"
-#include "nsIContentInlines.h"
-#include "nsContentUtils.h"
+#include "nsCSSAnonBoxes.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSProps.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
-#include "nsAtom.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsTableWrapperFrame.h"
-#include "nsView.h"
-#include "nsViewManager.h"
-#include "nsPresContext.h"
-#include "nsPresContextInlines.h"
-#include "nsStyleConsts.h"
-#include "mozilla/Logging.h"
-#include "nsLayoutUtils.h"
-#include "LayoutLogging.h"
-#include "mozilla/RestyleManager.h"
-#include "nsImageFrame.h"
-#include "nsInlineFrame.h"
+#include "nsCanvasFrame.h"
+#include "nsContentUtils.h"
+#include "nsFieldSetFrame.h"
+#include "nsFlexContainerFrame.h"
+#include "nsFocusManager.h"
+#include "nsFrameList.h"
 #include "nsFrameSelection.h"
+#include "nsFrameState.h"
+#include "nsFrameTraversal.h"
 #include "nsGkAtoms.h"
 #include "nsGridContainerFrame.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsCanvasFrame.h"
-
-#include "nsFieldSetFrame.h"
-#include "nsFrameTraversal.h"
-#include "nsRange.h"
-#include "nsNameSpaceManager.h"
+#include "nsIBaseWindow.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
 #include "nsIPercentBSizeObserver.h"
+#include "nsImageFrame.h"
+#include "nsInlineFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsPlaceholderFrame.h"
+#include "nsPresContext.h"
+#include "nsPresContextInlines.h"
+#include "nsRange.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsStyleConsts.h"
 #include "nsStyleStructInlines.h"
-
-#include "nsBidiPresUtils.h"
-#include "RubyUtils.h"
-#include "TextOverflow.h"
-#include "nsAnimationManager.h"
+#include "nsTableWrapperFrame.h"
+#include "nsTextControlFrame.h"
+#include "nsView.h"
+#include "nsViewManager.h"
 
 // For triple-click pref
-#include "imgIRequest.h"
-#include "nsError.h"
-#include "nsContainerFrame.h"
-#include "nsBlockFrame.h"
-#include "nsDisplayList.h"
-#include "nsChangeHint.h"
-#include "nsSubDocumentFrame.h"
 #include "RetainedDisplayListBuilder.h"
-
-#include "gfxContext.h"
-#include "nsAbsoluteContainingBlock.h"
 #include "ScrollSnap.h"
 #include "StickyScrollContainer.h"
+#include "gfxContext.h"
+#include "imgIRequest.h"
+#include "nsAbsoluteContainingBlock.h"
+#include "nsBlockFrame.h"
+#include "nsChangeHint.h"
+#include "nsContainerFrame.h"
+#include "nsDisplayList.h"
+#include "nsError.h"
 #include "nsFontInflationData.h"
-#include "nsRegion.h"
 #include "nsIFrameInlines.h"
+#include "nsRegion.h"
 #include "nsStyleChangeList.h"
+#include "nsSubDocumentFrame.h"
 #include "nsWindowSizes.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
 #endif
 
+#include "ActiveLayerTracker.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/CSSClipPathInstance.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/EffectSet.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/css/ImageLoader.h"
@@ -148,10 +144,8 @@
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/layers/WebRenderUserData.h"
 #include "mozilla/layout/ScrollAnchorContainer.h"
-#include "nsPrintfCString.h"
-#include "ActiveLayerTracker.h"
-
 #include "nsITheme.h"
+#include "nsPrintfCString.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -2485,17 +2479,17 @@ bool nsIFrame::CanBeDynamicReflowRoot() const {
   // FIXME: For display:block, we should probably optimize inline-size: auto.
   // FIXME: Other flex and grid cases?
   const auto& pos = *StylePosition();
-  const auto positionProperty = StyleDisplay()->mPosition;
-  const auto width = pos.GetWidth(positionProperty);
-  const auto height = pos.GetHeight(positionProperty);
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
+  const auto width = pos.GetWidth(anchorResolutionParams.mPosition);
+  const auto height = pos.GetHeight(anchorResolutionParams.mPosition);
   if (!width->IsLengthPercentage() || width->HasPercent() ||
       !height->IsLengthPercentage() || height->HasPercent() ||
-      IsIntrinsicKeyword(*pos.GetMinWidth(positionProperty)) ||
-      IsIntrinsicKeyword(*pos.GetMaxWidth(positionProperty)) ||
-      IsIntrinsicKeyword(*pos.GetMinHeight(positionProperty)) ||
-      IsIntrinsicKeyword(*pos.GetMaxHeight(positionProperty)) ||
-      ((pos.GetMinWidth(positionProperty)->IsAuto() ||
-        pos.GetMinHeight(positionProperty)->IsAuto()) &&
+      IsIntrinsicKeyword(*pos.GetMinWidth(anchorResolutionParams.mPosition)) ||
+      IsIntrinsicKeyword(*pos.GetMaxWidth(anchorResolutionParams.mPosition)) ||
+      IsIntrinsicKeyword(*pos.GetMinHeight(anchorResolutionParams.mPosition)) ||
+      IsIntrinsicKeyword(*pos.GetMaxHeight(anchorResolutionParams.mPosition)) ||
+      ((pos.GetMinWidth(anchorResolutionParams.mPosition)->IsAuto() ||
+        pos.GetMinHeight(anchorResolutionParams.mPosition)->IsAuto()) &&
        IsFlexOrGridItem())) {
     return false;
   }
@@ -2773,11 +2767,11 @@ Maybe<nsRect> nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp,
 // style check.
 bool nsIFrame::ForcesStackingContextForViewTransition() const {
   auto* style = Style();
-  return (style->StyleUIReset()->HasViewTransitionName() ||
+  return !style->IsRootElementStyle() &&
+         (style->StyleUIReset()->HasViewTransitionName() ||
           HasAnyStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION) ||
           style->StyleDisplay()->mWillChange.bits &
-              mozilla::StyleWillChangeBits::VIEW_TRANSITION_NAME) &&
-         !style->IsRootElementStyle();
+              mozilla::StyleWillChangeBits::VIEW_TRANSITION_NAME);
 }
 
 /**
@@ -2885,17 +2879,16 @@ static bool BuilderHasScrolledClip(nsDisplayListBuilder* aBuilder) {
          currentASR;
 }
 
-class AutoSaveRestoreContainsBlendMode {
+class AutoTrackStackingContextBits {
   nsDisplayListBuilder& mBuilder;
-  bool mSavedContainsBlendMode;
+  StackingContextBits mSavedBits;
 
  public:
-  explicit AutoSaveRestoreContainsBlendMode(nsDisplayListBuilder& aBuilder)
-      : mBuilder(aBuilder),
-        mSavedContainsBlendMode(aBuilder.ContainsBlendMode()) {}
+  explicit AutoTrackStackingContextBits(nsDisplayListBuilder& aBuilder)
+      : mBuilder(aBuilder), mSavedBits(aBuilder.GetStackingContextBits()) {}
 
-  ~AutoSaveRestoreContainsBlendMode() {
-    mBuilder.SetContainsBlendMode(mSavedContainsBlendMode);
+  ~AutoTrackStackingContextBits() {
+    mBuilder.SetStackingContextBits(mSavedBits);
   }
 };
 
@@ -3204,6 +3197,16 @@ void nsIFrame::BuildDisplayListForStackingContext(
     }
   }
 
+  // Elements with a view-transition name also form a backdrop-root.
+  // See https://www.w3.org/TR/css-view-transitions-1/#named-and-transitioning
+  // and https://github.com/w3c/csswg-drafts/issues/11772
+  bool hasViewTransitionName = style.StyleUIReset()->HasViewTransitionName() &&
+                               !style.IsRootElementStyle();
+
+  bool addBackdropRoot =
+      (disp->mWillChange.bits & StyleWillChangeBits::BACKDROP_ROOT) ||
+      hasViewTransitionName;
+
   if (aBuilder->IsForPainting() && disp->mWillChange.bits) {
     aBuilder->AddToWillChangeBudget(this, GetSize());
   }
@@ -3253,20 +3256,22 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
   const bool useBlendMode = effects->mMixBlendMode != StyleBlend::Normal;
   if (useBlendMode) {
-    aBuilder->SetContainsBlendMode(true);
+    aBuilder->AddStackingContextBits(StackingContextBits::ContainsMixBlendMode);
   }
-
-  // reset blend mode so we can keep track if this stacking context needs have
-  // a nsDisplayBlendContainer. Set the blend mode back when the routine exits
-  // so we keep track if the parent stacking context needs a container too.
-  AutoSaveRestoreContainsBlendMode autoRestoreBlendMode(*aBuilder);
-  aBuilder->SetContainsBlendMode(false);
 
   // NOTE: When changing this condition make sure to tweak ScrollContainerFrame
   // as well.
-  bool usingBackdropFilter = effects->HasBackdropFilters() &&
-                             IsVisibleForPainting() &&
-                             !style.IsRootElementStyle();
+  const bool usingBackdropFilter = effects->HasBackdropFilters() &&
+                                   IsVisibleForPainting() &&
+                                   !style.IsRootElementStyle();
+
+  if (usingBackdropFilter) {
+    aBuilder->AddStackingContextBits(
+        StackingContextBits::ContainsBackdropFilter);
+  }
+
+  AutoTrackStackingContextBits autoRestoreStackingContextBits(*aBuilder);
+  aBuilder->ClearStackingContextBits();
 
   nsRect visibleRectOutsideTransform = visibleRect;
   nsDisplayTransform::PrerenderInfo prerenderInfo;
@@ -3612,6 +3617,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
     resultList.AppendToTop(nsDisplayBlendContainer::CreateForMixBlendMode(
         aBuilder, this, &resultList, containerItemASR));
     createdContainer = true;
+    addBackdropRoot = false;
   }
 
   if (usingBackdropFilter) {
@@ -3620,6 +3626,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
     resultList.AppendNewToTop<nsDisplayBackdropFilters>(
         aBuilder, this, &resultList, backdropRect, this);
     createdContainer = true;
+    addBackdropRoot = false;
   }
 
   // If there are any SVG effects, wrap the list up in an SVG effects item
@@ -3661,6 +3668,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
       resultList.AppendNewToTop<nsDisplayMasksAndClipPaths>(
           aBuilder, this, &resultList, maskASR, usingBackdropFilter);
       createdContainer = true;
+      addBackdropRoot = false;
     }
 
     // TODO(miko): We could probably create a wraplist here and avoid creating
@@ -3680,8 +3688,10 @@ void nsIFrame::BuildDisplayListForStackingContext(
         nsDisplayOpacity::NeedsActiveLayer(aBuilder, this);
     resultList.AppendNewToTop<nsDisplayOpacity>(
         aBuilder, this, &resultList, containerItemASR, opacityItemForEventsOnly,
-        needsActiveOpacityLayer, usingBackdropFilter);
+        needsActiveOpacityLayer, usingBackdropFilter,
+        addBackdropRoot && aBuilder->ContainsBackdropFilter());
     createdContainer = true;
+    addBackdropRoot = false;
   }
 
   // If we're going to apply a transformation and don't have preserve-3d set,
@@ -3733,6 +3743,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
       if (separator) {
         createdContainer = true;
+        addBackdropRoot = false;
       }
 
       resultList.AppendToTop(&participants);
@@ -3890,11 +3901,19 @@ void nsIFrame::BuildDisplayListForStackingContext(
     resultList.AppendNewToTop<nsDisplayViewTransitionCapture>(
         aBuilder, this, &resultList, nullptr, /* aIsRoot = */ false);
     createdContainer = true;
+    addBackdropRoot = false;
     // We don't want the capture to be clipped, so we do this _after_ building
     // the wrapping item.
     if (clipCapturedBy == ContainerItemType::ViewTransitionCapture) {
       clipState.Restore();
     }
+  }
+
+  if (addBackdropRoot) {
+    resultList.AppendToTop(nsDisplayBlendContainer::CreateForBackdropRoot(
+        aBuilder, this, &resultList, containerItemASR,
+        /* aNeedsBackdropRoot = */ aBuilder->ContainsBackdropFilter()));
+    createdContainer = true;
   }
 
   if (aBuilder->IsReusingStackingContextItems()) {
@@ -5537,7 +5556,7 @@ struct MOZ_STACK_CLASS FrameContentRange {
 };
 
 static bool IsRelevantBlockFrame(const nsIFrame* aFrame) {
-  if (!aFrame->IsBlockOutside()) {
+  if (!aFrame->IsBlockOutside() && !aFrame->IsTableCaption()) {
     return false;
   }
   if (aFrame->GetContent() &&
@@ -5872,19 +5891,18 @@ static FrameTarget GetSelectionClosestFrameForBlock(nsIFrame* aFrame,
 // edge based on the point position past the frame rect. If past the middle,
 // caret should be at end, otherwise at start. This behavior matches Blink.
 //
-// TODO(emilio): Can we use this code path for other replaced elements other
-// than images? Or even all other frames? We only get there when we didn't find
-// selectable children... At least one XUL test fails if we make this apply to
-// XUL labels. Also, editable images need _not_ to use the frame edge, see
-// below.
+// TODO(emilio): Can we use this code path for all other frames? We only get
+// there when we didn't find selectable children... Editable images need _not_
+// to use the frame edge tho, see below.
 static bool UseFrameEdge(nsIFrame* aFrame) {
   if (aFrame->IsFlexOrGridContainer() || aFrame->IsTableFrame()) {
     return true;
   }
-  const nsImageFrame* image = do_QueryFrame(aFrame);
-  if (image && !aFrame->GetContent()->IsEditable()) {
-    // Editable images are a special-case because editing relies on clicking on
-    // an editable image selecting it, for it to show resizers.
+  // FIXME(bug 713387): The text frame check here shouldn't be needed.
+  if (aFrame->IsReplaced() && !aFrame->IsTextFrame() &&
+      !aFrame->GetContent()->IsEditable()) {
+    // Editable replaced elements are a special-case because editing relies
+    // on clicking on an editable image selecting it, for it to show resizers.
     return true;
   }
   return false;
@@ -6395,18 +6413,21 @@ static nsIFrame::IntrinsicSizeOffsetData IntrinsicSizeOffsets(
   WritingMode wm = aFrame->GetWritingMode();
   bool verticalAxis = aForISize == wm.IsVertical();
   const auto* styleMargin = aFrame->StyleMargin();
-  const auto positionProperty = aFrame->StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(aFrame);
   if (verticalAxis) {
     result.margin += ResolveMargin(
-        styleMargin->GetMargin(eSideTop, positionProperty), aPercentageBasis);
-    result.margin +=
-        ResolveMargin(styleMargin->GetMargin(eSideBottom, positionProperty),
-                      aPercentageBasis);
+        styleMargin->GetMargin(eSideTop, anchorResolutionParams.mPosition),
+        aPercentageBasis);
+    result.margin += ResolveMargin(
+        styleMargin->GetMargin(eSideBottom, anchorResolutionParams.mPosition),
+        aPercentageBasis);
   } else {
     result.margin += ResolveMargin(
-        styleMargin->GetMargin(eSideLeft, positionProperty), aPercentageBasis);
+        styleMargin->GetMargin(eSideLeft, anchorResolutionParams.mPosition),
+        aPercentageBasis);
     result.margin += ResolveMargin(
-        styleMargin->GetMargin(eSideRight, positionProperty), aPercentageBasis);
+        styleMargin->GetMargin(eSideRight, anchorResolutionParams.mPosition),
+        aPercentageBasis);
   }
 
   const auto& padding = aFrame->StylePadding()->mPadding;
@@ -6525,7 +6546,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
                       aBorderPadding, aSizeOverrides, aFlags);
   const nsStylePosition* stylePos = StylePosition();
   const nsStyleDisplay* disp = StyleDisplay();
-  const auto positionProperty = disp->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
   auto aspectRatioUsage = AspectRatioUsage::None;
 
   const auto boxSizingAdjust = stylePos->mBoxSizing == StyleBoxSizing::Border
@@ -6541,7 +6562,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   const auto styleISize =
       aSizeOverrides.mStyleISize
           ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleISize)
-          : stylePos->ISize(aWM, positionProperty);
+          : stylePos->ISize(aWM, anchorResolutionParams.mPosition);
   // For bsize, we consider overrides *and then* we resolve 'stretch' to a
   // nscoord value, for convenience (so that we can assume that either
   // isAutoBSize is true, or styleBSize is of type LengthPercentage()).
@@ -6549,7 +6570,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     auto styleBSizeConsideringOverrides =
         (aSizeOverrides.mStyleBSize)
             ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleBSize)
-            : stylePos->BSize(aWM, positionProperty);
+            : stylePos->BSize(aWM, anchorResolutionParams.mPosition);
     if (styleBSizeConsideringOverrides->BehavesLikeStretchOnBlockAxis() &&
         aCBSize.BSize(aWM) != NS_UNCONSTRAINEDSIZE) {
       // We've got a 'stretch' BSize; resolve it to a length:
@@ -6624,7 +6645,8 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     bool isStretchAligned = false;
     bool mayUseAspectRatio = aspectRatio && !isAutoBSize;
     if (!aFlags.contains(ComputeSizeFlag::ShrinkWrap) &&
-        !StyleMargin()->HasInlineAxisAuto(aWM, positionProperty) &&
+        !StyleMargin()->HasInlineAxisAuto(aWM,
+                                          anchorResolutionParams.mPosition) &&
         !alignCB->IsMasonry(isOrthogonal ? LogicalAxis::Block
                                          : LogicalAxis::Inline)) {
       auto inlineAxisAlignment =
@@ -6695,8 +6717,10 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   // generating the flex items. So here we make the code more general for both
   // definite cross size and indefinite cross size.
   const bool isDefiniteISize = styleISize->IsLengthPercentage();
-  const auto minBSizeCoord = stylePos->MinBSize(aWM, positionProperty);
-  const auto maxBSizeCoord = stylePos->MaxBSize(aWM, positionProperty);
+  const auto minBSizeCoord =
+      stylePos->MinBSize(aWM, anchorResolutionParams.mPosition);
+  const auto maxBSizeCoord =
+      stylePos->MaxBSize(aWM, anchorResolutionParams.mPosition);
   const bool isAutoMinBSize =
       nsLayoutUtils::IsAutoBSize(*minBSizeCoord, aCBSize.BSize(aWM));
   const bool isAutoMaxBSize =
@@ -6741,7 +6765,8 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   // sizing properties in that axis.
   const bool shouldIgnoreMinMaxISize =
       isFlexItemInlineAxisMainAxis || isSubgriddedInInlineAxis;
-  const auto maxISizeCoord = stylePos->MaxISize(aWM, positionProperty);
+  const auto maxISizeCoord =
+      stylePos->MaxISize(aWM, anchorResolutionParams.mPosition);
   nscoord maxISize = NS_UNCONSTRAINEDSIZE;
   if (!maxISizeCoord->IsNone() && !shouldIgnoreMinMaxISize) {
     maxISize =
@@ -6759,7 +6784,8 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
       aRenderingContext, Some(aCBSize.ConvertTo(GetWritingMode(), aWM)),
       Some(LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, bSizeAsPercentageBasis)
                .ConvertTo(GetWritingMode(), aWM)));
-  const auto minISizeCoord = stylePos->MinISize(aWM, positionProperty);
+  const auto minISizeCoord =
+      stylePos->MinISize(aWM, anchorResolutionParams.mPosition);
   nscoord minISize;
   if (!minISizeCoord->IsAuto() && !shouldIgnoreMinMaxISize) {
     minISize =
@@ -6833,7 +6859,8 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
       bool isStretchAligned = false;
       bool mayUseAspectRatio =
           aspectRatio && result.ISize(aWM) != NS_UNCONSTRAINEDSIZE;
-      if (!StyleMargin()->HasBlockAxisAuto(aWM, positionProperty)) {
+      if (!StyleMargin()->HasBlockAxisAuto(aWM,
+                                           anchorResolutionParams.mPosition)) {
         auto blockAxisAlignment =
             isOrthogonal ? StylePosition()->UsedJustifySelf(alignCB->Style())._0
                          : StylePosition()->UsedAlignSelf(alignCB->Style())._0;
@@ -6992,12 +7019,12 @@ LogicalSize nsIFrame::ComputeAutoSize(
   // Use basic shrink-wrapping as a default implementation.
   LogicalSize result(aWM, 0xdeadbeef, NS_UNCONSTRAINEDSIZE);
 
-  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
   // don't bother setting it if the result won't be used
   const auto styleISize =
       aSizeOverrides.mStyleISize
           ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleISize)
-          : StylePosition()->ISize(aWM, positionProperty);
+          : StylePosition()->ISize(aWM, anchorResolutionParams.mPosition);
   if (styleISize->IsAuto()) {
     nscoord availBased = nsLayoutUtils::ComputeStretchContentBoxISize(
         aAvailableISize, aMargin.ISize(aWM), aBorderPadding.ISize(aWM));
@@ -7005,14 +7032,14 @@ LogicalSize nsIFrame::ComputeAutoSize(
     const auto styleBSize =
         aSizeOverrides.mStyleBSize
             ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleBSize)
-            : stylePos->BSize(aWM, positionProperty);
+            : stylePos->BSize(aWM, anchorResolutionParams.mPosition);
     const LogicalSize contentEdgeToBoxSizing =
         stylePos->mBoxSizing == StyleBoxSizing::Border ? aBorderPadding
                                                        : LogicalSize(aWM);
     const nscoord bSize = ComputeBSizeValueAsPercentageBasis(
-        *styleBSize, *stylePos->MinBSize(aWM, positionProperty),
-        *stylePos->MaxBSize(aWM, positionProperty), aCBSize.BSize(aWM),
-        contentEdgeToBoxSizing.BSize(aWM));
+        *styleBSize, *stylePos->MinBSize(aWM, anchorResolutionParams.mPosition),
+        *stylePos->MaxBSize(aWM, anchorResolutionParams.mPosition),
+        aCBSize.BSize(aWM), contentEdgeToBoxSizing.BSize(aWM));
     const IntrinsicSizeInput input(
         aRenderingContext, Some(aCBSize.ConvertTo(GetWritingMode(), aWM)),
         Some(LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, bSize)
@@ -7046,17 +7073,17 @@ LogicalSize nsIFrame::ComputeAbsolutePosAutoSize(
                      NS_UNCONSTRAINEDSIZE);
 
   const auto* stylePos = StylePosition();
-  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto anchorResolutionParams =
+      AnchorPosOffsetResolutionParams::UseCBFrameSize(
+          AnchorPosResolutionParams::From(this));
   const auto& styleISize =
       aSizeOverrides.mStyleISize
           ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleISize)
-          : stylePos->ISize(aWM, positionProperty);
+          : stylePos->ISize(aWM, anchorResolutionParams.mBaseParams.mPosition);
   const auto& styleBSize =
       aSizeOverrides.mStyleBSize
           ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleBSize)
-          : stylePos->BSize(aWM, positionProperty);
-  const auto anchorResolutionParams =
-      AnchorPosResolutionParams::UseCBFrameSize(this, positionProperty);
+          : stylePos->BSize(aWM, anchorResolutionParams.mBaseParams.mPosition);
   const auto iStartOffsetIsAuto =
       stylePos
           ->GetAnchorResolvedInset(LogicalSide::IStart, aWM,
@@ -7157,9 +7184,11 @@ LogicalSize nsIFrame::ComputeAbsolutePosAutoSize(
               ? StyleSize::LengthPercentage(
                     StyleLengthPercentage::FromAppUnits(result.BSize(aWM)))
               : *styleBSize,
-          *stylePos->MinBSize(aWM, positionProperty),
-          *stylePos->MaxBSize(aWM, positionProperty), aCBSize.BSize(aWM),
-          boxSizingAdjust.BSize(aWM));
+          *stylePos->MinBSize(aWM,
+                              anchorResolutionParams.mBaseParams.mPosition),
+          *stylePos->MaxBSize(aWM,
+                              anchorResolutionParams.mBaseParams.mPosition),
+          aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM));
 
       const IntrinsicSizeInput input(
           aRenderingContext, Some(aCBSize.ConvertTo(GetWritingMode(), aWM)),
@@ -7298,11 +7327,11 @@ nsIFrame::ISizeComputationResult nsIFrame::ComputeISizeValue(
   }();
 
   const auto* stylePos = StylePosition();
-  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
   const nscoord bSize = ComputeBSizeValueAsPercentageBasis(
-      aStyleBSize, *stylePos->MinBSize(aWM, positionProperty),
-      *stylePos->MaxBSize(aWM, positionProperty), aCBSize.BSize(aWM),
-      aContentEdgeToBoxSizing.BSize(aWM));
+      aStyleBSize, *stylePos->MinBSize(aWM, anchorResolutionParams.mPosition),
+      *stylePos->MaxBSize(aWM, anchorResolutionParams.mPosition),
+      aCBSize.BSize(aWM), aContentEdgeToBoxSizing.BSize(aWM));
   const IntrinsicSizeInput input(
       aRenderingContext, Some(aCBSize.ConvertTo(GetWritingMode(), aWM)),
       Some(LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, bSize)
@@ -8581,7 +8610,6 @@ inline static bool FormControlShrinksForPercentSize(const nsIFrame* aFrame) {
   }
 
   switch (aFrame->Type()) {
-    case LayoutFrameType::Meter:
     case LayoutFrameType::Progress:
     case LayoutFrameType::Range:
     case LayoutFrameType::TextInput:
@@ -8718,7 +8746,8 @@ nsIFrame* nsIFrame::FindAnchorPosAnchor(const nsAtom* aAnchorSpec) const {
   if (!StyleDisplay()->IsAbsolutelyPositionedStyle()) {
     return nullptr;
   }
-  return PresShell()->GetAnchorPosAnchor(aAnchorSpec);
+
+  return PresShell()->GetAnchorPosAnchor(aAnchorSpec, this);
 }
 
 #ifdef DEBUG_FRAME_DUMP
@@ -8979,11 +9008,11 @@ void nsIFrame::ListTextRuns(FILE* out, nsTHashSet<const void*>& aSeen) const {
 }
 
 void nsIFrame::ListMatchedRules(FILE* out, const char* aPrefix) const {
-  nsTArray<const StyleLockedDeclarationBlock*> rawDecls;
-  Servo_ComputedValues_GetMatchingDeclarations(Style(), &rawDecls);
-  for (const StyleLockedDeclarationBlock* rawRule : rawDecls) {
+  AutoTArray<StyleMatchingDeclarationBlock, 8> decls;
+  Servo_ComputedValues_GetMatchingDeclarations(Style(), &decls);
+  for (const StyleMatchingDeclarationBlock& block : decls) {
     nsAutoCString ruleText;
-    Servo_DeclarationBlock_GetCssText(rawRule, &ruleText);
+    Servo_DeclarationBlock_GetCssText(block.block, &ruleText);
     fprintf_stderr(out, "%s%s\n", aPrefix, ruleText.get());
   }
 }
@@ -9289,7 +9318,10 @@ static nsresult GetNextPrevLineFromBlockFrame(PeekOffsetStruct* aPos,
         // must reach the editing host boundary.
         return NS_ERROR_FAILURE;
       }
-      nsIFrame::GetLastLeaf(&lastFrame);
+      // Don't enter into native anonymous subtrees.
+      if (!lastFrame->ContentIsRootOfNativeAnonymousSubtree()) {
+        nsIFrame::GetLastLeaf(&lastFrame);
+      }
 
       if (aPos->mDirection == eDirNext) {
         nearStoppingFrame = firstFrame;
@@ -11190,7 +11222,9 @@ static nsIFrame* GetCorrectedParent(const nsIFrame* aFrame) {
   // For a table caption we want the _inner_ table frame (unless it's anonymous)
   // as the style parent.
   if (aFrame->IsTableCaption()) {
-    nsIFrame* innerTable = parent->PrincipalChildList().FirstChild();
+    MOZ_ASSERT(parent->IsTableWrapperFrame());
+    nsTableFrame* innerTable =
+        static_cast<const nsTableWrapperFrame*>(parent)->InnerTableFrame();
     if (!innerTable->Style()->IsAnonBox()) {
       return innerTable;
     }
@@ -11201,8 +11235,10 @@ static nsIFrame* GetCorrectedParent(const nsIFrame* aFrame) {
   // know its parent. So get the pseudo of the inner in that case.
   auto pseudo = aFrame->Style()->GetPseudoType();
   if (pseudo == PseudoStyleType::tableWrapper) {
-    pseudo =
-        aFrame->PrincipalChildList().FirstChild()->Style()->GetPseudoType();
+    MOZ_ASSERT(aFrame->IsTableWrapperFrame());
+    nsTableFrame* innerTable =
+        static_cast<const nsTableWrapperFrame*>(aFrame)->InnerTableFrame();
+    pseudo = innerTable->Style()->GetPseudoType();
   }
 
   // Prevent a NAC pseudo-element from inheriting from its NAC parent, and
@@ -11368,10 +11404,7 @@ ComputedStyle* nsIFrame::DoGetParentComputedStyle(
 }
 
 void nsIFrame::GetLastLeaf(nsIFrame** aFrame) {
-  if (!aFrame || !*aFrame ||
-      // Don't enter into native anoymous subtree from the root like <input> or
-      // <textarea>.
-      (*aFrame)->ContentIsRootOfNativeAnonymousSubtree()) {
+  if (!aFrame || !*aFrame) {
     return;
   }
   for (nsIFrame* maybeLastLeaf = (*aFrame)->PrincipalChildList().LastChild();
@@ -12203,7 +12236,6 @@ PhysicalAxes nsIFrame::ShouldApplyOverflowClipping(
       case LayoutFrameType::ComboboxControl:
       case LayoutFrameType::HTMLButtonControl:
       case LayoutFrameType::ListControl:
-      case LayoutFrameType::Meter:
       case LayoutFrameType::Progress:
       case LayoutFrameType::Range:
       case LayoutFrameType::SubDocument:

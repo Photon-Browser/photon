@@ -19,6 +19,7 @@
  */
 #include "seccomon.h"
 #include "secitem.h"
+/* we need to use the deprecated mechanisms values for backward compatibility */
 #include "pkcs11.h"
 #include "pkcs11i.h"
 #include "softoken.h"
@@ -112,7 +113,7 @@ static PRIntervalTime loginWaitTime;
 
 /* build the crypto module table */
 static CK_FUNCTION_LIST_3_0 sftk_funcList = {
-    { CRYPTOKI_VERSION_MAJOR, CRYPTOKI_VERSION_MINOR },
+    { 3, 0 },
 
 #undef CK_PKCS11_FUNCTION_INFO
 #undef CK_NEED_ARG_LIST
@@ -644,6 +645,10 @@ static const struct mechanismList mechanisms[] = {
     { CKM_NSS_HMAC_CONSTANT_TIME, { 0, 0, CKF_DIGEST }, PR_TRUE },
     { CKM_NSS_SSL3_MAC_CONSTANT_TIME, { 0, 0, CKF_DIGEST }, PR_TRUE },
     /* -------------------- IPSEC ----------------------- */
+    { CKM_IKE2_PRF_PLUS_DERIVE, { 8, 255 * 64, CKF_DERIVE }, PR_TRUE },
+    { CKM_IKE_PRF_DERIVE, { 8, 64, CKF_DERIVE }, PR_TRUE },
+    { CKM_IKE1_PRF_DERIVE, { 8, 64, CKF_DERIVE }, PR_TRUE },
+    { CKM_IKE1_EXTENDED_DERIVE, { 8, 255 * 64, CKF_DERIVE }, PR_TRUE },
     { CKM_NSS_IKE_PRF_PLUS_DERIVE, { 8, 255 * 64, CKF_DERIVE }, PR_TRUE },
     { CKM_NSS_IKE_PRF_DERIVE, { 8, 64, CKF_DERIVE }, PR_TRUE },
     { CKM_NSS_IKE1_PRF_DERIVE, { 8, 64, CKF_DERIVE }, PR_TRUE },
@@ -904,6 +909,48 @@ sftk_handleCertObject(SFTKSession *session, SFTKObject *object)
  * check the consistancy and initialize a Trust Object
  */
 static CK_RV
+sftk_handleNSSTrustObject(SFTKSession *session, SFTKObject *object)
+{
+    /* we can't store any certs private */
+    if (sftk_isTrue(object, CKA_PRIVATE)) {
+        return CKR_ATTRIBUTE_VALUE_INVALID;
+    }
+
+    /* certificates must have a type */
+    if (!sftk_hasAttribute(object, CKA_ISSUER)) {
+        return CKR_TEMPLATE_INCOMPLETE;
+    }
+    if (!sftk_hasAttribute(object, CKA_SERIAL_NUMBER)) {
+        return CKR_TEMPLATE_INCOMPLETE;
+    }
+    if (!sftk_hasAttribute(object, CKA_NSS_CERT_SHA1_HASH)) {
+        return CKR_TEMPLATE_INCOMPLETE;
+    }
+    if (!sftk_hasAttribute(object, CKA_NSS_CERT_MD5_HASH)) {
+        return CKR_TEMPLATE_INCOMPLETE;
+    }
+
+    if (sftk_isTrue(object, CKA_TOKEN)) {
+        SFTKSlot *slot = session->slot;
+        SFTKDBHandle *certHandle = sftk_getCertDB(slot);
+        CK_RV crv;
+
+        if (certHandle == NULL) {
+            return CKR_TOKEN_WRITE_PROTECTED;
+        }
+
+        crv = sftkdb_write(certHandle, object, &object->handle);
+        sftk_freeDB(certHandle);
+        return crv;
+    }
+
+    return CKR_OK;
+}
+
+/*
+ * check the consistancy and initialize a Trust Object
+ */
+static CK_RV
 sftk_handleTrustObject(SFTKSession *session, SFTKObject *object)
 {
     /* we can't store any certs private */
@@ -918,10 +965,10 @@ sftk_handleTrustObject(SFTKSession *session, SFTKObject *object)
     if (!sftk_hasAttribute(object, CKA_SERIAL_NUMBER)) {
         return CKR_TEMPLATE_INCOMPLETE;
     }
-    if (!sftk_hasAttribute(object, CKA_CERT_SHA1_HASH)) {
+    if (!sftk_hasAttribute(object, CKA_HASH_OF_CERTIFICATE)) {
         return CKR_TEMPLATE_INCOMPLETE;
     }
-    if (!sftk_hasAttribute(object, CKA_CERT_MD5_HASH)) {
+    if (!sftk_hasAttribute(object, CKA_NAME_HASH_ALGORITHM)) {
         return CKR_TEMPLATE_INCOMPLETE;
     }
 
@@ -1826,6 +1873,9 @@ sftk_handleObject(SFTKObject *object, SFTKSession *session)
             crv = sftk_handleCertObject(session, object);
             break;
         case CKO_NSS_TRUST:
+            crv = sftk_handleNSSTrustObject(session, object);
+            break;
+        case CKO_TRUST:
             crv = sftk_handleTrustObject(session, object);
             break;
         case CKO_NSS_CRL:

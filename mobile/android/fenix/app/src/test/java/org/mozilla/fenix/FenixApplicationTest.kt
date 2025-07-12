@@ -18,7 +18,6 @@ import mozilla.components.concept.engine.webextension.DisabledFlags
 import mozilla.components.concept.engine.webextension.Metadata
 import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.BrowsersCache
 import org.junit.Assert.assertEquals
@@ -39,6 +38,7 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.distributions.DefaultDistributionBrowserStoreProvider
 import org.mozilla.fenix.distributions.DistributionIdManager
 import org.mozilla.fenix.distributions.DistributionProviderChecker
+import org.mozilla.fenix.distributions.DistributionSettings
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.utils.Settings
@@ -60,6 +60,15 @@ class FenixApplicationTest {
         override fun queryProvider(): String? = null
     }
 
+    private val testLegacyDistributionProviderChecker = object : DistributionProviderChecker {
+        override fun queryProvider(): String? = null
+    }
+
+    private val testDistributionSettings = object : DistributionSettings {
+        override fun getDistributionId(): String = ""
+        override fun saveDistributionId(id: String) = Unit
+    }
+
     @Before
     fun setUp() {
         application = ApplicationProvider.getApplicationContext()
@@ -67,9 +76,11 @@ class FenixApplicationTest {
         mozillaProductDetector = mockk(relaxed = true)
         browserStore = BrowserStore()
         every { testContext.components.distributionIdManager } returns DistributionIdManager(
-            testContext,
-            DefaultDistributionBrowserStoreProvider(browserStore),
-            testDistributionProviderChecker,
+            context = testContext,
+            browserStoreProvider = DefaultDistributionBrowserStoreProvider(browserStore),
+            distributionProviderChecker = testDistributionProviderChecker,
+            legacyDistributionProviderChecker = testLegacyDistributionProviderChecker,
+            distributionSettings = testDistributionSettings,
         )
     }
 
@@ -163,15 +174,16 @@ class FenixApplicationTest {
         every { settings.inactiveTabsAreEnabled } returns true
         every { application.isDeviceRamAboveThreshold } returns true
 
-        assertTrue(settings.contileContextId.isEmpty())
-        assertNull(TopSites.contextId.testGetValue())
+        assertTrue(settings.contileContextId.isNotEmpty())
+        assertNotNull(TopSites.contextId.testGetValue())
+        assertEquals(TopSites.contextId.testGetValue()!!.toString(), settings.contileContextId)
 
         application.setStartupMetrics(
             browserStore = browserStore,
             settings = settings,
             browsersCache = browsersCache,
             mozillaProductDetector = mozillaProductDetector,
-        ).joinBlocking()
+        )
 
         // Verify that browser defaults metrics are set.
         assertEquals("Mozilla", Metrics.distributionId.testGetValue())
@@ -222,7 +234,7 @@ class FenixApplicationTest {
         assertNull(SearchDefaultEngine.name.testGetValue())
         assertNull(SearchDefaultEngine.searchUrl.testGetValue())
 
-        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector).joinBlocking()
+        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector)
 
         assertEquals(contextId, TopSites.contextId.testGetValue()!!.toString())
         assertEquals(contextId, settings.contileContextId)
@@ -237,7 +249,7 @@ class FenixApplicationTest {
             every { blockCookiesSelectionInCustomTrackingProtection } returns "Test"
         }
 
-        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector).joinBlocking()
+        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector)
 
         assertEquals("Test", Preferences.etpCustomCookiesSelection.testGetValue())
     }
@@ -254,7 +266,7 @@ class FenixApplicationTest {
         shadowOf(packageManager)
             .setInstallSourceInfo(testContext.packageName, "initiating.package", "installing.package")
 
-        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector).joinBlocking()
+        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector)
 
         assertEquals("Test", Preferences.etpCustomCookiesSelection.testGetValue())
     }

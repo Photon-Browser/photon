@@ -73,7 +73,9 @@ class PerformanceEventTiming final
   nsINode* GetTarget() const;
 
   void SetDuration(const DOMHighResTimeStamp aDuration) {
-    mDuration = aDuration;
+    // Round the duration to the nearest 8ms.
+    // https://w3c.github.io/event-timing/#set-event-timing-entry-duration
+    mDuration = std::round(aDuration / 8) * 8;
   }
 
   // nsRFPService::ReduceTimePrecisionAsMSecs might causes
@@ -114,7 +116,7 @@ class PerformanceEventTiming final
 
  private:
   PerformanceEventTiming(Performance* aPerformance, const nsAString& aName,
-                         const TimeStamp& aStartTime, bool aIsCacelable,
+                         const TimeStamp& aStartTime, bool aIsCancelable,
                          EventMessage aMessage);
 
   PerformanceEventTiming(const PerformanceEventTiming& aEventTimingEntry);

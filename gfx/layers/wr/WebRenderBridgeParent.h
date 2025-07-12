@@ -140,7 +140,6 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                                           bool* aNeedsYFlip) override;
 
   mozilla::ipc::IPCResult RecvClearCachedResources() override;
-  mozilla::ipc::IPCResult RecvClearAnimationResources() override;
   mozilla::ipc::IPCResult RecvInvalidateRenderedFrame() override;
   mozilla::ipc::IPCResult RecvScheduleComposite(
       const wr::RenderReasons& aReasons) override;
@@ -340,7 +339,8 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                       const nsTArray<RefCountedShmem>& aSmallShmems,
                       const nsTArray<ipc::Shmem>& aLargeShmems,
                       const TimeStamp& aTxnStartTime,
-                      wr::TransactionBuilder& aTxn, wr::Epoch aWrEpoch);
+                      wr::TransactionBuilder& aTxn, wr::Epoch aWrEpoch,
+                      const VsyncId& aVsyncId, bool aRenderOffscreen);
 
   void UpdateAPZFocusState(const FocusTarget& aFocus);
   void UpdateAPZScrollData(const wr::Epoch& aEpoch,

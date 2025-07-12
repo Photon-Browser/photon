@@ -7,14 +7,14 @@
 #ifndef LAYOUT_SVG_SVGTEXTFRAME_H_
 #define LAYOUT_SVG_SVGTEXTFRAME_H_
 
+#include "gfxMatrix.h"
+#include "gfxRect.h"
+#include "gfxTextRun.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/gfx/2D.h"
-#include "gfxMatrix.h"
-#include "gfxRect.h"
-#include "gfxTextRun.h"
 #include "nsIContent.h"  // for GetContent
 #include "nsStubMutationObserver.h"
 #include "nsTextFrame.h"
@@ -25,6 +25,7 @@ namespace mozilla {
 
 class CharIterator;
 class DisplaySVGText;
+class SVGContextPaint;
 class SVGTextFrame;
 class TextFrameIterator;
 class TextNodeCorrespondenceRecorder;
@@ -517,10 +518,12 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * nsTextFrame::DrawPathCallbacks rather than directly painting
    * the text frames.
    *
+   * @param aContextPaint Used by context-fill and context-stroke.
    * @param aShouldPaintSVGGlyphs (out) Whether SVG glyphs in the text
    *   should be painted.
    */
-  bool ShouldRenderAsPath(nsTextFrame* aFrame, bool& aShouldPaintSVGGlyphs);
+  bool ShouldRenderAsPath(nsTextFrame* aFrame, SVGContextPaint* aContextPaint,
+                          bool& aShouldPaintSVGGlyphs);
 
   // Methods to get information for a <textPath> frame.
   already_AddRefed<Path> GetTextPath(nsIFrame* aTextPathFrame);

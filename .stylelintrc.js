@@ -52,6 +52,7 @@ module.exports = {
         ignoreFunctions: [
           "light-dark" /* Used for color-scheme dependent colors */,
           "add" /* Used in mathml.css */,
+          "-moz-symbolic-icon" /* Used for GTK icons */,
         ],
       },
     ],
@@ -363,6 +364,12 @@ module.exports = {
               "/^[0-9.]+(px|em|rem|%)$/",
               "/^(small|medium|large|x-large|xx-large)$/",
             ],
+            // Validate to only allow variables and global values
+            "font-weight": [
+              "/^(?!var\\(|inherit$|initial$|unset$|revert$|revert-layer$).+$/",
+            ],
+            [/^(margin|padding|inset|gap|row-gap|column-gap|grid-row-gap|grid-column-gap|top|right|bottom|left)($|-)/]:
+              ["/[0-9.]+(px|em|rem)|\\$/"],
           },
           {
             message:

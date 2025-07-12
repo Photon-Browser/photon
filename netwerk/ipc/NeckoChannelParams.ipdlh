@@ -119,6 +119,8 @@ struct LoadInfoArgs
   uint32_t                    triggeringSandboxFlags;
   uint64_t                    triggeringWindowId;
   bool                        triggeringStorageAccess;
+  uint32_t                    triggeringFirstPartyClassificationFlags;
+  uint32_t                    triggeringThirdPartyClassificationFlags;
   nsContentPolicyType         contentPolicyType;
   uint32_t                    tainting;
   bool                        blockAllMixedContent;
@@ -189,13 +191,14 @@ struct LoadInfoArgs
   bool                        allowDeprecatedSystemRequests;
   bool                        isInDevToolsContext;
   bool                        parserCreatedScript;
+  RequestMode?                requestMode;
   bool                        isFromProcessingFrameAttributes;
   bool                        isMediaRequest;
   bool                        isMediaInitialRequest;
   bool                        isFromObjectOrEmbed;
   CookieJarSettingsArgs       cookieJarSettings;
   uint32_t                    requestBlockingReason;
-  CSPInfo?                    cspToInheritInfo;
+  PolicyContainerArgs?        policyContainerToInherit;
   StoragePermissionState      storagePermission;
   IPAddressSpace              parentIPAddressSpace;
   IPAddressSpace              ipAddressSpace;
@@ -265,6 +268,8 @@ struct ParentLoadInfoForwarderArgs
   // Only ever returns true if the loadinfo is of TYPE_SCRIPT and
   // the script was created by the HTML parser.
   bool parserCreatedScript;
+
+  RequestMode? requestMode;
 
   // Sandbox Flags of the Document that triggered the load
   uint32_t triggeringSandboxFlags;
@@ -371,7 +376,6 @@ struct HttpChannelOpenArgs
   nsCString                   appCacheClientID;
   CorsPreflightArgs?          preflightArgs;
   nsCString                   contentTypeHint;
-  nsString                    integrityMetadata;
   IPCStream?                  uploadStream;
   LoadInfoArgs                loadInfo;
   uint32_t                    loadFlags;

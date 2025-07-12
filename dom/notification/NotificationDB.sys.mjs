@@ -15,12 +15,6 @@ ChromeUtils.defineLazyGetter(lazy, "console", () => {
   });
 });
 
-const NOTIFICATION_STORE_DIR = PathUtils.profileDir;
-const NOTIFICATION_STORE_PATH = PathUtils.join(
-  NOTIFICATION_STORE_DIR,
-  "notificationstore.json"
-);
-
 export class NotificationDB {
   // Ensure we won't call init() while xpcom-shutdown is performed
   #shutdownInProgress = false;
@@ -35,6 +29,8 @@ export class NotificationDB {
   #loaded = false;
   #tasks = [];
   #runningTask = null;
+
+  #storagePath = null;
 
   storageQualifier() {
     return "Notification";
@@ -53,6 +49,8 @@ export class NotificationDB {
       this.formatMessageType("Save"),
       this.formatMessageType("Delete"),
       this.formatMessageType("GetAll"),
+      this.formatMessageType("Get"),
+      this.formatMessageType("DeleteAllExcept"),
     ];
   }
 
@@ -124,7 +122,12 @@ export class NotificationDB {
 
   // Attempt to read notification file, if it's not there we will create it.
   load() {
-    var promise = IOUtils.readUTF8(NOTIFICATION_STORE_PATH);
+    const NOTIFICATION_STORE_DIR = PathUtils.profileDir;
+    this.#storagePath = PathUtils.join(
+      NOTIFICATION_STORE_DIR,
+      "notificationstore.json"
+    );
+    var promise = IOUtils.readUTF8(this.#storagePath);
     return promise.then(
       data => {
         if (data.length) {
@@ -154,31 +157,31 @@ export class NotificationDB {
       // If read failed, we assume we have no notifications to load.
       () => {
         this.#loaded = true;
-        return this.createStore();
+        return this.#createStore(NOTIFICATION_STORE_DIR);
       }
     );
   }
 
   // Creates the notification directory.
-  createStore() {
-    var promise = IOUtils.makeDirectory(NOTIFICATION_STORE_DIR, {
+  #createStore(directory) {
+    var promise = IOUtils.makeDirectory(directory, {
       ignoreExisting: true,
     });
-    return promise.then(this.createFile.bind(this));
+    return promise.then(this.createFile());
   }
 
   // Creates the notification file once the directory is created.
   createFile() {
-    return IOUtils.writeUTF8(NOTIFICATION_STORE_PATH, "", {
-      tmpPath: NOTIFICATION_STORE_PATH + ".tmp",
+    return IOUtils.writeUTF8(this.#storagePath, "", {
+      tmpPath: this.#storagePath + ".tmp",
     });
   }
 
   // Save current notifications to the file.
   save() {
     var data = JSON.stringify(this.#notifications);
-    return IOUtils.writeUTF8(NOTIFICATION_STORE_PATH, data, {
-      tmpPath: NOTIFICATION_STORE_PATH + ".tmp",
+    return IOUtils.writeUTF8(this.#storagePath, data, {
+      tmpPath: this.#storagePath + ".tmp",
     });
   }
 
@@ -222,6 +225,24 @@ export class NotificationDB {
           });
         break;
 
+      case this.formatMessageType("Get"):
+        this.queueTask("get", message.data)
+          .then(notification => {
+            returnMessage(this.formatMessageType("Get:Return:OK"), {
+              requestID: message.data.requestID,
+              origin: message.data.origin,
+              notification,
+            });
+          })
+          .catch(error => {
+            returnMessage(this.formatMessageType("Get:Return:KO"), {
+              requestID: message.data.requestID,
+              origin: message.data.origin,
+              errorMsg: error,
+            });
+          });
+        break;
+
       case this.formatMessageType("Save"):
         this.queueTask("save", message.data)
           .then(() => {
@@ -250,6 +271,14 @@ export class NotificationDB {
               errorMsg: error,
             });
           });
+        break;
+
+      case this.formatMessageType("DeleteAllExcept"):
+        this.queueTask("deleteAllExcept", message.data).catch(error => {
+          lazy.console.debug(
+            `Error received when treating: '${message.data.requestID}': ${error}`
+          );
+        });
         break;
 
       default:
@@ -311,11 +340,17 @@ export class NotificationDB {
           case "getall":
             return this.taskGetAll(task.data);
 
+          case "get":
+            return this.taskGet(task.data);
+
           case "save":
             return this.taskSave(task.data);
 
           case "delete":
             return this.taskDelete(task.data);
+
+          case "deleteAllExcept":
+            return this.taskDeleteAllExcept(task.data);
 
           default:
             return Promise.reject(
@@ -365,6 +400,12 @@ export class NotificationDB {
     return notifications;
   }
 
+  taskGet(data) {
+    let { origin, id } = data;
+    lazy.console.debug(`Task, getting for the origin ${origin} and ID ${id}`);
+    return this.#notifications[origin]?.[id];
+  }
+
   taskSave(data) {
     lazy.console.debug("Task, saving");
     var origin = data.origin;
@@ -410,6 +451,29 @@ export class NotificationDB {
     delete this.#notifications[origin][id];
     return this.save();
   }
+
+  taskDeleteAllExcept({ ids }) {
+    lazy.console.debug("Task, deleting all");
+
+    const entries = Object.entries(this.#notifications);
+    for (const [origin, data] of entries) {
+      const originEntries = Object.entries(data).filter(
+        ([id]) => !ids.includes(id)
+      );
+      for (const [id, oldNotification] of originEntries) {
+        delete data[id];
+        if (oldNotification.tag) {
+          delete this.#byTag[origin][oldNotification.tag];
+        }
+      }
+      if (!Object.keys(data).length) {
+        delete this.#notifications[origin];
+        delete this.#byTag[origin];
+      }
+    }
+
+    return this.save();
+  }
 }
 
-new NotificationDB();
+export const db = new NotificationDB();

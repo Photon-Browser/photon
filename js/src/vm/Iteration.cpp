@@ -1913,8 +1913,8 @@ static const JSFunctionSpec iterator_static_methods[] = {
 #ifdef NIGHTLY_BUILD
     JS_SELF_HOSTED_FN("concat", "IteratorConcat", 0, 0),
     JS_SELF_HOSTED_FN("range", "IteratorRange", 3, 0),
-    JS_SELF_HOSTED_FN("zip", "IteratorZip", 1, 0),
-    JS_SELF_HOSTED_FN("zipKeyed", "IteratorZipKeyed", 1, 0),
+    JS_SELF_HOSTED_FN("zip", "IteratorZip", 2, 0),
+    JS_SELF_HOSTED_FN("zipKeyed", "IteratorZipKeyed", 2, 0),
 #endif
     JS_FS_END,
 };
@@ -1953,8 +1953,7 @@ static bool SetterThatIgnoresPrototypeProperties(JSContext* cx,
   }
 
   // Step 2.
-  Rooted<JSObject*> home(
-      cx, GlobalObject::getOrCreateIteratorPrototype(cx, cx->global()));
+  JSObject* home = GlobalObject::getOrCreateIteratorPrototype(cx, cx->global());
   if (!home) {
     return false;
   }
@@ -2018,8 +2017,8 @@ static bool constructorGetter(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  Rooted<JSObject*> constructor(
-      cx, GlobalObject::getOrCreateConstructor(cx, JSProto_Iterator));
+  JSObject* constructor =
+      GlobalObject::getOrCreateConstructor(cx, JSProto_Iterator);
   if (!constructor) {
     return false;
   }

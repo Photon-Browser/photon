@@ -9,8 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Icon
-import androidx.compose.material.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -87,10 +87,11 @@ fun TabCounter(
         }
     }
 
-    val normalTabsContentDescription = stringResource(
-        R.string.mozac_open_tab_counter_tab_tray,
-        formattedTabCount,
-    )
+    val tabsCounterDescription = if (showPrivacyBadge) {
+        stringResource(R.string.mozac_tab_counter_private, formattedTabCount)
+    } else {
+        stringResource(R.string.mozac_open_tab_counter_tab_tray, formattedTabCount)
+    }
 
     val counterBoxWidthDp =
         dimensionResource(id = R.dimen.mozac_tab_counter_box_width_height)
@@ -110,7 +111,7 @@ fun TabCounter(
             painter = painterResource(
                 id = counterBoxBackground,
             ),
-            contentDescription = normalTabsContentDescription,
+            contentDescription = tabsCounterDescription,
             tint = iconColor,
         )
 

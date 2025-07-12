@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/urlbar/private/GeolocationUtils.sys.mjs",
   MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
@@ -36,6 +37,8 @@ const RESULT_MENU_COMMAND = {
 };
 
 const WEATHER_PROVIDER_DISPLAY_NAME = "AccuWeather®";
+
+const NORTH_AMERICA_COUNTRY_CODES = new Set(["CA", "US"]);
 
 const WEATHER_DYNAMIC_TYPE = "weather";
 const WEATHER_VIEW_TEMPLATE = {
@@ -137,8 +140,8 @@ const WEATHER_VIEW_TEMPLATE = {
  * A feature that periodically fetches weather suggestions from Merino.
  */
 export class WeatherSuggestions extends SuggestProvider {
-  constructor(...args) {
-    super(...args);
+  constructor() {
+    super();
     lazy.UrlbarResult.addDynamicResultType(WEATHER_DYNAMIC_TYPE);
     lazy.UrlbarView.addDynamicViewTemplate(
       WEATHER_DYNAMIC_TYPE,
@@ -214,72 +217,42 @@ export class WeatherSuggestions extends SuggestProvider {
       return null;
     }
 
-    if (!this.#merino) {
-      this.#merino = new lazy.MerinoClient(this.constructor.name, {
-        cachePeriodMs: MERINO_WEATHER_CACHE_PERIOD_MS,
-      });
-    }
-
-    // Set up location params to pass to Merino. We need to null-check each
-    // suggestion property because `MerinoClient` will stringify null values.
-    let otherParams = {};
-    if (suggestion.city) {
-      if (suggestion.city.name) {
-        otherParams.city = suggestion.city.name;
-      }
-      if (suggestion.city.countryCode) {
-        otherParams.country = suggestion.city.countryCode;
-      }
-      let admin1Code = suggestion.city.adminDivisionCodes.get(1);
-      if (admin1Code) {
-        otherParams.region = admin1Code;
-      }
-    }
-
-    let merino = this.#merino;
-    let fetchInstance = (this.#fetchInstance = {});
-    let suggestions = await merino.fetch({
-      query: "",
-      otherParams,
-      providers: [MERINO_PROVIDER],
-      timeoutMs: this.#timeoutMs,
-    });
-    if (fetchInstance != this.#fetchInstance || merino != this.#merino) {
+    // `suggestion` is a Rust suggestion that tells us weather intent was
+    // matched and possibly a city. Fetch the final suggestion from Merino.
+    let merinoSuggestion = await this.#fetchMerinoSuggestion(suggestion.city);
+    if (!merinoSuggestion) {
       return null;
     }
-
-    if (!suggestions.length) {
-      return null;
-    }
-    suggestion = suggestions[0];
 
     let unit = Services.locale.regionalPrefsLocales[0] == "en-US" ? "f" : "c";
 
     let treatment = lazy.UrlbarPrefs.get("weatherUiTreatment");
     if (treatment == 1 || treatment == 2) {
-      return this.#makeDynamicResult(suggestion, unit);
+      return this.#makeDynamicResult(merinoSuggestion, unit);
     }
+
+    let titleL10n = await this.#getTitleL10n(suggestion.city, merinoSuggestion);
 
     return Object.assign(
       new lazy.UrlbarResult(
         lazy.UrlbarUtils.RESULT_TYPE.URL,
         lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
         {
-          url: suggestion.url,
+          url: merinoSuggestion.url,
           titleL10n: {
-            id: "firefox-suggest-weather-title-simplest",
+            id: titleL10n.id,
             args: {
-              temperature: suggestion.current_conditions.temperature[unit],
+              temperature:
+                merinoSuggestion.current_conditions.temperature[unit],
               unit: unit.toUpperCase(),
-              city: suggestion.city_name,
-              region: suggestion.region_code,
+              ...titleL10n.args,
             },
             parseMarkup: true,
             cacheable: true,
             excludeArgsFromCacheKey: true,
           },
           bottomTextL10n: {
-            id: "firefox-suggest-weather-sponsored",
+            id: "urlbar-result-weather-provider-sponsored",
             args: { provider: WEATHER_PROVIDER_DISPLAY_NAME },
             cacheable: true,
           },
@@ -290,7 +263,7 @@ export class WeatherSuggestions extends SuggestProvider {
         suggestedIndex: 1,
         isRichSuggestion: true,
         richSuggestionIconVariation: String(
-          suggestion.current_conditions.icon_id
+          merinoSuggestion.current_conditions.icon_id
         ),
       }
     );
@@ -397,7 +370,7 @@ export class WeatherSuggestions extends SuggestProvider {
       },
       bottom: {
         l10n: {
-          id: "firefox-suggest-weather-sponsored",
+          id: "urlbar-result-weather-provider-sponsored",
           args: { provider: WEATHER_PROVIDER_DISPLAY_NAME },
           cacheable: true,
         },
@@ -406,6 +379,7 @@ export class WeatherSuggestions extends SuggestProvider {
   }
 
   getResultCommands() {
+    /** @type {{name: Values<RESULT_MENU_COMMAND>, l10n?: {id: string}}[]} */
     let commands = [
       {
         name: RESULT_MENU_COMMAND.INACCURATE_LOCATION,
@@ -524,6 +498,113 @@ export class WeatherSuggestions extends SuggestProvider {
       }
     }
     return Math.max(minLength, 0);
+  }
+
+  async #fetchMerinoSuggestion(cityGeoname) {
+    if (!this.#merino) {
+      this.#merino = new lazy.MerinoClient(this.constructor.name, {
+        cachePeriodMs: MERINO_WEATHER_CACHE_PERIOD_MS,
+      });
+    }
+
+    // Set up location params to pass to Merino. We need to null-check each
+    // suggestion property because `MerinoClient` will stringify null values.
+    let otherParams = { source: "urlbar" };
+    if (cityGeoname) {
+      if (cityGeoname.name) {
+        otherParams.city = cityGeoname.name;
+      }
+      if (cityGeoname.countryCode) {
+        otherParams.country = cityGeoname.countryCode;
+      }
+      // The admin codes are a `Map` from integer levels to codes. Convert it to
+      // a comma-separated string of codes sorted by level ascending.
+      let adminCodes = [...cityGeoname.adminDivisionCodes.entries()]
+        .sort(([level1, _admin1], [level2, _admin2]) => level1 - level2)
+        .map(([_, admin]) => admin)
+        .join(",");
+      if (adminCodes) {
+        otherParams.region = adminCodes;
+      }
+    }
+
+    let merino = this.#merino;
+    let fetchInstance = (this.#fetchInstance = {});
+    let merinoSuggestions = await merino.fetch({
+      query: "",
+      otherParams,
+      providers: [MERINO_PROVIDER],
+      timeoutMs: this.#timeoutMs,
+    });
+    if (fetchInstance != this.#fetchInstance || merino != this.#merino) {
+      return null;
+    }
+
+    return merinoSuggestions[0] ?? null;
+  }
+
+  async #getTitleL10n(cityGeoname, merinoSuggestion) {
+    let displayCity = "";
+    let displayRegion = "";
+    let displayCountry = "";
+
+    if (!cityGeoname) {
+      displayCity = merinoSuggestion.city_name;
+      displayRegion = merinoSuggestion.region_code;
+    } else {
+      // Fetch localized names for the city.
+      let alts =
+        await lazy.QuickSuggest.rustBackend.fetchGeonameAlternates(cityGeoname);
+
+      displayCity = alts.geoname.localized || alts.geoname.primary;
+
+      // For cities in Canada and the US, always show the province/state using
+      // its usual two-char abbreviation. For other countries we won't show any
+      // admin divisions at all; there's maybe room for improvement here.
+      if (NORTH_AMERICA_COUNTRY_CODES.has(cityGeoname.countryCode)) {
+        displayRegion =
+          alts.adminDivisions.get(1)?.abbreviation ||
+          alts.adminDivisions.get(1)?.localized ||
+          alts.adminDivisions.get(1)?.primary;
+      }
+
+      // If the city's country is different from the user's, show it.
+      if (cityGeoname.countryCode != lazy.Region.home) {
+        displayCountry = alts.country?.localized || alts.country?.primary;
+      }
+    }
+
+    if (displayRegion && displayCountry) {
+      return {
+        id: "urlbar-result-weather-title-with-country",
+        args: {
+          city: displayCity,
+          region: displayRegion,
+          country: displayCountry,
+        },
+      };
+    }
+
+    // This is a little confusing but if we only have a country, show it as the
+    // "region". Don't get hung up on the name of this l10n string variable. It
+    // just means the final string will be "{city}, {country}".
+    let region = displayRegion || displayCountry;
+    if (region) {
+      return {
+        id: "urlbar-result-weather-title",
+        args: {
+          region,
+          city: displayCity,
+        },
+      };
+    }
+
+    return {
+      id: "urlbar-result-weather-title-city-only",
+      args: {
+        city: displayCity,
+      },
+    };
   }
 
   get _test_merino() {

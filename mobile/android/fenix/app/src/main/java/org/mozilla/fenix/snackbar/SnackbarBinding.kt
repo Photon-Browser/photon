@@ -32,7 +32,7 @@ import org.mozilla.fenix.components.appstate.AppAction.ShareAction
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
-import org.mozilla.fenix.downloads.dialog.DynamicDownloadDialog
+import org.mozilla.fenix.downloads.getCannotOpenFileErrorMessage
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
 import org.mozilla.fenix.ext.settings
@@ -247,6 +247,8 @@ class SnackbarBinding(
                             action = context.getString(R.string.webcompat_reporter_dismiss_success_snackbar_text),
                             listener = { snackbarDelegate.dismiss() },
                         )
+
+                        appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
 
                     SnackbarState.SiteDataCleared -> {
@@ -294,11 +296,17 @@ class SnackbarBinding(
                             text = context.getString(R.string.download_item_status_failed),
                             subText = state.fileName,
                             duration = DOWNLOAD_SNACKBAR_DURATION_MS,
-                            action = context.getString(R.string.download_failed_snackbar_action_details),
+                            action = if (FeatureFlags.showLiveDownloads) {
+                                context.getString(R.string.download_failed_snackbar_action_details)
+                            } else {
+                                null
+                            },
                         ) {
-                            navController.navigate(
-                                BrowserFragmentDirections.actionGlobalDownloadsFragment(),
-                            )
+                            if (FeatureFlags.showLiveDownloads) {
+                                navController.navigate(
+                                    BrowserFragmentDirections.actionGlobalDownloadsFragment(),
+                                )
+                            }
                         }
                         appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
@@ -328,7 +336,7 @@ class SnackbarBinding(
 
                     is SnackbarState.CannotOpenFileError -> {
                         snackbarDelegate.show(
-                            text = DynamicDownloadDialog.getCannotOpenFileErrorMessage(
+                            text = getCannotOpenFileErrorMessage(
                                 context,
                                 state.downloadState,
                             ),

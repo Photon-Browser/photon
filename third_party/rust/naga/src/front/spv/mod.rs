@@ -37,7 +37,6 @@ pub use error::Error;
 
 use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec};
 use core::{convert::TryInto, mem, num::NonZeroU32};
-use std::path::PathBuf;
 
 use half::f16;
 use petgraph::graphmap::GraphMap;
@@ -45,6 +44,7 @@ use petgraph::graphmap::GraphMap;
 use super::atomic_upgrade::Upgrades;
 use crate::{
     arena::{Arena, Handle, UniqueArena},
+    path_like::PathLikeOwned,
     proc::{Alignment, Layouter},
     FastHashMap, FastHashSet, FastIndexMap,
 };
@@ -381,7 +381,7 @@ pub struct Options {
     pub adjust_coordinate_space: bool,
     /// Only allow shaders with the known set of capabilities.
     pub strict_capabilities: bool,
-    pub block_ctx_dump_prefix: Option<PathBuf>,
+    pub block_ctx_dump_prefix: Option<PathLikeOwned>,
 }
 
 impl Default for Options {
@@ -3850,7 +3850,9 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                     let semantics = resolve_constant(ctx.gctx(), &semantics_const.inner)
                         .ok_or(Error::InvalidBarrierMemorySemantics(semantics_id))?;
 
-                    if exec_scope == spirv::Scope::Workgroup as u32 {
+                    if exec_scope == spirv::Scope::Workgroup as u32
+                        || exec_scope == spirv::Scope::Subgroup as u32
+                    {
                         let mut flags = crate::Barrier::empty();
                         flags.set(
                             crate::Barrier::STORAGE,
@@ -3858,20 +3860,59 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                         );
                         flags.set(
                             crate::Barrier::WORK_GROUP,
-                            semantics
-                                & (spirv::MemorySemantics::SUBGROUP_MEMORY
-                                    | spirv::MemorySemantics::WORKGROUP_MEMORY)
-                                    .bits()
-                                != 0,
+                            semantics & (spirv::MemorySemantics::WORKGROUP_MEMORY).bits() != 0,
+                        );
+                        flags.set(
+                            crate::Barrier::SUB_GROUP,
+                            semantics & spirv::MemorySemantics::SUBGROUP_MEMORY.bits() != 0,
                         );
                         flags.set(
                             crate::Barrier::TEXTURE,
                             semantics & spirv::MemorySemantics::IMAGE_MEMORY.bits() != 0,
                         );
-                        block.push(crate::Statement::Barrier(flags), span);
+                        block.push(crate::Statement::ControlBarrier(flags), span);
                     } else {
                         log::warn!("Unsupported barrier execution scope: {}", exec_scope);
                     }
+                }
+                Op::MemoryBarrier => {
+                    inst.expect(3)?;
+                    let mem_scope_id = self.next()?;
+                    let semantics_id = self.next()?;
+                    let mem_scope_const = self.lookup_constant.lookup(mem_scope_id)?;
+                    let semantics_const = self.lookup_constant.lookup(semantics_id)?;
+
+                    let mem_scope = resolve_constant(ctx.gctx(), &mem_scope_const.inner)
+                        .ok_or(Error::InvalidBarrierScope(mem_scope_id))?;
+                    let semantics = resolve_constant(ctx.gctx(), &semantics_const.inner)
+                        .ok_or(Error::InvalidBarrierMemorySemantics(semantics_id))?;
+
+                    let mut flags = if mem_scope == spirv::Scope::Device as u32 {
+                        crate::Barrier::STORAGE
+                    } else if mem_scope == spirv::Scope::Workgroup as u32 {
+                        crate::Barrier::WORK_GROUP
+                    } else if mem_scope == spirv::Scope::Subgroup as u32 {
+                        crate::Barrier::SUB_GROUP
+                    } else {
+                        crate::Barrier::empty()
+                    };
+                    flags.set(
+                        crate::Barrier::STORAGE,
+                        semantics & spirv::MemorySemantics::UNIFORM_MEMORY.bits() != 0,
+                    );
+                    flags.set(
+                        crate::Barrier::WORK_GROUP,
+                        semantics & (spirv::MemorySemantics::WORKGROUP_MEMORY).bits() != 0,
+                    );
+                    flags.set(
+                        crate::Barrier::SUB_GROUP,
+                        semantics & spirv::MemorySemantics::SUBGROUP_MEMORY.bits() != 0,
+                    );
+                    flags.set(
+                        crate::Barrier::TEXTURE,
+                        semantics & spirv::MemorySemantics::IMAGE_MEMORY.bits() != 0,
+                    );
+                    block.push(crate::Statement::MemoryBarrier(flags), span);
                 }
                 Op::CopyObject => {
                     inst.expect(4)?;
@@ -4566,7 +4607,8 @@ impl<I: Iterator<Item = u32>> Frontend<I> {
                 | S::Continue
                 | S::Return { .. }
                 | S::Kill
-                | S::Barrier(_)
+                | S::ControlBarrier(_)
+                | S::MemoryBarrier(_)
                 | S::Store { .. }
                 | S::ImageStore { .. }
                 | S::Atomic { .. }

@@ -77,7 +77,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  DoHConfigController: "resource://gre/modules/DoHConfig.sys.mjs",
+  DoHConfigController: "moz-src:///toolkit/components/doh/DoHConfig.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SelectableProfileService:
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
@@ -120,6 +120,14 @@ Preferences.addAll([
   { id: "privacy.trackingprotection.emailtracking.enabled", type: "bool" },
   {
     id: "privacy.trackingprotection.emailtracking.pbmode.enabled",
+    type: "bool",
+  },
+  {
+    id: "privacy.trackingprotection.allow_list.baseline.enabled",
+    type: "bool",
+  },
+  {
+    id: "privacy.trackingprotection.allow_list.convenience.enabled",
     type: "bool",
   },
 
@@ -433,21 +441,6 @@ var gPrivacyPane = {
         PREF_SETTING_TYPE,
         TRACKING_PROTECTION_KEY
       ).then(setInputsDisabledState);
-    }
-  },
-
-  /**
-   * Hide the "Change Block List" link for trackers/tracking content in the
-   * custom Content Blocking/ETP panel. By default, it will not be visible.
-   */
-  _showCustomBlockList() {
-    let prefValue = Services.prefs.getBoolPref(
-      "browser.contentblocking.customBlockList.preferences.ui.enabled"
-    );
-    if (!prefValue) {
-      document.getElementById("changeBlockListLink").style.display = "none";
-    } else {
-      setEventListener("changeBlockListLink", "click", this.showBlockLists);
     }
   },
 
@@ -937,7 +930,6 @@ var gPrivacyPane = {
     /* Initialize Content Blocking */
     this.initContentBlocking();
 
-    this._showCustomBlockList();
     this.trackingProtectionReadPrefs();
     this.fingerprintingProtectionReadPrefs();
     this.networkCookieBehaviorReadPrefs();
@@ -1235,6 +1227,10 @@ var gPrivacyPane = {
       document.getElementById("historyMode").disabled =
         privateBrowsingPref.value;
     }
+
+    setSyncFromPrefListener("contentBlockingBaselineExceptionsCustom", () =>
+      this.readBaselineExceptionState()
+    );
 
     /* init HTTPS-Only mode */
     this.initHttpsOnly();
@@ -1717,7 +1713,8 @@ var gPrivacyPane = {
       fppMenu.value = "never";
       fppCheckbox.checked = false;
     }
-    fppMenu.disabled = !fppCheckbox.checked;
+    fppMenu.disabled = !fppCheckbox.checked || enabledPref.locked;
+    fppCheckbox.disabled = enabledPref.locked;
   },
 
   /**
@@ -2343,15 +2340,6 @@ var gPrivacyPane = {
     );
   },
 
-  /**
-   * Displays the available block lists for tracking protection.
-   */
-  showBlockLists() {
-    gSubDialog.open(
-      "chrome://browser/content/preferences/dialogs/blocklists.xhtml"
-    );
-  },
-
   // COOKIES AND SITE DATA
 
   /*
@@ -2917,10 +2905,7 @@ var gPrivacyPane = {
   async changeMasterPassword() {
     // Require OS authentication before the user can set a Primary Password.
     // OS reauthenticate functionality is not available on Linux yet (bug 1527745)
-    if (
-      !LoginHelper.isPrimaryPasswordSet() &&
-      LoginHelper.getOSAuthEnabled(LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF)
-    ) {
+    if (!LoginHelper.isPrimaryPasswordSet() && LoginHelper.getOSAuthEnabled()) {
       // Uses primary-password-os-auth-dialog-message-win and
       // primary-password-os-auth-dialog-message-macosx via concatenation:
       let messageId =
@@ -3072,10 +3057,7 @@ var gPrivacyPane = {
     }
 
     // If osReauthCheckbox is checked enable osauth.
-    LoginHelper.setOSAuthEnabled(
-      LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
-      osReauthCheckbox.checked
-    );
+    LoginHelper.setOSAuthEnabled(osReauthCheckbox.checked);
 
     Glean.pwmgr.requireOsReauthToggle.record({
       toggle_state: osReauthCheckbox.checked,
@@ -3092,10 +3074,7 @@ var gPrivacyPane = {
       return;
     }
 
-    osReauthCheckbox.setAttribute(
-      "checked",
-      LoginHelper.getOSAuthEnabled(LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF)
-    );
+    osReauthCheckbox.setAttribute("checked", LoginHelper.getOSAuthEnabled());
 
     setEventListener(
       "osReauthCheckbox",
@@ -3557,5 +3536,24 @@ var gPrivacyPane = {
   updateProfilesPrivacyInfo() {
     let profilesInfo = document.getElementById("preferences-privacy-profiles");
     profilesInfo.hidden = !SelectableProfileService.isEnabled;
+  },
+
+  /**
+   * Checks the "privacy.trackingprotection.allow_list.baseline.enabled" pref.
+   * If the baseline is disabled, update the convenience exceptions pref to false, as convenience
+   * exceptions are only allowed when the baseline is enabled.
+   */
+  readBaselineExceptionState() {
+    const isBaselineEnabled = Preferences.get(
+      "privacy.trackingprotection.allow_list.baseline.enabled"
+    ).value;
+
+    // If the baseline is disabled, disable the convenience exceptions preference.
+    if (!isBaselineEnabled) {
+      Services.prefs.setBoolPref(
+        "privacy.trackingprotection.allow_list.convenience.enabled",
+        false
+      );
+    }
   },
 };

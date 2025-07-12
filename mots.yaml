@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2025-05-26T07:52:27.322222+00:00'
+updated_at: '2025-07-07T15:56:32.244722+00:00'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -50,6 +50,10 @@ people:
     bmo_id: 693303
     name: Alex Hochheiden
     nick: ahochheiden
+  - &aleiserson
+    bmo_id: 713407
+    name: Andy Leiserson
+    nick: aleiserson
   - &allstarschh
     bmo_id: 434670
     name: Yoshi Cheng-Hao Huang
@@ -1448,7 +1452,6 @@ modules:
     meta:
       owners_emeritus:
         - Monica Chew
-        - Andrea Marchesini
       peers_emeritus:
         - Josh Matthews
         - Mike Connor
@@ -1457,6 +1460,8 @@ modules:
         - Shawn Wilsher
         - Ehsan Akhgari
         - Honza Bambas
+        - Emma Zühlcke
+        - Tom Schuster
       group: dev-platform
       components:
         - 'Core::Networking: Cookies'
@@ -1465,10 +1470,10 @@ modules:
       - *dveditz
       - *timhuang
       - *valentin
+      - *baku
     peers:
       - *edgul
-      - *emz
-      - *tschuster
+      - *bvandersloot
     machine_name: core_cookies
 
   - name: 'Core: Crash reporting'
@@ -2847,6 +2852,7 @@ modules:
     description: Policy management for third-party Rust dependencies
     includes:
       - supply-chain/**/*
+      - .cargo/audit.toml
     meta:
       peers_emeritus:
         - Aria Beingessner
@@ -2889,8 +2895,7 @@ modules:
       - netwerk/protocol/http/**/*
     meta:
       group: dev-platform
-      url:
-        https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox
+      url: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox
       components:
         - 'Core::Networking: HTTP'
     owners:
@@ -3020,6 +3025,7 @@ modules:
       - *jgilbert
       - *nical
       - *teoxoy
+      - *aleiserson
     machine_name: core_webgpu_graphics_submodule
 
   - name: 'Core: WebRTC'
@@ -3518,6 +3524,7 @@ modules:
           - *jules
           - *kcochrane
           - *sfoster
+          - *tgiles
         machine_name: desktop_theme
 
       - name: Desktop UI
@@ -3856,13 +3863,13 @@ modules:
         meta:
           owners_emeritus:
             - Jared Wein
+            - *mossop
           peers_emeritus:
             - Tim Nguyen
           review_group: preferences-reviewers
         owners:
-          - *mossop
-        peers:
           - *mstriemer
+        peers:
           - *Gijs
           - *mconley
         machine_name: settings_ui
@@ -3878,16 +3885,17 @@ modules:
           peers_emeritus:
             - Jared Wein
             - Matthew N
+            - *mconley
         owners:
           - *dao
         peers:
           - *mak
-          - *mconley
           - *dwalker
           - *nikkis
           - *niklas
           - *jswinarton
           - *sthompson
+          - *sclements
         machine_name: tabbed_browser
 
       - name: Windows Installer
@@ -4594,5 +4602,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: 7aabd4a3e690526fdd495a95f4aafd8b0f165ed3
-  export: 1052d26b4e5f5af83c211e81d4b5fe5d843ffefd
+  config: 4d14a54db53e9dd6af3c29c7302a2086434780d7
+  export: cf1db5d27151bf75e3bd5ba9b5f7cf18691b8e7c

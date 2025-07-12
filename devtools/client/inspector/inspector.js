@@ -785,6 +785,10 @@ Inspector.prototype = {
   },
 
   _clearSearchResultsLabel(result) {
+    // Pipe the search-cleared event as this.search is a getter that will create
+    // the InspectorSearch instance, which we don't really need/want when a callsite
+    // only want to react to the search being cleared.
+    this.emit("search-cleared");
     return this._updateSearchResultsLabel(result, true);
   },
 
@@ -1852,7 +1856,9 @@ Inspector.prototype = {
   },
 
   stopEyeDropperListeners() {
-    this.toolbox.tellRDMAboutPickerState(false, PICKER_TYPES.EYEDROPPER);
+    this.toolbox
+      .tellRDMAboutPickerState(false, PICKER_TYPES.EYEDROPPER)
+      .catch(console.error);
     this.inspectorFront.off("color-pick-canceled", this.onEyeDropperDone);
     this.inspectorFront.off("color-picked", this.onEyeDropperDone);
     this.off("new-root", this.onEyeDropperDone);

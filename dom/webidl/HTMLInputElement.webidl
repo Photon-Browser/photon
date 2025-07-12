@@ -176,6 +176,7 @@ partial interface HTMLInputElement {
   [ChromeOnly, NewObject]
   Promise<sequence<(File or Directory)>> getFilesAndDirectories();
 
+  [ChromeOnly]
   boolean mozIsTextField(boolean aExcludePassword);
 
   [ChromeOnly]
@@ -235,8 +236,6 @@ HTMLInputElement includes MozEditableElement;
 HTMLInputElement includes MozImageLoadingContent;
 
 HTMLInputElement includes PopoverInvokerElement;
-
-HTMLInputElement includes InvokerElement;
 
 // https://wicg.github.io/entries-api/#idl-index
 partial interface HTMLInputElement {

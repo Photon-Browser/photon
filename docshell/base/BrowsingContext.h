@@ -239,6 +239,7 @@ struct EmbedderColorSchemes {
   FIELD(MediumOverride, nsString)                                             \
   /* DevTools override for prefers-color-scheme */                            \
   FIELD(PrefersColorSchemeOverride, dom::PrefersColorSchemeOverride)          \
+  FIELD(LanguageOverride, nsString)                                           \
   /* DevTools override for forced-colors */                                   \
   FIELD(ForcedColorsOverride, dom::ForcedColorsOverride)                      \
   /* prefers-color-scheme override based on the color-scheme style of our     \
@@ -876,9 +877,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   void SessionHistoryCommit(const LoadingSessionHistoryInfo& aInfo,
                             uint32_t aLoadType, nsIURI* aCurrentURI,
                             SessionHistoryInfo* aPreviousActiveEntry,
-                            bool aPersist, bool aCloneEntryChildren,
-                            bool aChannelExpired, uint32_t aCacheKey,
-                            nsIPrincipal* aPartitionedPrincipal);
+                            bool aCloneEntryChildren, bool aChannelExpired,
+                            uint32_t aCacheKey);
 
   // Set a new active entry on this browsing context. This is used for
   // implementing history.pushState/replaceState and same document navigations.
@@ -886,10 +886,13 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // its shared state.
   // aPreviousScrollPos is the scroll position that needs to be saved on the
   // previous active entry.
+  // aPreviousActiveEntry should be the best available approximation of the
+  // current active entry in the parent, which the child process cannot access.
   // aUpdatedCacheKey is the cache key to set on the new active entry. If
   // aUpdatedCacheKey is 0 then it will be ignored.
   void SetActiveSessionHistoryEntry(const Maybe<nsPoint>& aPreviousScrollPos,
                                     SessionHistoryInfo* aInfo,
+                                    SessionHistoryInfo* aPreviousActiveEntry,
                                     uint32_t aLoadType,
                                     uint32_t aUpdatedCacheKey,
                                     bool aUpdateLength = true);
@@ -960,6 +963,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     aOverride = GetMediumOverride();
   }
 
+  void GetLanguageOverride(nsAString& aLanguageOverride) const {
+    aLanguageOverride = GetLanguageOverride();
+  }
+
   dom::PrefersColorSchemeOverride PrefersColorSchemeOverride() const {
     return GetPrefersColorSchemeOverride();
   }
@@ -1017,6 +1024,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
                                        bool aHasPostData);
 
  private:
+  bool AddSHEntryWouldIncreaseLength(SessionHistoryInfo* aCurrentEntry) const;
+
   // Assert that this BrowsingContext is coherent relative to related
   // BrowsingContexts. This will be run before the BrowsingContext is attached.
   //
@@ -1118,6 +1127,11 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return IsTop();
   }
 
+  bool CanSet(FieldIndex<IDX_LanguageOverride>, const nsString&,
+              ContentParent*) {
+    return IsTop();
+  }
+
   bool CanSet(FieldIndex<IDX_MediumOverride>, const nsString&, ContentParent*) {
     return IsTop();
   }
@@ -1153,6 +1167,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   template <typename Callback>
   void WalkPresContexts(Callback&&);
   void PresContextAffectingFieldChanged();
+
+  void DidSet(FieldIndex<IDX_LanguageOverride>, nsString&& aOldValue);
 
   void DidSet(FieldIndex<IDX_MediumOverride>, nsString&& aOldValue);
 
@@ -1377,6 +1393,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   RefPtr<WindowContext> mCurrentWindowContext;
 
   RefPtr<nsGeolocationService> mGeolocationServiceOverride;
+
+  JS::UniqueChars mDefaultLocale;
 
   // This is not a strong reference, but using a JS::Heap for that should be
   // fine. The JSObject stored in here should be a proxy with a

@@ -7,42 +7,43 @@
 /* base class #1 for rendering objects that have child lists */
 
 #include "nsContainerFrame.h"
-#include "mozilla/widget/InitData.h"
-#include "nsContainerFrameInlines.h"
 
+#include <algorithm>
+
+#include "mozilla/AutoRestore.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/webrender/WebRenderAPI.h"
+#include "mozilla/widget/InitData.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
+#include "nsBlockFrame.h"
+#include "nsCOMPtr.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsCSSRendering.h"
+#include "nsCanvasFrame.h"
+#include "nsContainerFrameInlines.h"
+#include "nsDisplayList.h"
+#include "nsError.h"
 #include "nsFlexContainerFrame.h"
 #include "nsFrameSelection.h"
-#include "mozilla/dom/Document.h"
-#include "nsPresContext.h"
-#include "nsRect.h"
+#include "nsGkAtoms.h"
+#include "nsIBaseWindow.h"
+#include "nsIFrameInlines.h"
+#include "nsIWidget.h"
+#include "nsPlaceholderFrame.h"
 #include "nsPoint.h"
+#include "nsPresContext.h"
+#include "nsPrintfCString.h"
+#include "nsRect.h"
 #include "nsStyleConsts.h"
 #include "nsView.h"
-#include "nsCOMPtr.h"
-#include "nsGkAtoms.h"
 #include "nsViewManager.h"
-#include "nsIWidget.h"
-#include "nsCanvasFrame.h"
-#include "nsCSSRendering.h"
-#include "nsError.h"
-#include "nsDisplayList.h"
-#include "nsIBaseWindow.h"
-#include "nsCSSFrameConstructor.h"
-#include "nsBlockFrame.h"
-#include "nsPlaceholderFrame.h"
-#include "mozilla/AutoRestore.h"
-#include "nsIFrameInlines.h"
-#include "nsPrintfCString.h"
-#include "mozilla/webrender/WebRenderAPI.h"
-#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -2175,7 +2176,7 @@ void nsContainerFrame::ReparentFloatsForInlineChild(nsIFrame* aOurLineContainer,
   }
 }
 
-bool nsContainerFrame::ResolvedOrientationIsVertical() {
+bool nsContainerFrame::ResolvedOrientationIsVertical() const {
   StyleOrient orient = StyleDisplay()->mOrient;
   switch (orient) {
     case StyleOrient::Horizontal:
@@ -2198,18 +2199,18 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
     ComputeSizeFlags aFlags) {
   const nsStylePosition* stylePos = StylePosition();
-  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
   const auto styleISize =
       aSizeOverrides.mStyleISize
           ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleISize)
-          : stylePos->ISize(aWM, positionProperty);
+          : stylePos->ISize(aWM, anchorResolutionParams.mPosition);
 
   // TODO(dholbert): if styleBSize is 'stretch' here, we should probably
   // resolve it like we do in nsIFrame::ComputeSize. See bug 1937275.
   const auto styleBSize =
       aSizeOverrides.mStyleBSize
           ? AnchorResolvedSizeHelper::Overridden(*aSizeOverrides.mStyleBSize)
-          : stylePos->BSize(aWM, positionProperty);
+          : stylePos->BSize(aWM, anchorResolutionParams.mPosition);
   const auto& aspectRatio =
       aSizeOverrides.mAspectRatio ? *aSizeOverrides.mAspectRatio : aAspectRatio;
 
@@ -2316,7 +2317,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   // algorithm.)
   const bool isFlexItemInlineAxisMainAxis =
       flexItemMainAxis && *flexItemMainAxis == LogicalAxis::Inline;
-  const auto maxISizeCoord = stylePos->MaxISize(aWM, positionProperty);
+  const auto maxISizeCoord =
+      stylePos->MaxISize(aWM, anchorResolutionParams.mPosition);
   if (!maxISizeCoord->IsNone() && !isFlexItemInlineAxisMainAxis) {
     maxISize =
         ComputeISizeValue(aRenderingContext, aWM, aCBSize, boxSizingAdjust,
@@ -2327,7 +2329,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     maxISize = nscoord_MAX;
   }
 
-  const auto minISizeCoord = stylePos->MinISize(aWM, positionProperty);
+  const auto minISizeCoord =
+      stylePos->MinISize(aWM, anchorResolutionParams.mPosition);
   if (!minISizeCoord->IsAuto() && !isFlexItemInlineAxisMainAxis) {
     minISize =
         ComputeISizeValue(aRenderingContext, aWM, aCBSize, boxSizingAdjust,
@@ -2378,7 +2381,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   // algorithm.)
   const bool isFlexItemBlockAxisMainAxis =
       flexItemMainAxis && *flexItemMainAxis == LogicalAxis::Block;
-  const auto maxBSizeCoord = stylePos->MaxBSize(aWM, positionProperty);
+  const auto maxBSizeCoord =
+      stylePos->MaxBSize(aWM, anchorResolutionParams.mPosition);
   if (!nsLayoutUtils::IsAutoBSize(*maxBSizeCoord, aCBSize.BSize(aWM)) &&
       !isFlexItemBlockAxisMainAxis) {
     maxBSize = nsLayoutUtils::ComputeBSizeValueHandlingStretch(
@@ -2388,7 +2392,8 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
     maxBSize = nscoord_MAX;
   }
 
-  const auto minBSizeCoord = stylePos->MinBSize(aWM, positionProperty);
+  const auto minBSizeCoord =
+      stylePos->MinBSize(aWM, anchorResolutionParams.mPosition);
   if (!nsLayoutUtils::IsAutoBSize(*minBSizeCoord, aCBSize.BSize(aWM)) &&
       !isFlexItemBlockAxisMainAxis) {
     minBSize = nsLayoutUtils::ComputeBSizeValueHandlingStretch(

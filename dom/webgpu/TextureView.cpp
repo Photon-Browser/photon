@@ -22,7 +22,7 @@ TextureView::TextureView(Texture* const aParent, RawId aId)
 
 TextureView::~TextureView() { Cleanup(); }
 
-CanvasContext* TextureView::GetTargetContext() const {
+WeakPtr<CanvasContext> TextureView::GetTargetContext() const {
   return mParent->mTargetContext;
 }  // namespace webgpu
 
@@ -37,9 +37,7 @@ void TextureView::Cleanup() {
     return;
   }
 
-  if (bridge->CanSend()) {
-    bridge->SendTextureViewDrop(mId);
-  }
+  ffi::wgpu_client_drop_texture_view(bridge->GetClient(), mId);
 
   wgpu_client_free_texture_view_id(bridge->GetClient(), mId);
 }

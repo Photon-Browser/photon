@@ -12,6 +12,7 @@
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/dom/UserNavigationInvolvement.h"
 
+#include "nsIClassifiedChannel.h"
 #include "nsILoadInfo.h"
 
 // Helper Classes
@@ -21,7 +22,6 @@
 #include "nsDocShellLoadTypes.h"
 #include "nsTArrayForwardDeclare.h"
 
-class nsIContentSecurityPolicy;
 class nsIInputStream;
 class nsISHEntry;
 class nsIURI;
@@ -31,8 +31,6 @@ class nsIReferrerInfo;
 struct HTTPSFirstDowngradeData;
 namespace mozilla {
 class OriginAttributes;
-template <typename, class>
-class UniquePtr;
 namespace dom {
 class FormData;
 class DocShellLoadStateInit;
@@ -127,9 +125,13 @@ class nsDocShellLoadState final {
 
   void SetTriggeringStorageAccess(bool aTriggeringStorageAccess);
 
-  nsIContentSecurityPolicy* Csp() const;
+  mozilla::net::ClassificationFlags TriggeringClassificationFlags() const;
+  void SetTriggeringClassificationFlags(
+      mozilla::net::ClassificationFlags aFlags);
 
-  void SetCsp(nsIContentSecurityPolicy* aCsp);
+  nsIPolicyContainer* PolicyContainer() const;
+
+  void SetPolicyContainer(nsIPolicyContainer* aPolicyContainer);
 
   bool InheritPrincipal() const;
 
@@ -484,12 +486,17 @@ class nsDocShellLoadState final {
   uint64_t mTriggeringWindowId;
   bool mTriggeringStorageAccess;
 
-  // The CSP of the load, that is, the CSP of the entity responsible for causing
-  // the load to occur. Most likely this is the CSP of the document that started
-  // the load. In case the entity starting the load did not use a CSP, then mCsp
-  // can be null. Please note that this is also the CSP that will be applied to
-  // the load in case the load encounters a server side redirect.
-  nsCOMPtr<nsIContentSecurityPolicy> mCsp;
+  // The classification flags of the context responsible for causing
+  // the load to start.
+  mozilla::net::ClassificationFlags mTriggeringClassificationFlags;
+
+  // The policyContainer of the load, that is, the policyContainer of the entity
+  // responsible for causing the load to occur. Most likely this is the
+  // policyContainer of the document that started the load. In case the entity
+  // starting the load did not use a policyContainer, then mpPolicyContainer can
+  // be null. Please note that this is also the policyContainer that will be
+  // applied to the load in case the load encounters a server side redirect.
+  nsCOMPtr<nsIPolicyContainer> mPolicyContainer;
 
   // If a refresh is caused by http-equiv="refresh" we want to set
   // aResultPrincipalURI, but we do not want to overwrite the channel's

@@ -8,99 +8,100 @@
 
 #include "mozilla/ScrollContainerFrame.h"
 
-#include "ScrollPositionUpdate.h"
-#include "mozilla/layers/LayersTypes.h"
-#include "nsIXULRuntime.h"
+#include <stdint.h>
+
+#include <algorithm>
+#include <cmath>    // for std::abs(float/double)
+#include <cstdlib>  // for std::abs(int/long)
+#include <tuple>    // for std::tie
+
 #include "DisplayItemClip.h"
-#include "nsCOMPtr.h"
-#include "nsIDocumentViewer.h"
-#include "nsPresContext.h"
-#include "nsView.h"
-#include "nsViewportInfo.h"
-#include "nsContainerFrame.h"
-#include "nsGkAtoms.h"
-#include "nsNameSpaceManager.h"
-#include "mozilla/intl/BidiEmbeddingLevel.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "nsFontMetrics.h"
-#include "nsFlexContainerFrame.h"
-#include "mozilla/dom/NodeInfo.h"
-#include "nsScrollbarFrame.h"
-#include "nsINode.h"
-#include "nsIScrollbarMediator.h"
-#include "nsILayoutHistoryState.h"
-#include "nsNodeInfoManager.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsStyleTransformMatrix.h"
-#include "mozilla/PresState.h"
-#include "nsContentUtils.h"
-#include "nsDisplayList.h"
-#include "nsHTMLDocument.h"
-#include "nsLayoutUtils.h"
-#include "nsBidiPresUtils.h"
-#include "nsBidiUtils.h"
-#include "nsDocShell.h"
+#include "MobileViewportManager.h"
+#include "ScrollAnimationBezierPhysics.h"
+#include "ScrollAnimationMSDPhysics.h"
+#include "ScrollAnimationPhysics.h"
+#include "ScrollPositionUpdate.h"
+#include "ScrollSnap.h"
+#include "ScrollbarActivity.h"
+#include "StickyScrollContainer.h"
+#include "TextOverflow.h"
+#include "UnitTransforms.h"
+#include "ViewportFrame.h"
+#include "VisualViewport.h"
+#include "WindowRenderer.h"
+#include "gfxPlatform.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DisplayPortUtils.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/PresState.h"
+#include "mozilla/SVGOuterSVGFrame.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollbarPreferences.h"
 #include "mozilla/ScrollingMetrics.h"
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_bidi.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_toolkit.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/SVGOuterSVGFrame.h"
-#include "mozilla/ViewportUtils.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/HTMLMarqueeElement.h"
-#include "mozilla/dom/ScrollTimeline.h"
-#include "mozilla/dom/BrowserChild.h"
-#include <stdint.h>
-#include "mozilla/MathAlgorithms.h"
-#include "nsSubDocumentFrame.h"
-#include "mozilla/Attributes.h"
-#include "ScrollbarActivity.h"
-#include "nsRefreshDriver.h"
-#include "nsStyleConsts.h"
-#include "nsIScrollPositionListener.h"
-#include "StickyScrollContainer.h"
-#include "nsIFrameInlines.h"
-#include "gfxPlatform.h"
-#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_general.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
+#include "mozilla/StaticPrefs_toolkit.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/ToString.h"
-#include "ScrollAnimationPhysics.h"
-#include "ScrollAnimationBezierPhysics.h"
-#include "ScrollAnimationMSDPhysics.h"
-#include "ScrollSnap.h"
-#include "UnitTransforms.h"
-#include "nsSliderFrame.h"
-#include "ViewportFrame.h"
+#include "mozilla/Unused.h"
+#include "mozilla/ViewportUtils.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/HTMLMarqueeElement.h"
+#include "mozilla/dom/NodeInfo.h"
+#include "mozilla/dom/ScrollTimeline.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZPublicUtils.h"
-#include "mozilla/layers/AxisPhysicsModel.h"
 #include "mozilla/layers/AxisPhysicsMSDModel.h"
-#include "mozilla/layers/ScrollingInteractionContext.h"
+#include "mozilla/layers/AxisPhysicsModel.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollLinkedEffectDetector.h"
-#include "mozilla/Unused.h"
-#include "MobileViewportManager.h"
-#include "TextOverflow.h"
-#include "VisualViewport.h"
-#include "WindowRenderer.h"
-#include <algorithm>
-#include <cstdlib>  // for std::abs(int/long)
-#include <cmath>    // for std::abs(float/double)
-#include <tuple>    // for std::tie
+#include "mozilla/layers/ScrollingInteractionContext.h"
+#include "nsBidiPresUtils.h"
+#include "nsBidiUtils.h"
+#include "nsCOMPtr.h"
+#include "nsContainerFrame.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentUtils.h"
+#include "nsDisplayList.h"
+#include "nsDocShell.h"
+#include "nsFlexContainerFrame.h"
+#include "nsFontMetrics.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLDocument.h"
+#include "nsIDocumentViewer.h"
+#include "nsIFrameInlines.h"
+#include "nsILayoutHistoryState.h"
+#include "nsINode.h"
+#include "nsIScrollPositionListener.h"
+#include "nsIScrollbarMediator.h"
+#include "nsIXULRuntime.h"
+#include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsNodeInfoManager.h"
+#include "nsPresContext.h"
+#include "nsRefreshDriver.h"
+#include "nsScrollbarFrame.h"
+#include "nsSliderFrame.h"
+#include "nsStyleConsts.h"
+#include "nsStyleTransformMatrix.h"
+#include "nsSubDocumentFrame.h"
+#include "nsView.h"
+#include "nsViewportInfo.h"
 
 static mozilla::LazyLogModule sApzPaintSkipLog("apz.paintskip");
 #define PAINT_SKIP_LOG(...) \
@@ -2335,9 +2336,9 @@ void ScrollContainerFrame::ScrollToInternal(
       ScrollOperationParams{aMode, aOrigin, aSnapFlags, aTriggeredByScript});
 }
 
-void ScrollContainerFrame::ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
+void ScrollContainerFrame::ScrollToCSSPixels(const CSSPoint& aScrollPosition,
                                              ScrollMode aMode) {
-  CSSIntPoint currentCSSPixels = GetRoundedScrollPositionCSSPixels();
+  CSSPoint currentCSSPixels = GetScrollPositionCSSPixels();
   // Transmogrify this scroll to a relative one if there's any on-going
   // animation in APZ triggered by __user__.
   // Bug 1740164: We will apply it for cases there's no animation in APZ.
@@ -2350,7 +2351,7 @@ void ScrollContainerFrame::ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
   if (mCurrentAPZScrollAnimationType ==
           APZScrollAnimationType::TriggeredByUserInput &&
       !isScrollAnimating) {
-    CSSIntPoint delta = aScrollPosition - currentCSSPixels;
+    CSSPoint delta = aScrollPosition - currentCSSPixels;
     // This transmogrification need to be an intended end position scroll
     // operation.
     ScrollByCSSPixelsInternal(delta, aMode,
@@ -2420,6 +2421,11 @@ void ScrollContainerFrame::ScrollToWithOrigin(nsPoint aScrollPosition,
                       ToString(GetScrollPosition()).c_str(),
                       ToString(aScrollPosition).c_str());
     mRestorePos.x = mRestorePos.y = -1;
+  }
+
+  // Stop suppressing displayport while the page is still loading.
+  if (MOZ_UNLIKELY(PresShell()->IsDocumentLoading())) {
+    PresShell()->SuppressDisplayport(false);
   }
 
   Maybe<SnapDestination> snapDestination;
@@ -2785,7 +2791,7 @@ static nscoord ClampAndAlignWithPixels(nscoord aDesired, nscoord aBoundLower,
   nscoord destUpper = std::clamp(aDestUpper, aBoundLower, aBoundUpper);
 
   nscoord desired = std::clamp(aDesired, destLower, destUpper);
-  if (StaticPrefs::layout_scroll_disable_pixel_alignment()) {
+  if (StaticPrefs::layout_disable_pixel_alignment()) {
     return desired;
   }
 
@@ -3636,14 +3642,16 @@ class MOZ_RAII AutoContainsBlendModeCapturer {
   explicit AutoContainsBlendModeCapturer(nsDisplayListBuilder& aBuilder)
       : mBuilder(aBuilder),
         mSavedContainsBlendMode(aBuilder.ContainsBlendMode()) {
-    mBuilder.SetContainsBlendMode(false);
+    mBuilder.ClearStackingContextBits(
+        StackingContextBits::ContainsMixBlendMode);
   }
 
   bool CaptureContainsBlendMode() {
     // "Capture" the flag by extracting and clearing the ContainsBlendMode flag
     // on the builder.
-    bool capturedBlendMode = mBuilder.ContainsBlendMode();
-    mBuilder.SetContainsBlendMode(false);
+    const bool capturedBlendMode = mBuilder.ContainsBlendMode();
+    mBuilder.ClearStackingContextBits(
+        StackingContextBits::ContainsMixBlendMode);
     return capturedBlendMode;
   }
 
@@ -3655,14 +3663,19 @@ class MOZ_RAII AutoContainsBlendModeCapturer {
     // mode. In that case, we set the flag on the DL builder so that we restore
     // state to what it would have been without this RAII class on the stack.
     bool uncapturedContainsBlendMode = mBuilder.ContainsBlendMode();
-    mBuilder.SetContainsBlendMode(mSavedContainsBlendMode ||
-                                  uncapturedContainsBlendMode);
+    if (mSavedContainsBlendMode || uncapturedContainsBlendMode) {
+      mBuilder.SetStackingContextBits(
+          StackingContextBits::ContainsMixBlendMode);
+    } else {
+      mBuilder.ClearStackingContextBits(
+          StackingContextBits::ContainsMixBlendMode);
+    }
   }
 };
 
 void ScrollContainerFrame::MaybeCreateTopLayerAndWrapRootItems(
     nsDisplayListBuilder* aBuilder, nsDisplayListCollection& aSet,
-    bool aCreateAsyncZoom,
+    bool aCreateAsyncZoom, bool aCapturedByViewTransition,
     AutoContainsBlendModeCapturer* aAsyncZoomBlendCapture,
     const nsRect& aAsyncZoomClipRect, nscoord* aRadii) {
   if (!mIsRoot) {
@@ -3679,38 +3692,49 @@ void ScrollContainerFrame::MaybeCreateTopLayerAndWrapRootItems(
     }
   };
 
-  if (rootStyleFrame &&
-      rootStyleFrame->HasAnyStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION)) {
-    SerializeList();
-    rootResultList.AppendNewToTop<nsDisplayViewTransitionCapture>(
-        aBuilder, this, &rootResultList, nullptr, /* aIsRoot = */ true);
-  }
-
   // Create any required items for the 'top layer' and check if they'll be
   // opaque over the entire area of the viewport. If they are, then we can
   // skip building display items for the rest of the page.
-  if (ViewportFrame* viewport = do_QueryFrame(GetParent())) {
-    bool topLayerIsOpaque = false;
-    if (nsDisplayWrapList* topLayerWrapList =
-            viewport->BuildDisplayListForTopLayer(aBuilder,
-                                                  &topLayerIsOpaque)) {
-      // If the top layer content is opaque, and we're the root content document
-      // in the process, we can drop the display items behind it. We only
-      // support doing this for the root content document in the process, since
-      // the top layer content might have fixed position items that have a
-      // scrolltarget referencing the APZ data for the document. APZ builds this
-      // data implicitly for the root content document in the process, but
-      // subdocuments etc need their display items to generate it, so we can't
-      // cull those.
-      if (topLayerIsOpaque && !serializedList &&
-          PresContext()->IsRootContentDocumentInProcess()) {
-        aSet.DeleteAll(aBuilder);
+  ViewportFrame* viewportParent = do_QueryFrame(GetParent());
+  {
+    nsDisplayListBuilder::AutoEnterViewTransitionCapture
+        inViewTransitionCaptureSetter(aBuilder, aCapturedByViewTransition);
+    nsDisplayListBuilder::AutoCurrentActiveScrolledRootSetter asrSetter(
+        aBuilder);
+    DisplayListClipState::AutoSaveRestore clipState(aBuilder);
+    if (aBuilder->IsInViewTransitionCapture()) {
+      asrSetter.SetCurrentActiveScrolledRoot(nullptr);
+      clipState.Clear();
+    }
+    if (viewportParent) {
+      bool topLayerIsOpaque = false;
+      if (nsDisplayWrapList* topLayerWrapList =
+              viewportParent->BuildDisplayListForContentTopLayer(
+                  aBuilder, &topLayerIsOpaque)) {
+        // If the top layer content is opaque, and we're the root content
+        // document in the process, we can drop the display items behind it. We
+        // only support doing this for the root content document in the process,
+        // since the top layer content might have fixed position items that have
+        // a scrolltarget referencing the APZ data for the document. APZ builds
+        // this data implicitly for the root content document in the process,
+        // but subdocuments etc need their display items to generate it, so we
+        // can't cull those.
+        if (topLayerIsOpaque && !serializedList &&
+            PresContext()->IsRootContentDocumentInProcess()) {
+          aSet.DeleteAll(aBuilder);
+        }
+        if (serializedList) {
+          rootResultList.AppendToTop(topLayerWrapList);
+        } else {
+          aSet.PositionedDescendants()->AppendToTop(topLayerWrapList);
+        }
       }
-      if (serializedList) {
-        rootResultList.AppendToTop(topLayerWrapList);
-      } else {
-        aSet.PositionedDescendants()->AppendToTop(topLayerWrapList);
-      }
+    }
+
+    if (aCapturedByViewTransition) {
+      SerializeList();
+      rootResultList.AppendNewToTop<nsDisplayViewTransitionCapture>(
+          aBuilder, this, &rootResultList, nullptr, /* aIsRoot = */ true);
     }
   }
 
@@ -3732,6 +3756,18 @@ void ScrollContainerFrame::MaybeCreateTopLayerAndWrapRootItems(
           GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
       rootResultList.AppendNewToTop<nsDisplayBackdropFilters>(
           aBuilder, this, &rootResultList, backdropRect, rootStyleFrame);
+    }
+  }
+
+  if (viewportParent) {
+    if (nsDisplayWrapList* topLayerWrapList =
+            viewportParent->BuildDisplayListForViewTransitionsAndNACTopLayer(
+                aBuilder)) {
+      if (serializedList) {
+        rootResultList.AppendToTop(topLayerWrapList);
+      } else {
+        aSet.PositionedDescendants()->AppendToTop(topLayerWrapList);
+      }
     }
   }
 
@@ -3889,8 +3925,9 @@ void ScrollContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     }
 
     MaybeCreateTopLayerAndWrapRootItems(aBuilder, set,
-                                        /* aCreateAsyncZoom = */ false, nullptr,
-                                        nsRect(), nullptr);
+                                        /* aCreateAsyncZoom = */ false,
+                                        /* aCapturedByViewTransition = */ false,
+                                        nullptr, nsRect(), nullptr);
 
     if (addScrollBars) {
       // Add overlay scrollbars.
@@ -4229,8 +4266,8 @@ void ScrollContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   MaybeCreateTopLayerAndWrapRootItems(
-      aBuilder, set, willBuildAsyncZoomContainer, &blendCapture, clipRect,
-      haveRadii ? radii : nullptr);
+      aBuilder, set, willBuildAsyncZoomContainer, capturedByViewTransition,
+      &blendCapture, clipRect, haveRadii ? radii : nullptr);
 
   // We want to call SetContainsNonMinimalDisplayPort if
   // mWillBuildScrollableLayer is true for any reason other than having a
@@ -4883,6 +4920,11 @@ void ScrollContainerFrame::ScrollBy(nsIntPoint aDelta, ScrollUnit aUnit,
   }
 
   if (askApzToDoTheScroll) {
+    // Stop suppressing displayport while the page is still loading.
+    if (MOZ_UNLIKELY(PresShell()->IsDocumentLoading())) {
+      PresShell()->SuppressDisplayport(false);
+    }
+
     nsPoint delta(
         NSCoordSaturatingNonnegativeMultiply(aDelta.x, deltaMultiplier.width),
         NSCoordSaturatingNonnegativeMultiply(aDelta.y, deltaMultiplier.height));
@@ -4977,7 +5019,7 @@ void ScrollContainerFrame::ScrollBy(nsIntPoint aDelta, ScrollUnit aUnit,
 }
 
 void ScrollContainerFrame::ScrollByCSSPixelsInternal(
-    const CSSIntPoint& aDelta, ScrollMode aMode, ScrollSnapFlags aSnapFlags) {
+    const CSSPoint& aDelta, ScrollMode aMode, ScrollSnapFlags aSnapFlags) {
   nsPoint current = GetScrollPosition();
   // `current` value above might be a value which was aligned to in
   // layer-pixels, so starting from such points will make the difference between
@@ -4989,7 +5031,7 @@ void ScrollContainerFrame::ScrollByCSSPixelsInternal(
   // the current position in CSS pixels differs from the given position, the
   // cases should be fixed in bug 1556685.
   CSSPoint currentCSSPixels;
-  if (StaticPrefs::layout_scroll_disable_pixel_alignment()) {
+  if (StaticPrefs::layout_disable_pixel_alignment()) {
     currentCSSPixels = GetScrollPositionCSSPixels();
   } else {
     currentCSSPixels = GetRoundedScrollPositionCSSPixels();
@@ -6697,7 +6739,9 @@ static bool ShellIsAlive(nsWeakPtr& aWeakPtr) {
 
 void ScrollContainerFrame::SetScrollbarEnabled(Element* aElement,
                                                nscoord aMaxPos) {
-  DebugOnly<nsWeakPtr> weakShell(do_GetWeakReference(PresShell()));
+#ifdef DEBUG
+  nsWeakPtr weakShell(do_GetWeakReference(PresShell()));
+#endif
   if (aMaxPos) {
     aElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::disabled, true);
   } else {
@@ -6708,7 +6752,9 @@ void ScrollContainerFrame::SetScrollbarEnabled(Element* aElement,
 
 void ScrollContainerFrame::SetCoordAttribute(Element* aElement, nsAtom* aAtom,
                                              nscoord aSize) {
-  DebugOnly<nsWeakPtr> weakShell(do_GetWeakReference(PresShell()));
+#ifdef DEBUG
+  nsWeakPtr weakShell(do_GetWeakReference(PresShell()));
+#endif
   // convert to pixels
   int32_t pixelSize = nsPresContext::AppUnitsToIntCSSPixels(aSize);
 
@@ -6799,7 +6845,7 @@ bool ScrollContainerFrame::GetBorderRadii(const nsSize& aFrameSize,
 
 static nscoord SnapCoord(nscoord aCoord, double aRes,
                          nscoord aAppUnitsPerPixel) {
-  if (StaticPrefs::layout_scroll_disable_pixel_alignment()) {
+  if (StaticPrefs::layout_disable_pixel_alignment()) {
     return aCoord;
   }
   double snappedToLayerPixels = NS_round((aRes * aCoord) / aAppUnitsPerPixel);
@@ -7994,6 +8040,11 @@ bool ScrollContainerFrame::SmoothScrollVisual(
       nsLayoutUtils::AsyncPanZoomEnabled(this) && WantAsyncScroll();
   if (!canDoApzSmoothScroll) {
     return false;
+  }
+
+  // Stop suppressing displayport while the page is still loading.
+  if (MOZ_UNLIKELY(PresShell()->IsDocumentLoading())) {
+    PresShell()->SuppressDisplayport(false);
   }
 
   // Clamp the destination to the visual scroll range.

@@ -51,7 +51,7 @@ add_task(async () => {
 
   // Create a cookie object for testing.
   let now = Date.now() * 1000;
-  let futureExpiry = Math.round(now / 1e6 + 1000);
+  let futureExpiry = Math.round(now / 1e3 + 1000000);
   cookie = new Cookie(
     "oh",
     "hai",
@@ -90,7 +90,7 @@ function do_corrupt_db(file) {
   // Sanity check: the database size should be larger than 320k, since we've
   // written about 460k of data. If it's not, let's make it obvious now.
   let size = file.fileSize;
-  Assert.ok(size > 320e3);
+  Assert.greater(size, 320e3);
 
   // Corrupt the database by writing bad data to the end of the file. We
   // assume that the important metadata -- table structure etc -- is stored
@@ -140,7 +140,7 @@ async function run_test_1() {
   db.close();
 
   // Attempt to insert a cookie with the same (name, host, path) triplet.
-  Services.cookies.add(
+  const cv = Services.cookies.add(
     cookie.host,
     cookie.path,
     cookie.name,
@@ -150,9 +150,10 @@ async function run_test_1() {
     cookie.isSession,
     cookie.expiry,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_HTTPS
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
 
   // Check that the cookie service accepted the new cookie.
   Assert.equal(Services.cookies.countCookiesFromHost(cookie.host), 1);

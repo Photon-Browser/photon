@@ -14,6 +14,7 @@ AddonTestUtils.initMochitest(this);
 const server = AddonTestUtils.createHttpServer();
 
 const LOCALE_ADDON_ID = "postponed-langpack@mochi.test";
+const HIDDEN_ADDON_ID = "hidden-addon@mochi.test";
 
 let gProvider;
 
@@ -41,10 +42,34 @@ add_setup(async function () {
         install: fakeLocalePostponedInstall,
       },
     },
+    {
+      id: HIDDEN_ADDON_ID,
+      name: "Hidden Extension (privileged or system)",
+      type: "extension",
+      version: "1.0",
+      // pendingUpgrade is only set when the staged addon is installed
+      // in the same location as the existing one.
+      pendingUpgrade: null,
+      hidden: true,
+    },
   ]);
 
   fakeLocalePostponedInstall.existingAddon = gProvider.addons[0];
-  gProvider.createInstalls([fakeLocalePostponedInstall]);
+
+  const fakeHiddenAddonPostponedInstall = {
+    name: gProvider.addons[1].name,
+    version: "2.0",
+    state: AddonManager.STATE_POSTPONED,
+  };
+  fakeHiddenAddonPostponedInstall.existingAddon = gProvider.addons[1];
+  fakeHiddenAddonPostponedInstall.addon = new MockAddon(HIDDEN_ADDON_ID);
+  fakeHiddenAddonPostponedInstall.addon.version = "2.0";
+  fakeHiddenAddonPostponedInstall.addon.hidden = true;
+
+  gProvider.createInstalls([
+    fakeLocalePostponedInstall,
+    fakeHiddenAddonPostponedInstall,
+  ]);
 
   registerCleanupFunction(() => {
     cleanupPendingNotifications();
@@ -131,12 +156,16 @@ function expectUpdatesAvailableBadgeCount({ win, expectedNumber }) {
     categoriesSidebar.getButtonByName("available-updates");
   is(
     availableButton.badgeCount,
-    1,
-    `Expect only ${expectedNumber} available updates`
+    expectedNumber,
+    expectedNumber
+      ? `Expect only ${expectedNumber} available updates`
+      : "Expect no available updates"
   );
   ok(
-    !availableButton.hidden,
-    "Expecte the available updates category to be visible"
+    expectedNumber ? !availableButton.hidden : availableButton.hidden,
+    `Expect the available updates category to be ${
+      expectedNumber ? "visible" : "hidden"
+    }`
   );
 }
 
@@ -326,7 +355,16 @@ add_task(async function test_pending_update_no_prompted_permission() {
   await extension.unload();
 });
 
-add_task(async function test_pending_update_with_prompted_permission() {
+add_task(async function test_hidden_addon_pending_update() {
+  const win = await loadInitialView("extension");
+
+  await expectAddonInstallStatePostponed(HIDDEN_ADDON_ID);
+  expectUpdatesAvailableBadgeCount({ win, expectedNumber: 0 });
+
+  await closeView(win);
+});
+
+add_task(async function test_pending_update_with_prompted_data_permission() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.dataCollectionPermissions.enabled", true]],
   });
@@ -418,6 +456,9 @@ add_task(async function test_pending_update_with_prompted_permission() {
     {
       title: "With data collection and required permission",
       permissions: ["bookmarks"],
+      old_data_collection_permissions: {
+        required: ["locationInfo"],
+      },
       data_collection_permissions: {
         required: ["locationInfo", "healthInfo"],
       },
@@ -467,7 +508,7 @@ add_task(async function test_pending_update_with_prompted_permission() {
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some-update",
             {
-              permissions: "location, health information",
+              permissions: "health information",
             }
           ),
           "Expected formatted data collection permission string"

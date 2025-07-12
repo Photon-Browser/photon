@@ -17,6 +17,8 @@ mod counter;
 mod custom_distribution;
 mod datetime;
 mod denominator;
+mod dual_labeled_counter;
+mod dual_labeled_counter_sub;
 mod event;
 mod labeled;
 mod labeled_boolean;
@@ -44,6 +46,8 @@ pub use self::counter::CounterMetric;
 pub use self::custom_distribution::{CustomDistributionMetric, LocalCustomDistribution};
 pub use self::datetime::DatetimeMetric;
 pub use self::denominator::DenominatorMetric;
+pub use self::dual_labeled_counter::DualLabeledCounterMetric;
+pub use self::dual_labeled_counter_sub::DualLabeledCounterSubMetric;
 pub use self::event::{EventMetric, EventRecordingError, ExtraKeys, NoExtraKeys};
 pub use self::labeled::LabeledMetric;
 pub use self::labeled_boolean::LabeledBooleanMetric;
@@ -235,7 +239,7 @@ pub(crate) mod profiler_utils {
     pub(crate) fn stream_identifiers_by_id<MetricT: MetricMetadataGetter + MetricNamer>(
         id: &super::MetricId,
         json_writer: &mut gecko_profiler::JSONWriter,
-    ) -> () {
+    ) {
         match MetricT::get_metric_metadata_by_id(id) {
             Ok((metadata, mlabel)) => {
                 // Write the category, as that will always be contained

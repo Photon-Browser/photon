@@ -8,7 +8,9 @@ import android.content.Context
 import android.os.Parcelable
 import android.util.AttributeSet
 import android.util.JsonReader
+import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.engine.fission.GeckoWebContentIsolationMapper.intoWebContentIsolationStrategy
 import mozilla.components.browser.engine.gecko.activity.GeckoActivityDelegate
 import mozilla.components.browser.engine.gecko.activity.GeckoScreenOrientationDelegate
@@ -19,9 +21,14 @@ import mozilla.components.browser.engine.gecko.ext.getStrictSocialTrackingProtec
 import mozilla.components.browser.engine.gecko.integration.LocaleSettingUpdater
 import mozilla.components.browser.engine.gecko.mediaquery.from
 import mozilla.components.browser.engine.gecko.mediaquery.toGeckoValue
+import mozilla.components.browser.engine.gecko.preferences.DefaultGeckoPreferenceAccessor
+import mozilla.components.browser.engine.gecko.preferences.GeckoPreferenceAccessor
+import mozilla.components.browser.engine.gecko.preferences.GeckoPreferencesUtils.intoBrowserPreference
+import mozilla.components.browser.engine.gecko.preferences.GeckoPreferencesUtils.intoGeckoBranch
 import mozilla.components.browser.engine.gecko.profiler.Profiler
 import mozilla.components.browser.engine.gecko.serviceworker.GeckoServiceWorkerDelegate
-import mozilla.components.browser.engine.gecko.translate.GeckoTranslationUtils.intoTranslationError
+import mozilla.components.browser.engine.gecko.translate.DefaultRuntimeTranslationAccessor
+import mozilla.components.browser.engine.gecko.translate.RuntimeTranslationAccessor
 import mozilla.components.browser.engine.gecko.util.SpeculativeSessionFactory
 import mozilla.components.browser.engine.gecko.webextension.GeckoWebExtension
 import mozilla.components.browser.engine.gecko.webextension.GeckoWebExtensionException
@@ -45,13 +52,13 @@ import mozilla.components.concept.engine.content.blocking.TrackingProtectionExce
 import mozilla.components.concept.engine.fission.WebContentIsolationStrategy
 import mozilla.components.concept.engine.history.HistoryTrackingDelegate
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
+import mozilla.components.concept.engine.preferences.Branch
+import mozilla.components.concept.engine.preferences.BrowserPreference
+import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
 import mozilla.components.concept.engine.serviceworker.ServiceWorkerDelegate
-import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.LanguageModel
 import mozilla.components.concept.engine.translate.LanguageSetting
 import mozilla.components.concept.engine.translate.ModelManagementOptions
-import mozilla.components.concept.engine.translate.ModelState
-import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationSupport
 import mozilla.components.concept.engine.translate.TranslationsRuntime
 import mozilla.components.concept.engine.utils.EngineVersion
@@ -74,12 +81,12 @@ import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.ContentBlockingController
 import org.mozilla.geckoview.ContentBlockingController.Event
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoWebExecutor
-import org.mozilla.geckoview.TranslationsController
 import org.mozilla.geckoview.WebExtensionController
 import org.mozilla.geckoview.WebNotification
 import java.lang.ref.WeakReference
@@ -97,7 +104,9 @@ class GeckoEngine(
     executorProvider: () -> GeckoWebExecutor = { GeckoWebExecutor(runtime) },
     override val trackingProtectionExceptionStore: TrackingProtectionExceptionStorage =
         GeckoTrackingProtectionExceptionStorage(runtime),
-) : Engine, WebExtensionRuntime, TranslationsRuntime {
+    private val geckoPreferenceAccessor: GeckoPreferenceAccessor = DefaultGeckoPreferenceAccessor(),
+    private val runtimeTranslationAccessor: RuntimeTranslationAccessor = DefaultRuntimeTranslationAccessor(),
+) : Engine, WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesRuntime {
     private val executor by lazy { executorProvider.invoke() }
     private val localeUpdater = LocaleSettingUpdater(context, runtime)
 
@@ -350,7 +359,6 @@ class GeckoEngine(
     /**
      * See [Engine.registerWebExtensionDelegate].
      */
-    @Suppress("Deprecation")
     override fun registerWebExtensionDelegate(
         webExtensionDelegate: WebExtensionDelegate,
     ) {
@@ -362,6 +370,7 @@ class GeckoEngine(
                 ext: org.mozilla.geckoview.WebExtension,
                 permissions: Array<out String>,
                 origins: Array<out String>,
+                dataCollectionPermissions: Array<out String>,
             ): GeckoResult<NativePermissionPromptResponse>? {
                 val result = GeckoResult<NativePermissionPromptResponse>()
 
@@ -369,11 +378,13 @@ class GeckoEngine(
                     GeckoWebExtension(ext, runtime),
                     permissions.toList(),
                     origins.toList(),
+                    dataCollectionPermissions.toList(),
                 ) { data ->
                     result.complete(
                         NativePermissionPromptResponse(
                             data.isPermissionsGranted,
                             data.isPrivateModeGranted,
+                            data.isTechnicalAndInteractionDataGranted,
                         ),
                     )
                 }
@@ -382,18 +393,17 @@ class GeckoEngine(
             }
 
             override fun onUpdatePrompt(
-                current: org.mozilla.geckoview.WebExtension,
-                updated: org.mozilla.geckoview.WebExtension,
+                extension: org.mozilla.geckoview.WebExtension,
                 newPermissions: Array<out String>,
                 newOrigins: Array<out String>,
+                newDataCollectionPermissions: Array<out String>,
             ): GeckoResult<AllowOrDeny>? {
                 val result = GeckoResult<AllowOrDeny>()
                 webExtensionDelegate.onUpdatePermissionRequest(
-                    GeckoWebExtension(current, runtime),
-                    GeckoWebExtension(updated, runtime),
-                    // We pass both permissions and origins as a single list of
-                    // permissions to be shown to the user.
-                    newPermissions.toList() + newOrigins.toList(),
+                    GeckoWebExtension(extension, runtime),
+                    newPermissions.toList(),
+                    newOrigins.toList(),
+                    newDataCollectionPermissions.toList(),
                 ) { allow ->
                     if (allow) result.complete(AllowOrDeny.ALLOW) else result.complete(AllowOrDeny.DENY)
                 }
@@ -404,12 +414,14 @@ class GeckoEngine(
                 extension: org.mozilla.geckoview.WebExtension,
                 permissions: Array<out String>,
                 origins: Array<out String>,
+                dataCollectionPermissions: Array<out String>,
             ): GeckoResult<AllowOrDeny>? {
                 val result = GeckoResult<AllowOrDeny>()
                 webExtensionDelegate.onOptionalPermissionsRequest(
                     GeckoWebExtension(extension, runtime),
                     permissions.toList(),
                     origins.toList(),
+                    dataCollectionPermissions.toList(),
                 ) { allow ->
                     if (allow) result.complete(AllowOrDeny.ALLOW) else result.complete(AllowOrDeny.DENY)
                 }
@@ -530,11 +542,16 @@ class GeckoEngine(
         extensionId: String,
         permissions: List<String>,
         origins: List<String>,
+        dataCollectionPermissions: List<String>,
         onSuccess: (WebExtension) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        if (permissions.isEmpty() && origins.isEmpty()) {
-            onError(IllegalStateException("Either permissions or origins must not be empty"))
+        if (permissions.isEmpty() && origins.isEmpty() && dataCollectionPermissions.isEmpty()) {
+            onError(
+                IllegalStateException(
+                    "At least one of permissions, origins or dataCollectionPermissions must not be empty",
+                ),
+            )
             return
         }
 
@@ -542,6 +559,7 @@ class GeckoEngine(
             extensionId,
             permissions.toTypedArray(),
             origins.toTypedArray(),
+            dataCollectionPermissions.toTypedArray(),
         ).then(
             {
                 val enabledExtension = GeckoWebExtension(it!!, runtime)
@@ -562,11 +580,16 @@ class GeckoEngine(
         extensionId: String,
         permissions: List<String>,
         origins: List<String>,
+        dataCollectionPermissions: List<String>,
         onSuccess: (WebExtension) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        if (permissions.isEmpty() && origins.isEmpty()) {
-            onError(IllegalStateException("Either permissions or origins must not be empty"))
+        if (permissions.isEmpty() && origins.isEmpty() && dataCollectionPermissions.isEmpty()) {
+            onError(
+                IllegalStateException(
+                    "At least one of permissions, origins or dataCollectionPermissions must not be empty",
+                ),
+            )
             return
         }
 
@@ -574,6 +597,7 @@ class GeckoEngine(
             extensionId,
             permissions.toTypedArray(),
             origins.toTypedArray(),
+            dataCollectionPermissions.toTypedArray(),
         ).then(
             {
                 val enabledExtension = GeckoWebExtension(it!!, runtime)
@@ -738,8 +762,13 @@ class GeckoEngine(
         runtime.serviceWorkerDelegate = null
     }
 
-    override fun handleWebNotificationClick(webNotification: Parcelable) {
-        (webNotification as? WebNotification)?.click()
+    override fun handleWebNotificationClick(webNotification: Parcelable, action: String?) {
+        val notification = (webNotification as? WebNotification)
+        if (action != null) {
+            notification?.click(action)
+        } else {
+            notification?.click()
+        }
     }
 
     /**
@@ -775,19 +804,9 @@ class GeckoEngine(
         onSuccess: (Boolean) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.isTranslationsEngineSupported().then(
-            {
-                if (it != null) {
-                    onSuccess(it)
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.isTranslationsEngineSupported(
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -800,19 +819,11 @@ class GeckoEngine(
         onSuccess: (Long) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.checkPairDownloadSize(fromLanguage, toLanguage).then(
-            {
-                if (it != null) {
-                    onSuccess(it)
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getTranslationsPairDownloadSize(
+            fromLanguage = fromLanguage,
+            toLanguage = toLanguage,
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -823,28 +834,9 @@ class GeckoEngine(
         onSuccess: (List<LanguageModel>) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.listModelDownloadStates().then(
-            {
-                if (it != null) {
-                    val listOfModels = mutableListOf<LanguageModel>()
-                    for (each in it) {
-                        val language = each.language?.let { language ->
-                            Language(language.code, each.language?.localizedDisplayName)
-                        }
-                        val status = if (each.isDownloaded) ModelState.DOWNLOADED else ModelState.NOT_DOWNLOADED
-                        val model = LanguageModel(language, status, each.size)
-                        listOfModels.add(model)
-                    }
-                    onSuccess(listOfModels)
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getTranslationsModelDownloadStates(
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -855,34 +847,9 @@ class GeckoEngine(
         onSuccess: (TranslationSupport) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.listSupportedLanguages().then(
-            {
-                if (it != null) {
-                    val listOfFromLanguages = mutableListOf<Language>()
-                    val listOfToLanguages = mutableListOf<Language>()
-
-                    if (it.fromLanguages != null) {
-                        for (each in it.fromLanguages!!) {
-                            listOfFromLanguages.add(Language(each.code, each.localizedDisplayName))
-                        }
-                    }
-
-                    if (it.toLanguages != null) {
-                        for (each in it.toLanguages!!) {
-                            listOfToLanguages.add(Language(each.code, each.localizedDisplayName))
-                        }
-                    }
-
-                    onSuccess(TranslationSupport(listOfFromLanguages, listOfToLanguages))
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getSupportedTranslationLanguages(
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -894,22 +861,10 @@ class GeckoEngine(
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        val geckoOptions =
-            TranslationsController.RuntimeTranslation.ModelManagementOptions.Builder()
-                .operation(options.operation.toString())
-                .operationLevel(options.operationLevel.toString())
-
-        options.languageToManage?.let { geckoOptions.languageToManage(it) }
-
-        TranslationsController.RuntimeTranslation.manageLanguageModel(geckoOptions.build()).then(
-            {
-                onSuccess()
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.manageTranslationsLanguageModel(
+            options = options,
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -920,20 +875,9 @@ class GeckoEngine(
         onSuccess: (List<String>) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.preferredLanguages().then(
-            {
-                if (it != null) {
-                    onSuccess(it)
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getUserPreferredLanguages(
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -959,24 +903,10 @@ class GeckoEngine(
         onSuccess: (LanguageSetting) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.getLanguageSetting(languageCode).then(
-            {
-                if (it != null) {
-                    try {
-                        onSuccess(LanguageSetting.fromValue(it))
-                    } catch (e: IllegalArgumentException) {
-                        onError(e.intoTranslationError())
-                    }
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getLanguageSetting(
+            languageCode = languageCode,
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -989,15 +919,11 @@ class GeckoEngine(
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.setLanguageSettings(languageCode, languageSetting.toString()).then(
-            {
-                onSuccess()
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.setLanguageSetting(
+            languageCode = languageCode,
+            languageSetting = languageSetting,
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -1008,27 +934,9 @@ class GeckoEngine(
         onSuccess: (Map<String, LanguageSetting>) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.getLanguageSettings().then(
-            {
-                if (it != null) {
-                    try {
-                        val result = mutableMapOf<String, LanguageSetting>()
-                        it.forEach { item ->
-                            result[item.key] = LanguageSetting.fromValue(item.value)
-                        }
-                        onSuccess(result)
-                    } catch (e: IllegalArgumentException) {
-                        onError(e.intoTranslationError())
-                    }
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getLanguageSettings(
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -1039,23 +947,9 @@ class GeckoEngine(
         onSuccess: (List<String>) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.getNeverTranslateSiteList().then(
-            {
-                if (it != null) {
-                    try {
-                        onSuccess(it)
-                    } catch (e: IllegalArgumentException) {
-                        onError(e.intoTranslationError())
-                    }
-                } else {
-                    onError(TranslationError.UnexpectedNull())
-                }
-                GeckoResult<Void>()
-            },
-            { throwable ->
-                onError(throwable.intoTranslationError())
-                GeckoResult<Void>()
-            },
+        runtimeTranslationAccessor.getNeverTranslateSiteList(
+            onSuccess = onSuccess,
+            onError = onError,
         )
     }
 
@@ -1068,14 +962,128 @@ class GeckoEngine(
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit,
     ) {
-        TranslationsController.RuntimeTranslation.setNeverTranslateSpecifiedSite(setting, origin).then(
+        runtimeTranslationAccessor.setNeverTranslateSpecifiedSite(
+            origin = origin,
+            neverTranslate = setting,
+            onSuccess = onSuccess,
+            onError = onError,
+        )
+    }
+
+    /**
+     * See [Engine.getBrowserPref].
+     */
+    @ExperimentalAndroidComponentsApi
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun getBrowserPref(
+        pref: String,
+        onSuccess: (BrowserPreference<*>) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        geckoPreferenceAccessor.getGeckoPref(pref).then(
+            { geckoPrefResult ->
+                if (geckoPrefResult != null) {
+                    onSuccess(
+                        geckoPrefResult.intoBrowserPreference(),
+                    )
+                } else {
+                    onError(Throwable("Browser preference was unexpectedly null!"))
+                }
+                GeckoResult<Void>()
+            },
+            { throwable ->
+                onError(throwable)
+                GeckoResult<Void>()
+            },
+        )
+    }
+
+    /**
+     * See [Engine.setBrowserPref].
+     */
+    @ExperimentalAndroidComponentsApi
+    override fun setBrowserPref(
+        pref: String,
+        value: String,
+        branch: Branch,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        geckoPreferenceAccessor.setGeckoPref(pref, value, branch.intoGeckoBranch()).then(
             {
                 onSuccess()
                 GeckoResult<Void>()
             },
             { throwable ->
-                onError(throwable.intoTranslationError())
+                onError(throwable)
                 GeckoResult<Void>()
+            },
+        )
+    }
+
+    /**
+     * See [Engine.setBrowserPref].
+     */
+    @ExperimentalAndroidComponentsApi
+    override fun setBrowserPref(
+        pref: String,
+        value: Int,
+        branch: Branch,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        geckoPreferenceAccessor.setGeckoPref(pref, value, branch.intoGeckoBranch()).then(
+            {
+                onSuccess()
+                GeckoResult<Void>()
+            },
+            { throwable ->
+                onError(throwable)
+                GeckoResult<Void>()
+            },
+        )
+    }
+
+    /**
+     * See [Engine.setBrowserPref].
+     */
+    @ExperimentalAndroidComponentsApi
+    override fun setBrowserPref(
+        pref: String,
+        value: Boolean,
+        branch: Branch,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        geckoPreferenceAccessor.setGeckoPref(pref, value, branch.intoGeckoBranch()).then(
+            {
+                onSuccess()
+                GeckoResult<Void>()
+            },
+            { throwable ->
+                onError(throwable)
+                GeckoResult<Void>()
+            },
+        )
+    }
+
+    /**
+     * See [Engine.clearBrowserUserPref].
+     */
+    @ExperimentalAndroidComponentsApi
+    override fun clearBrowserUserPref(
+        pref: String,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        geckoPreferenceAccessor.clearGeckoUserPref(pref).then(
+            {
+                onSuccess()
+                GeckoResult<Void>()
+            },
+            { throwable ->
+                onError(throwable)
+                   GeckoResult<Void>()
             },
         )
     }
@@ -1153,6 +1161,18 @@ class GeckoEngine(
 
                         if (cookiePurging != value.cookiePurging) {
                             setCookiePurging(value.cookiePurging)
+                        }
+
+                        if (getBounceTrackingProtectionMode() != policy.bounceTrackingProtectionMode.mode) {
+                            setBounceTrackingProtectionMode(policy.bounceTrackingProtectionMode.mode)
+                        }
+
+                        if (allowListBaselineTrackingProtection != value.allowListBaselineTrackingProtection) {
+                            setAllowListBaselineTrackingProtection(value.allowListBaselineTrackingProtection)
+                        }
+
+                        if (allowListConvenienceTrackingProtection != value.allowListConvenienceTrackingProtection) {
+                            setAllowListConvenienceTrackingProtection(value.allowListConvenienceTrackingProtection)
                         }
                     }
 
@@ -1456,6 +1476,18 @@ class GeckoEngine(
             get() = runtime.settings.userCharacteristicPingCurrentVersion
             set(value) { runtime.settings.setUserCharacteristicPingCurrentVersion(value) }
 
+        override var baselineFingerprintingProtection: Boolean?
+            get() = runtime.settings.baselineFingerprintingProtection
+            set(value) {
+                value?.let { runtime.settings.setBaselineFingerprintingProtection(it) }
+            }
+
+        override var baselineFingerprintingProtectionOverrides: String?
+            get() = runtime.settings.baselineFingerprintingProtectionOverrides
+            set(value) {
+                value?.let { runtime.settings.setBaselineFingerprintingProtectionOverrides(it) }
+            }
+
         override var webContentIsolationStrategy: WebContentIsolationStrategy?
             get() = runtime.settings.webContentIsolationStrategy?.intoWebContentIsolationStrategy()
             set(value) {
@@ -1528,6 +1560,8 @@ class GeckoEngine(
             this.fdlibmMathEnabled = it.fdlibmMathEnabled
             this.emailTrackerBlockingPrivateBrowsing = it.emailTrackerBlockingPrivateBrowsing
             this.userCharacteristicPingCurrentVersion = it.userCharacteristicPingCurrentVersion
+            this.baselineFingerprintingProtection = it.baselineFingerprintingProtection
+            this.baselineFingerprintingProtectionOverrides = it.baselineFingerprintingProtectionOverrides
             this.webContentIsolationStrategy = it.webContentIsolationStrategy
             this.fetchPriorityEnabled = it.fetchPriorityEnabled
             this.parallelMarkingEnabled = it.parallelMarkingEnabled

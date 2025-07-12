@@ -43,6 +43,7 @@
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/SSE.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanvasRenderingContextHelper.h"
@@ -52,8 +53,10 @@
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/MediaDeviceInfoBinding.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/fallible.h"
 #include "mozilla/XorShift128PlusRNG.h"
+#include "mozilla/dom/CanvasUtils.h"
 
 #include "nsAboutProtocolUtils.h"
 #include "nsBaseHashtable.h"
@@ -286,7 +289,7 @@ nsRFPService::GetFingerprintingProtectionType(bool aIsPrivateMode) {
   return FingerprintingProtectionType::None;
 }
 
-Maybe<bool> nsRFPService::HandleExeptionalRFPTargets(
+Maybe<bool> nsRFPService::HandleExceptionalRFPTargets(
     RFPTarget aTarget, bool aIsPrivateMode,
     FingerprintingProtectionType aMode) {
   MOZ_ASSERT(GetFingerprintingProtectionType(aIsPrivateMode) !=
@@ -344,7 +347,7 @@ bool nsRFPService::IsRFPEnabledFor(
   }
 
   if (Maybe<bool> result =
-          HandleExeptionalRFPTargets(aTarget, aIsPrivateMode, mode)) {
+          HandleExceptionalRFPTargets(aTarget, aIsPrivateMode, mode)) {
     return *result;
   }
 
@@ -1671,7 +1674,8 @@ nsresult nsRFPService::GenerateCanvasKeyFromImageData(
     return NS_ERROR_FAILURE;
   }
 
-  if (StaticPrefs::
+  if ((aSize < 2500 || !mozilla::supports_sha()) ||
+      StaticPrefs::
           privacy_resistFingerprinting_randomization_canvas_use_siphash()) {
     // Hash the canvas data to generate the image data hash.
     mozilla::HashNumber imageHashData = mozilla::HashString(aImageData, aSize);
@@ -1721,8 +1725,9 @@ nsresult nsRFPService::GenerateCanvasKeyFromImageData(
 
 // static
 nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
-                                       uint8_t* aData, uint32_t aWidth,
-                                       uint32_t aHeight, uint32_t aSize,
+                                       nsIPrincipal* aPrincipal, uint8_t* aData,
+                                       uint32_t aWidth, uint32_t aHeight,
+                                       uint32_t aSize,
                                        gfx::SurfaceFormat aSurfaceFormat) {
   NS_ENSURE_ARG_POINTER(aData);
 
@@ -1731,6 +1736,11 @@ nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
   }
 
   if (aSize <= 4) {
+    return NS_OK;
+  }
+
+  if (aPrincipal && CanvasUtils::GetCanvasExtractDataPermission(*aPrincipal) ==
+                        nsIPermissionManager::ALLOW_ACTION) {
     return NS_OK;
   }
 
@@ -2227,10 +2237,7 @@ nsRFPService::SetFingerprintingOverrides(
                                      ? sEnabledFingerprintingProtectionsBase
                                      : sEnabledFingerprintingProtections;
     RFPTargetSet targets = nsRFPService::CreateOverridesFromText(
-        NS_ConvertUTF8toUTF16(overridesText),
-        mFingerprintingOverrides.Contains(domainKey)
-            ? mFingerprintingOverrides.Get(domainKey)
-            : baseOverrides);
+        NS_ConvertUTF8toUTF16(overridesText), baseOverrides);
 
     // The newly added one will replace the existing one for the given domain
     // key.
@@ -2571,13 +2578,11 @@ void nsRFPService::GetMediaDeviceGroup(nsString& aGroup,
                                        dom::MediaDeviceKind aKind) {
   switch (aKind) {
     case dom::MediaDeviceKind::Audioinput:
+    case dom::MediaDeviceKind::Audiooutput:
       aGroup.Assign(u"Audio Device Group"_ns);
       break;
     case dom::MediaDeviceKind::Videoinput:
       aGroup = u"Video Device Group"_ns;
-      break;
-    case dom::MediaDeviceKind::Audiooutput:
-      aGroup = u"Speaker Device Group"_ns;
       break;
   }
 }
@@ -2682,4 +2687,63 @@ CSSIntRect nsRFPService::GetSpoofedScreenAvailSize(const nsRect& aRect,
 
   return CSSIntRect::FromAppUnitsRounded(
       nsRect{0, 0, aRect.width, aRect.height - spoofedHeightOffset});
+}
+
+/* static */
+uint64_t nsRFPService::GetSpoofedStorageLimit() {
+  uint64_t gib = 1024ULL * 1024ULL * 1024ULL;  // 1 GiB
+#ifdef ANDROID
+  uint64_t limit = 32ULL * gib;  // 32 GiB
+#else
+  uint64_t limit = 50ULL * gib;  // 50 GiB
+#endif
+  MOZ_ASSERT(limit / 5 ==
+             dom::quota::QuotaManager::GetGroupLimitForLimit(limit));
+
+  return limit;
+}
+
+/* static */
+bool nsRFPService::ExposeWebCodecsAPI(JSContext* aCx, JSObject* aObj) {
+  if (!StaticPrefs::dom_media_webcodecs_enabled()) {
+    return false;
+  }
+
+  return !IsWebCodecsRFPTargetEnabled(aCx);
+}
+
+/* static */
+bool nsRFPService::ExposeWebCodecsAPIImageDecoder(JSContext* aCx,
+                                                  JSObject* aObj) {
+  if (!StaticPrefs::dom_media_webcodecs_image_decoder_enabled()) {
+    return false;
+  }
+
+  return !IsWebCodecsRFPTargetEnabled(aCx);
+}
+
+/* static */
+bool nsRFPService::IsWebCodecsRFPTargetEnabled(JSContext* aCx) {
+  if (!nsContentUtils::ShouldResistFingerprinting("Efficiency check",
+                                                  RFPTarget::WebCodecs)) {
+    return false;
+  }
+
+  // We know that the RFPTarget::WebCodecs is enabled, check if principal
+  // is exempted.
+
+  // VideoFrame::PrefEnabled function can be called without a JSContext.
+  if (!aCx) {
+    return true;
+  }
+
+  // Once bug 1973966 is resolved, we can replace this section with just
+  // nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
+  JS::Realm* realm = js::GetContextRealm(aCx);
+  MOZ_ASSERT(realm);
+  JSPrincipals* principals = JS::GetRealmPrincipals(realm);
+  nsIPrincipal* principal = nsJSPrincipals::get(principals);
+
+  return nsContentUtils::ShouldResistFingerprinting_dangerous(
+      principal, "Principal is the best context we have", RFPTarget::WebCodecs);
 }

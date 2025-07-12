@@ -13,6 +13,7 @@ import androidx.annotation.UiContext
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.FragmentManager
+import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -33,6 +34,7 @@ import mozilla.components.support.ktx.android.content.appVersionName
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.R
+import org.mozilla.fenix.addons.AddonsManagementFragmentDirections
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.ThemeManager
@@ -42,9 +44,10 @@ import org.mozilla.fenix.theme.ThemeManager
  */
 class WebExtensionPromptFeature(
     private val store: BrowserStore,
-    @UiContext private val context: Context,
+    @param:UiContext private val context: Context,
     private val fragmentManager: FragmentManager,
     private val onLinkClicked: (String, Boolean) -> Unit,
+    private val navController: NavController,
     private val addonManager: AddonManager = context.components.addonManager,
 ) : LifecycleAwareFeature {
 
@@ -133,6 +136,7 @@ class WebExtensionPromptFeature(
             promptRequest = promptRequest,
             permissions = promptRequest.permissions,
             origins = promptRequest.origins,
+            dataCollectionPermissions = promptRequest.dataCollectionPermissions,
         )
     }
 
@@ -144,11 +148,16 @@ class WebExtensionPromptFeature(
         val shouldGrantWithoutPrompt = Addon.localizePermissions(
             promptRequest.permissions,
             context,
-        ).isEmpty() && promptRequest.origins.isEmpty()
+        ).isEmpty() && promptRequest.origins.isEmpty() && promptRequest.dataCollectionPermissions.isEmpty()
 
         // If we don't have any promptable permissions, just proceed.
         if (shouldGrantWithoutPrompt) {
-            handlePermissions(promptRequest, granted = true, privateBrowsingAllowed = false)
+            handlePermissions(
+                promptRequest,
+                granted = true,
+                privateBrowsingAllowed = false,
+                technicalAndInteractionDataGranted = false,
+            )
             return
         }
 
@@ -158,6 +167,7 @@ class WebExtensionPromptFeature(
             forOptionalPermissions = true,
             permissions = promptRequest.permissions,
             origins = promptRequest.origins,
+            dataCollectionPermissions = promptRequest.dataCollectionPermissions,
         )
     }
 
@@ -261,9 +271,10 @@ class WebExtensionPromptFeature(
         forOptionalPermissions: Boolean = false,
         permissions: List<String> = emptyList(),
         origins: List<String> = emptyList(),
-    ) {
+        dataCollectionPermissions: List<String> = emptyList(),
+    ): PermissionsDialogFragment? {
         if (isInstallationInProgress || hasExistingPermissionDialogFragment()) {
-            return
+            return null
         }
 
         val dialog = PermissionsDialogFragment.newInstance(
@@ -271,6 +282,7 @@ class WebExtensionPromptFeature(
             forOptionalPermissions = forOptionalPermissions,
             permissions = permissions,
             origins = origins,
+            dataCollectionPermissions = dataCollectionPermissions,
             promptsStyling = AddonDialogFragment.PromptsStyling(
                 gravity = Gravity.BOTTOM,
                 shouldWidthMatchParent = true,
@@ -297,11 +309,12 @@ class WebExtensionPromptFeature(
                     context,
                 ),
             ),
-            onPositiveButtonClicked = { _, privateBrowsingAllowed ->
+            onPositiveButtonClicked = { _, privateBrowsingAllowed, technicalAndInteractionDataAllowed ->
                 handlePermissions(
                     promptRequest,
                     granted = true,
                     privateBrowsingAllowed,
+                    technicalAndInteractionDataAllowed,
                 )
             },
             onNegativeButtonClicked = {
@@ -309,6 +322,7 @@ class WebExtensionPromptFeature(
                     promptRequest,
                     granted = false,
                     privateBrowsingAllowed = false,
+                    technicalAndInteractionDataGranted = false,
                 )
             },
             onLearnMoreClicked = {
@@ -321,27 +335,36 @@ class WebExtensionPromptFeature(
                 )
             },
         )
-        dialog.show(
-            fragmentManager,
-            PERMISSIONS_DIALOG_FRAGMENT_TAG,
-        )
+        dialog.show(fragmentManager, PERMISSIONS_DIALOG_FRAGMENT_TAG)
+
+        return dialog
     }
 
     private fun tryToReAttachButtonHandlersToPreviousDialog() {
         findPreviousPermissionDialogFragment()?.let { dialog ->
-            dialog.onPositiveButtonClicked = { addon, privateBrowsingAllowed ->
+            dialog.onPositiveButtonClicked = { addon, privateBrowsingAllowed, technicalAndInteractionDataGranted ->
                 store.state.webExtensionPromptRequest?.let { promptRequest ->
                     if (promptRequest is WebExtensionPromptRequest.AfterInstallation.Permissions &&
                         addon.id == promptRequest.extension.id
                     ) {
-                        handlePermissions(promptRequest, granted = true, privateBrowsingAllowed)
+                        handlePermissions(
+                            promptRequest,
+                            granted = true,
+                            privateBrowsingAllowed,
+                            technicalAndInteractionDataGranted,
+                        )
                     }
                 }
             }
             dialog.onNegativeButtonClicked = {
                 store.state.webExtensionPromptRequest?.let { promptRequest ->
                     if (promptRequest is WebExtensionPromptRequest.AfterInstallation.Permissions) {
-                        handlePermissions(promptRequest, granted = false, privateBrowsingAllowed = false)
+                        handlePermissions(
+                            promptRequest,
+                            granted = false,
+                            privateBrowsingAllowed = false,
+                            technicalAndInteractionDataGranted = false,
+                        )
                     }
                 }
             }
@@ -373,6 +396,7 @@ class WebExtensionPromptFeature(
         promptRequest: WebExtensionPromptRequest.AfterInstallation.Permissions,
         granted: Boolean,
         privateBrowsingAllowed: Boolean,
+        technicalAndInteractionDataGranted: Boolean,
     ) {
         when (promptRequest) {
             is WebExtensionPromptRequest.AfterInstallation.Permissions.Optional -> {
@@ -383,6 +407,7 @@ class WebExtensionPromptFeature(
                 val response = PermissionPromptResponse(
                     isPermissionsGranted = granted,
                     isPrivateModeGranted = privateBrowsingAllowed,
+                    isTechnicalAndInteractionDataGranted = technicalAndInteractionDataGranted,
                 )
                 promptRequest.onConfirm(response)
             }
@@ -414,7 +439,8 @@ class WebExtensionPromptFeature(
         ) as? AddonInstallationDialogFragment
     }
 
-    private fun showPostInstallationDialog(addon: Addon) {
+    @VisibleForTesting
+    internal fun showPostInstallationDialog(addon: Addon): AddonInstallationDialogFragment? {
         if (!isInstallationInProgress && !hasExistingAddonPostInstallationDialogFragment()) {
             val dialog = AddonInstallationDialogFragment.newInstance(
                 addon = addon,
@@ -438,9 +464,19 @@ class WebExtensionPromptFeature(
                 onConfirmButtonClicked = { _ ->
                     consumePromptRequest()
                 },
+                onExtensionSettingsLinkClicked = {
+                    navController.navigate(
+                        AddonsManagementFragmentDirections.actionGlobalToInstalledAddonDetailsFragment(it),
+                    )
+                    consumePromptRequest()
+                },
             )
             dialog.show(fragmentManager, POST_INSTALLATION_DIALOG_FRAGMENT_TAG)
+
+            return dialog
         }
+
+        return null
     }
 
     @VisibleForTesting

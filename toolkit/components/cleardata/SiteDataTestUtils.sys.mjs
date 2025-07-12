@@ -99,7 +99,7 @@ export var SiteDataTestUtils = {
         : principal.originAttributes;
     }
 
-    Services.cookies.add(
+    const cv = Services.cookies.add(
       host,
       path,
       name,
@@ -107,11 +107,14 @@ export var SiteDataTestUtils = {
       false,
       false,
       false,
-      Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+      Date.now() + 24 * 60 * 60 * 1000,
       originAttributes,
-      Ci.nsICookie.SAMESITE_NONE,
+      Ci.nsICookie.SAMESITE_UNSET,
       Ci.nsICookie.SCHEME_UNSET
     );
+    if (cv.result !== Ci.nsICookieValidation.eOK) {
+      throw new Error(`Invalid cookie: ${cv.result}`);
+    }
   },
 
   /**

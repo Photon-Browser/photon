@@ -10,6 +10,40 @@
 // and we start using it in xpcshell tests as well.
 // It contains various common helper functions.
 
+// Recording already set preferences.
+const devtoolsPreferences = Services.prefs.getBranch("devtools");
+const alreadySetPreferences = new Set();
+for (const pref of devtoolsPreferences.getChildList("")) {
+  if (devtoolsPreferences.prefHasUserValue(pref)) {
+    alreadySetPreferences.add(pref);
+  }
+}
+
+async function resetPreferencesModifiedDuringTest() {
+  if (!isXpcshell) {
+    await SpecialPowers.flushPrefEnv();
+  }
+
+  // Reset devtools preferences modified by the test.
+  for (const pref of devtoolsPreferences.getChildList("")) {
+    if (
+      devtoolsPreferences.prefHasUserValue(pref) &&
+      !alreadySetPreferences.has(pref)
+    ) {
+      devtoolsPreferences.clearUserPref(pref);
+    }
+  }
+
+  // Cleanup some generic Firefox preferences set indirectly by tests.
+  for (const pref of [
+    "browser.firefox-view.view-count",
+    "extensions.ui.lastCategory",
+    "sidebar.old-sidebar.has-used",
+  ]) {
+    Services.prefs.clearUserPref(pref);
+  }
+}
+
 const isMochitest = "gTestPath" in this;
 const isXpcshell = !isMochitest;
 if (isXpcshell) {
@@ -25,9 +59,8 @@ const { Constructor: CC } = Components;
 // and allocation sites if DEBUG_DEVTOOLS_ALLOCATIONS is set to "verbose".
 const DEBUG_ALLOCATIONS = Services.env.get("DEBUG_DEVTOOLS_ALLOCATIONS");
 if (DEBUG_ALLOCATIONS) {
-  // Use a custom loader with `invisibleToDebugger` flag for the allocation tracker
-  // as it instantiates custom Debugger API instances and has to be running in a distinct
-  // compartments from DevTools and system scopes (JSMs, XPCOM,...)
+  // Load the allocation tracker from the distinct privileged loader in order
+  // to be able to debug all privileged code (ESMs, XPCOM,...) running in the shared privileged global.
   const {
     useDistinctSystemPrincipalLoader,
     releaseDistinctSystemPrincipalLoader,
@@ -72,9 +105,8 @@ if (DEBUG_ALLOCATIONS) {
 // in any other way on parent process's main thread.
 const DEBUG_STEP = Services.env.get("DEBUG_STEP");
 if (DEBUG_STEP) {
-  // Use a custom loader with `invisibleToDebugger` flag for the allocation tracker
-  // as it instantiates custom Debugger API instances and has to be running in a distinct
-  // compartments from DevTools and system scopes (JSMs, XPCOM,...)
+  // Load the stepper code from the distinct privileged loader in order
+  // to be able to debug all privileged code (ESMs, XPCOM,...) running in the shared privileged global.
   const {
     useDistinctSystemPrincipalLoader,
     releaseDistinctSystemPrincipalLoader,
@@ -97,9 +129,8 @@ if (DEBUG_STEP) {
 
 const DEBUG_TRACE_LINE = Services.env.get("DEBUG_TRACE_LINE");
 if (DEBUG_TRACE_LINE) {
-  // Use a custom loader with `invisibleToDebugger` flag for the allocation tracker
-  // as it instantiates custom Debugger API instances and has to be running in a distinct
-  // compartments from DevTools and system scopes (ESMs, XPCOM,...)
+  // Load the tracing code from the distinct privileged loader in order
+  // to be able to debug all privileged code (ESMs, XPCOM,...) running in the shared privileged global.
   const {
     useDistinctSystemPrincipalLoader,
     releaseDistinctSystemPrincipalLoader,
@@ -273,11 +304,13 @@ registerCleanupFunction(() => {
   ConsoleAPIStorage.removeLogEventListener(onConsoleMessage);
 });
 
-Services.prefs.setBoolPref("devtools.inspector.three-pane-enabled", true);
-
 // Disable this preference to reduce exceptions related to pending `listWorkers`
 // requests occuring after a process is created/destroyed. See Bug 1620983.
-Services.prefs.setBoolPref("dom.ipc.processPrelaunch.enabled", false);
+add_setup(async () => {
+  if (!isXpcshell) {
+    await pushPref("dom.ipc.processPrelaunch.enabled", false);
+  }
+});
 
 // On some Linux platforms, prefers-reduced-motion is enabled, which would
 // trigger the notification to be displayed in the toolbox. Dismiss the message
@@ -289,20 +322,6 @@ Services.prefs.setBoolPref(
 
 // Enable dumping scope variables when a test failure occurs.
 Services.prefs.setBoolPref("devtools.testing.testScopes", true);
-
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("devtools.dump.emit");
-  Services.prefs.clearUserPref("devtools.inspector.three-pane-enabled");
-  Services.prefs.clearUserPref("dom.ipc.processPrelaunch.enabled");
-  Services.prefs.clearUserPref("devtools.toolbox.host");
-  Services.prefs.clearUserPref("devtools.toolbox.previousHost");
-  Services.prefs.clearUserPref("devtools.toolbox.splitconsole.open");
-  Services.prefs.clearUserPref("devtools.toolbox.splitconsoleHeight");
-  Services.prefs.clearUserPref(
-    "devtools.inspector.simple-highlighters.message-dismissed"
-  );
-  Services.prefs.clearUserPref("devtools.testing.testScopes");
-});
 
 var {
   BrowserConsoleManager,
@@ -341,6 +360,10 @@ registerCleanupFunction(async function cleanup() {
       conn.close();
     }
   }
+
+  // Reset all preferences AFTER the toolbox is closed.
+  // NOTE: Doing it before toolbox destruction could trigger observers.
+  await resetPreferencesModifiedDuringTest();
 });
 
 async function safeCloseBrowserConsole({ clearOutput = false } = {}) {
@@ -1446,7 +1469,12 @@ function pushPref(preferenceName, value) {
   return SpecialPowers.pushPrefEnv(options);
 }
 
-async function closeToolbox() {
+/**
+ * Close the toolbox for the selected tab if needed.
+ */
+async function closeToolboxIfOpen() {
+  // `closeToolboxForTab` will be a noop if the selected tab does not have any
+  // toolbox.
   await gDevTools.closeToolboxForTab(gBrowser.selectedTab);
 }
 

@@ -17,6 +17,7 @@
  */
 
 interface ContentSecurityPolicy;
+interface PolicyContainer;
 interface Principal;
 interface WindowProxy;
 interface nsISupports;
@@ -104,11 +105,6 @@ interface Document : Node {
   NodeIterator createNodeIterator(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional NodeFilter? filter = null);
   [NewObject, Throws]
   TreeWalker createTreeWalker(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional NodeFilter? filter = null);
-
-  // NEW
-  // No support for prepend/append yet
-  // undefined prepend((Node or DOMString)... nodes);
-  // undefined append((Node or DOMString)... nodes);
 
   // These are not in the spec, but leave them for now for backwards compat.
   // So sort of like Gecko extensions
@@ -594,11 +590,11 @@ partial interface Document {
   undefined setSuppressedEventListener(EventListener? aListener);
 };
 
-// Allows frontend code to query a CSP which needs to be passed for a
-// new load into docshell. Further, allows to query the CSP in JSON
+// Allows frontend code to query a policyContainer which needs to be passed
+// for a new load into docshell. Further, allows to query the CSP in JSON
 // format for testing purposes.
 partial interface Document {
-  [ChromeOnly] readonly attribute ContentSecurityPolicy? csp;
+  [ChromeOnly] readonly attribute PolicyContainer? policyContainer;
   [ChromeOnly] readonly attribute DOMString cspJSON;
 };
 

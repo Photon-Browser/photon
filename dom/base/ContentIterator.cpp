@@ -1070,9 +1070,17 @@ nsIContent* ContentSubtreeIterator::DetermineCandidateForFirstContent() const {
             ? mRange->GetMayCrossShadowBoundaryChildAtStartOffset()
             : mRange->GetChildAtStartOffset();
 
-    MOZ_ASSERT(child == startContainer->GetChildAt_Deprecated(
-                            ShadowDOMSelectionHelpers::StartOffset(
-                                mRange, mAllowCrossShadowBoundary)));
+#ifdef DEBUG
+    const auto& startRef = IterAllowCrossShadowBoundary()
+                               ? mRange->MayCrossShadowBoundaryStartRef()
+                               : mRange->StartRef();
+    const uint32_t startOffset = ShadowDOMSelectionHelpers::StartOffset(
+        mRange, mAllowCrossShadowBoundary);
+    MOZ_ASSERT(child ==
+               (startRef.GetTreeKind() == TreeKind::Flat
+                    ? startContainer->GetChildAtInFlatTree(startOffset)
+                    : startContainer->GetChildAt_Deprecated(startOffset)));
+#endif
     if (!child) {
       // offset after last child
       node = startContainer;
@@ -1141,8 +1149,15 @@ nsIContent* ContentSubtreeIterator::DetermineCandidateForLastContent() const {
     lastCandidate = IterAllowCrossShadowBoundary()
                         ? mRange->MayCrossShadowBoundaryEndRef().Ref()
                         : mRange->EndRef().Ref();
+#ifdef DEBUG
+    const auto& endRef = IterAllowCrossShadowBoundary()
+                             ? mRange->MayCrossShadowBoundaryEndRef()
+                             : mRange->EndRef();
     MOZ_ASSERT(lastCandidate ==
-               endContainer->GetChildAt_Deprecated(offset - 1));
+               (endRef.GetTreeKind() == TreeKind::Flat
+                    ? endContainer->GetChildAtInFlatTree(offset - 1)
+                    : endContainer->GetChildAt_Deprecated(offset - 1)));
+#endif
     NS_ASSERTION(lastCandidate,
                  "tree traversal trouble in ContentSubtreeIterator::Init");
   }
@@ -1275,12 +1290,11 @@ void ContentSubtreeIterator::Next() {
       MOZ_ASSERT(root);
       nextNode = root->GetFirstChild();
     } else if (auto* slot = HTMLSlotElement::FromNode(nextNode);
-               slot && IterAllowCrossShadowBoundary()) {
+               slot && IterAllowCrossShadowBoundary() &&
+               !slot->AssignedNodes().IsEmpty()) {
       // Ancestor is a slot, we start from the first assigned node within this
       // slot
-      if (!NS_WARN_IF(slot->AssignedNodes().IsEmpty())) {
-        nextNode = slot->AssignedNodes()[0];
-      }
+      nextNode = slot->AssignedNodes()[0];
     } else {
       if (root) {
         // nextNode is a shadow host but the descendant in the light DOM

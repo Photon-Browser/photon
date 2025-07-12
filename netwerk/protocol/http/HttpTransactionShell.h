@@ -12,6 +12,7 @@
 #include "mozilla/UniquePtr.h"
 #include "nsIClassOfService.h"
 #include "nsIEarlyHintObserver.h"
+#include "nsILoadInfo.h"
 #include "nsISupports.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsInputStreamPump.h"
@@ -35,6 +36,17 @@ class nsHttpRequestHead;
 class nsHttpTransaction;
 class TransactionObserverResult;
 union NetAddr;
+
+enum class LNAPermission {
+  Granted,
+  Denied,
+  Pending,
+};
+
+struct LNAPerms {
+  LNAPermission mLocalHostPermission{LNAPermission::Pending};
+  LNAPermission mLocalNetworkPermission{LNAPermission::Pending};
+};
 
 //----------------------------------------------------------------------------
 // Abstract base class for a HTTP transaction in the chrome process
@@ -80,7 +92,9 @@ class HttpTransactionShell : public nsISupports {
       HttpTrafficCategory trafficCategory, nsIRequestContext* requestContext,
       ClassOfService classOfService, uint32_t initialRwin,
       bool responseTimeoutEnabled, uint64_t channelId,
-      TransactionObserverFunc&& transactionObserver) = 0;
+      TransactionObserverFunc&& transactionObserver,
+      nsILoadInfo::IPAddressSpace aParentIPAddressSpace,
+      const LNAPerms& aLnaPermissionStatus) = 0;
 
   // @param aListener
   //        receives notifications.
@@ -108,6 +122,8 @@ class HttpTransactionShell : public nsISupports {
                                    nsIRequest::TRRMode& aEffectiveTRRMode,
                                    TRRSkippedReason& aSkipReason,
                                    bool& aEchConfigUsed) = 0;
+
+  virtual nsILoadInfo::IPAddressSpace GetTargetIPAddressSpace() = 0;
 
   // Functions for Timing interface
   virtual mozilla::TimeStamp GetDomainLookupStart() = 0;
@@ -178,7 +194,9 @@ class HttpTransactionShell : public nsISupports {
       HttpTrafficCategory trafficCategory, nsIRequestContext* requestContext,  \
       ClassOfService classOfService, uint32_t initialRwin,                     \
       bool responseTimeoutEnabled, uint64_t channelId,                         \
-      TransactionObserverFunc&& transactionObserver) override;                 \
+      TransactionObserverFunc&& transactionObserver,                           \
+      nsILoadInfo::IPAddressSpace aParentIPAddressSpace,                       \
+      const LNAPerms& aLnaPermissionStatus) override;                          \
   virtual nsresult AsyncRead(nsIStreamListener* listener, nsIRequest** pump)   \
       override;                                                                \
   virtual UniquePtr<nsHttpResponseHead> TakeResponseHeadAndConnInfo(           \
@@ -224,7 +242,8 @@ class HttpTransactionShell : public nsISupports {
   virtual bool Http3Disabled() const override;                                 \
   virtual already_AddRefed<nsHttpConnectionInfo> GetConnInfo() const override; \
   virtual bool GetSupportsHTTP3() override;                                    \
-  virtual void SetIsForWebTransport(bool aIsForWebTransport) override;
+  virtual void SetIsForWebTransport(bool aIsForWebTransport) override;         \
+  virtual nsILoadInfo::IPAddressSpace GetTargetIPAddressSpace() override;
 
 }  // namespace mozilla::net
 

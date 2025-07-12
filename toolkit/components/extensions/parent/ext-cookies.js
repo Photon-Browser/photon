@@ -4,6 +4,19 @@
 
 "use strict";
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gCookiesRejectWhenInvalid",
+  "extensions.cookie.rejectWhenInvalid",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gCanUsePortInPartitionKey",
+  "privacy.dynamic_firstparty.use_site.include_port",
+  false
+);
+
 var { ExtensionError } = ExtensionUtils;
 
 const SAME_SITE_STATUSES = new Map([
@@ -61,7 +74,7 @@ function fromExtPartitionKey(extPartitionKey, cookieUrl) {
       if (cookieUrl == null) {
         let topLevelSiteURI = Services.io.newURI(topLevelSite);
         let topLevelSiteFilter = Services.eTLD.getSite(topLevelSiteURI);
-        if (topLevelSiteURI.port != -1) {
+        if (gCanUsePortInPartitionKey && topLevelSiteURI.port != -1) {
           topLevelSiteFilter += `:${topLevelSiteURI.port}`;
         }
         return topLevelSiteFilter;
@@ -143,7 +156,7 @@ const convertCookie = ({ cookie, isPrivate }) => {
   };
 
   if (!cookie.isSession) {
-    result.expirationDate = cookie.expiry;
+    result.expirationDate = cookie.expiry / 1000;
   }
 
   if (cookie.originAttributes.userContextId) {
@@ -589,7 +602,7 @@ this.cookies = class extends ExtensionAPIPersistent {
             );
             for (let i = 0; i < cookieArray.length; i++) {
               let cookie = cookieArray.queryElementAt(i, Ci.nsICookie);
-              if (!cookie.isSession && cookie.expiry * 1000 <= Date.now()) {
+              if (!cookie.isSession && cookie.expiry <= Date.now()) {
                 notify(true, cookie, "expired");
               } else {
                 notify(true, cookie, "evicted");
@@ -676,9 +689,11 @@ this.cookies = class extends ExtensionAPIPersistent {
           let secure = details.secure !== null ? details.secure : false;
           let httpOnly = details.httpOnly !== null ? details.httpOnly : false;
           let isSession = details.expirationDate === null;
+
+          // expiry is in milliseconds.
           let expiry = isSession
             ? Number.MAX_SAFE_INTEGER
-            : details.expirationDate;
+            : Services.cookies.maybeCapExpiry(details.expirationDate * 1000);
 
           let { originAttributes } = oaFromDetails(details, context);
 
@@ -718,7 +733,10 @@ this.cookies = class extends ExtensionAPIPersistent {
 
           // The permission check may have modified the domain, so use
           // the new value instead.
-          Services.cookies.add(
+          let fn = gCookiesRejectWhenInvalid
+            ? Services.cookies.add
+            : Services.cookies.addForAddOn;
+          const cv = fn(
             cookieAttrs.host,
             path,
             name,
@@ -732,6 +750,16 @@ this.cookies = class extends ExtensionAPIPersistent {
             schemeType,
             isPartitioned
           );
+
+          if (cv.result !== Ci.nsICookieValidation.eOK) {
+            if (gCookiesRejectWhenInvalid) {
+              return Promise.reject({ message: cv.errorString });
+            }
+
+            Services.console.logStringMessage(
+              `Extension ${extension.id} tried to create an invalid cookie: ${cv.errorString}`
+            );
+          }
 
           return self.cookies.get(details);
         },

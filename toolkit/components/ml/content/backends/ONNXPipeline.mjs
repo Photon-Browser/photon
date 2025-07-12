@@ -29,7 +29,7 @@ const lazy = {};
 ChromeUtils.defineLazyGetter(lazy, "console", () => {
   return console.createInstance({
     maxLogLevel: _logLevel, // we can't use maxLogLevelPref in workers.
-    prefix: "ML:ONNXPipeline",
+    prefix: "GeckoMLONNXPipeline",
   });
 });
 
@@ -37,7 +37,6 @@ ChromeUtils.defineESModuleGetters(
   lazy,
   {
     Progress: "chrome://global/content/ml/Utils.sys.mjs",
-    generateUUID: "chrome://global/content/ml/Utils.sys.mjs",
     setLogLevel: "chrome://global/content/ml/Utils.sys.mjs",
   },
   { global: "current" }
@@ -332,17 +331,6 @@ async function checkGPUSupport() {
   return !!adapter;
 }
 
-function createSessionAwareCache(worker, sessionId) {
-  return {
-    async match(key) {
-      return worker.matchWithSession(key, sessionId);
-    },
-    put() {
-      throw new Error("Method not implemented.");
-    },
-  };
-}
-
 /**
  * Represents a pipeline for processing machine learning tasks.
  */
@@ -384,13 +372,11 @@ export class ONNXPipeline {
     transformers.env.remoteHost = config.modelHubRootUrl;
     transformers.env.remotePathTemplate = config.modelHubUrlTemplate;
     transformers.env.useCustomCache = true;
-    transformers.env.customCache = createSessionAwareCache(
-      this.#mlEngineWorker,
-      lazy.generateUUID()
-    );
+    transformers.env.customCache = this.#mlEngineWorker;
     // using `NO_LOCAL` so when the custom cache is used, we don't try to fetch it (see MLEngineWorker.match)
+    transformers.env.localModelPath = "NO_LOCAL";
+
     if (config.backend === WASM_BACKEND) {
-      transformers.env.localModelPath = "NO_LOCAL";
       transformers.env.backends.onnx.wasm.numThreads = config.numThreads;
 
       // ONNX runtime - we set up the wasm runtime we got from RS for the ONNX backend to pick

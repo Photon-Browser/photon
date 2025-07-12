@@ -13,12 +13,6 @@ import org.mozilla.fenix.ext.settings
  */
 interface FeatureSettingsHelper {
     /**
-     * Whether the onboarding for existing users should be shown or not.
-     * It should appear only once on the first visit to homescreen.
-     */
-    var isHomeOnboardingDialogEnabled: Boolean
-
-    /**
      * Whether the Pocket stories feature is enabled or not.
      */
     var isPocketEnabled: Boolean
@@ -27,6 +21,11 @@ interface FeatureSettingsHelper {
      * Whether the onboarding dialog for choosing wallpapers should be shown or not.
      */
     var isWallpaperOnboardingEnabled: Boolean
+
+    /**
+     * Whether the homepage header should be shown or not.
+     */
+    var isHomepageHeaderEnabled: Boolean
 
     /**
      * Whether the "Jump back in" homescreen section is enabled or not.
@@ -96,6 +95,11 @@ interface FeatureSettingsHelper {
      * Enable or disable the compose home screen feature.
      */
     var isComposeHomepageEnabled: Boolean
+
+    /**
+     * Enable or disable new crash reporter.
+     */
+    var isUseNewCrashReporterDialog: Boolean
 
     /**
      * Enable or disable the translations prompt after a page that can be translated is loaded.

@@ -5,10 +5,37 @@
 //! Generate the `ScaffoldingCall` lists
 
 use super::*;
-use heck::ToUpperCamelCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 
 pub fn pass(root: &mut Root) -> Result<()> {
     root.visit_mut(|int: &mut Interface| {
+        // Create InterfaceBaseClass instances and determine class names
+        match &int.imp {
+            ObjectImpl::Struct | ObjectImpl::Trait => {
+                // Interface that's only implemented in Rust. Give the interface the main name and
+                // append the `Protocol` suffix to the protocol.
+                int.interface_base_class = InterfaceBaseClass {
+                    name: format!("{}Interface", int.name),
+                    methods: int.methods.clone(),
+                    docstring: int.docstring.clone(),
+                    ..InterfaceBaseClass::default()
+                };
+                int.js_class_name = int.name.clone();
+            }
+            ObjectImpl::CallbackTrait => {
+                // Trait interface that can be implemented in Rust or Python. Give the protocol the
+                // main name and append the `Impl` suffix to the interface.
+                int.interface_base_class = InterfaceBaseClass {
+                    name: int.name.clone(),
+                    methods: int.methods.clone(),
+                    docstring: int.docstring.clone(),
+                    ..InterfaceBaseClass::default()
+                };
+                int.js_class_name = format!("{}Impl", int.name);
+            }
+        };
+
+        // Set the `CallableKind::Method::ffi_converter` field
         let int_ffi_converter = format!("FfiConverter{}", int.self_type.canonical_name);
         int.visit_mut(|callable_kind: &mut CallableKind| {
             if let CallableKind::Method { ffi_converter, .. } = callable_kind {
@@ -24,6 +51,9 @@ pub fn pass(root: &mut Root) -> Result<()> {
                 })
             }
         });
+        if let Some(vtable) = &mut int.vtable {
+            vtable.interface_name = int.name.clone();
+        }
     });
 
     // Generate [CppScaffolding::pointer_types]
@@ -46,6 +76,13 @@ pub fn pass(root: &mut Root) -> Result<()> {
                 label: format!("{}::{}", module_name, int.name),
                 ffi_func_clone: int.ffi_func_clone.clone(),
                 ffi_func_free: int.ffi_func_free.clone(),
+                trait_interface_info: int.vtable.is_some().then(|| PointerTypeTraitInterfaceInfo {
+                    free_fn: format!(
+                        "callback_free_{}_{}",
+                        module_name.to_snake_case(),
+                        int.name.to_snake_case(),
+                    ),
+                }),
             })
         });
     });

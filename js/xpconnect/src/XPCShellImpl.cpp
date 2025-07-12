@@ -59,7 +59,6 @@
 #ifdef XP_WIN
 #  include "mozilla/mscom/ProcessRuntime.h"
 #  include "mozilla/ScopeExit.h"
-#  include "mozilla/widget/AudioSession.h"
 #  include "mozilla/WinDllServices.h"
 #  include "mozilla/WindowsBCryptInitialization.h"
 #  include <windows.h>
@@ -128,15 +127,6 @@ class XPCShellDirProvider : public nsIDirectoryServiceProvider2 {
   nsCOMPtr<nsIFile> mAppDir;
   nsCOMPtr<nsIFile> mAppFile;
 };
-
-#ifdef XP_WIN
-class MOZ_STACK_CLASS AutoAudioSession {
- public:
-  AutoAudioSession() { widget::StartAudioSession(); }
-
-  ~AutoAudioSession() { widget::StopAudioSession(); }
-};
-#endif
 
 #define EXITCODE_RUNTIME_ERROR 3
 #define EXITCODE_FILE_NOT_FOUND 4
@@ -560,34 +550,6 @@ static bool SimulateNoScriptActivity(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool RegisterAppManifest(JSContext* cx, unsigned argc, Value* vp) {
-  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
-  if (args.length() != 1) {
-    JS_ReportErrorASCII(cx, "Wrong number of arguments");
-    return false;
-  }
-  if (!args[0].isObject()) {
-    JS_ReportErrorASCII(cx,
-                        "Expected object as argument 1 to registerAppManifest");
-    return false;
-  }
-
-  Rooted<JSObject*> arg1(cx, &args[0].toObject());
-  nsCOMPtr<nsIFile> file;
-  nsresult rv = nsXPConnect::XPConnect()->WrapJS(cx, arg1, NS_GET_IID(nsIFile),
-                                                 getter_AddRefs(file));
-  if (NS_FAILED(rv)) {
-    XPCThrower::Throw(rv, cx);
-    return false;
-  }
-  rv = XRE_AddManifestLocation(NS_APP_LOCATION, file);
-  if (NS_FAILED(rv)) {
-    XPCThrower::Throw(rv, cx);
-    return false;
-  }
-  return true;
-}
-
 #ifdef ANDROID
 static bool ChangeTestShellDir(JSContext* cx, unsigned argc, Value* vp) {
   // This method should only be used by testing/xpcshell/head.js to change to
@@ -653,7 +615,6 @@ static const JSFunctionSpec glob_functions[] = {
     JS_FN("btoa",            xpc::Btoa,      1,0),
     JS_FN("setInterruptCallback", SetInterruptCallback, 1,0),
     JS_FN("simulateNoScriptActivity", SimulateNoScriptActivity, 1,0),
-    JS_FN("registerAppManifest", RegisterAppManifest, 1, 0),
 #ifdef ANDROID
     JS_FN("changeTestShellDir", ChangeTestShellDir, 1,0),
 #endif
@@ -1237,6 +1198,11 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       return 1;
     }
 
+    // Now that the profiler, directory services, and prefs have been
+    // initialized we can find the download directory, where the profiler can
+    // write profiles when user stops the profiler using POSIX signal handling.
+    profiler_lookup_async_signal_dump_directory();
+
     // xpc::ErrorReport::LogToConsoleWithStack needs this to print errors
     // to stderr.
     Preferences::SetBool("browser.dom.window.dump.enabled", true);
@@ -1314,10 +1280,6 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
     // Initialize e10s check on the main thread, if not already done
     BrowserTabsRemoteAutostart();
 #if defined(XP_WIN)
-    // Plugin may require audio session if installed plugin can initialize
-    // asynchronized.
-    AutoAudioSession audioSession;
-
     // Ensure that DLL Services are running
     RefPtr<DllServices> dllSvc(DllServices::Get());
     dllSvc->StartUntrustedModulesProcessor(true);

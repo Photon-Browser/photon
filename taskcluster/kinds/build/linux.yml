@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-gcp
+    worker-type: b-linux-amd
 
 linux64/opt:
     description: "Linux64 Opt"
@@ -48,6 +48,7 @@ linux64/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-x11/opt:
     description: "Linux64 Opt (X11-only)"
@@ -85,6 +86,7 @@ linux64-x11/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu-x11
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-plain/opt:
     description: "Linux64 Opt Plain"
@@ -122,6 +124,7 @@ linux64-plain/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -164,6 +167,7 @@ linux64-non-unified/plain:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-gcc/opt:
     description: "Linux64 GCC Opt"
@@ -205,6 +209,7 @@ linux64-gcc/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-plain-clang-trunk/opt:
     description: "Linux64 Opt Plain with clang trunk"
@@ -244,6 +249,7 @@ linux64-plain-clang-trunk/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -289,6 +295,7 @@ linux64-fuzzing/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -334,6 +341,7 @@ linux64-fuzzing-noopt/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -380,6 +388,7 @@ linux64/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-non-unified/debug:
     description: "Linux64 Debug Hybrid"
@@ -422,6 +431,7 @@ linux64-non-unified/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-plain/debug:
     description: "Linux64 Debug Plain"
@@ -459,6 +469,7 @@ linux64-plain/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -477,7 +488,7 @@ linux64-devedition/opt:
     treeherder:
         platform: linux64-devedition/opt
         symbol: B
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 7200
         env:
@@ -513,6 +524,7 @@ linux64-devedition/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux/opt:
     description: "Linux32 Opt"
@@ -745,7 +757,7 @@ linux-devedition/opt:
     treeherder:
         platform: linux32-devedition/opt
         symbol: B
-    worker-type: b-linux-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 7200
         env:
@@ -793,7 +805,6 @@ linux-shippable/opt:
     treeherder:
         platform: linux32-shippable/opt
         symbol: Bpgo(B)
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 9000
         env:
@@ -834,7 +845,6 @@ linux-reproduced/opt:
     treeherder:
         platform: linux32-shippable/opt
         symbol: Bpgo(repr)
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 9000
         env:
@@ -923,7 +933,7 @@ linux64-reproduced/opt:
     treeherder:
         platform: linux64-shippable/opt
         symbol: Bpgo(repr)
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -955,6 +965,7 @@ linux64-reproduced/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-asan/opt:
     description: "Linux64 Opt ASAN"
@@ -995,6 +1006,7 @@ linux64-asan/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-tsan/opt:
     description: "Linux64 Opt TSAN"
@@ -1035,6 +1047,7 @@ linux64-tsan/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-tsan-fuzzing/opt:
     description: "Linux64 Fuzzing Opt TSAN"
@@ -1078,6 +1091,7 @@ linux64-tsan-fuzzing/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1123,6 +1137,7 @@ linux64-asan-fuzzing/noopt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1169,6 +1184,7 @@ linux64-asan-fuzzing-afl/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1215,6 +1231,7 @@ linux64-fuzzing-afl/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1261,6 +1278,7 @@ linux64-fuzzing-afl-ccov/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1307,6 +1325,7 @@ linux64-asan-fuzzing-nyx/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1354,6 +1373,7 @@ linux64-asan-fuzzing-nyx-ccov/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1400,6 +1420,7 @@ linux64-asan-fuzzing/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1445,6 +1466,7 @@ linux64-asan-fuzzing-ccov/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-fuzzing-ccov/opt:
     description: "Linux64 Fuzzing Opt w/ Coverage"
@@ -1485,6 +1507,7 @@ linux64-fuzzing-ccov/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1504,7 +1527,7 @@ linux64-asan-reporter-shippable/opt:
         platform: linux64-asan-reporter/opt
         symbol: BoR
     run-on-projects: ['mozilla-central']
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: asan-reporter
@@ -1541,6 +1564,7 @@ linux64-asan-reporter-shippable/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-asan/debug:
     description: "Linux64 Debug ASAN"
@@ -1580,6 +1604,7 @@ linux64-asan/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
     optimization:
         skip-unless-expanded: null
 
@@ -1599,7 +1624,7 @@ linux64-shippable/opt:
         platform: linux64-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -1632,6 +1657,7 @@ linux64-shippable/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-nightlyasrelease/opt:
     description: "Linux64 Nightly-As-Release"
@@ -1645,7 +1671,7 @@ linux64-nightlyasrelease/opt:
         platform: linux64-nightlyasrelease/opt
         symbol: Bpgo(Bnar)
     run-on-projects: [trunk-only]
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -1680,6 +1706,7 @@ linux64-nightlyasrelease/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-noopt/debug:
     description: "Linux64 No-optimize Debug"
@@ -1721,6 +1748,7 @@ linux64-noopt/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-rusttests/opt:
     description: "Linux64 Rust Tests Opt"
@@ -1848,6 +1876,7 @@ linux64-ccov/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-ccov/debug:
     description: "Linux64-CCov Debug"
@@ -1888,6 +1917,7 @@ linux64-ccov/debug:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-add-on-devel/opt:
     description: "Linux64 add-on-devel"
@@ -1926,6 +1956,7 @@ linux64-add-on-devel/opt:
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-linux-gnu
 
 linux64-aarch64/opt:
     description: "Linux AArch64 (a.k.a. ARM64) Opt"
@@ -2031,7 +2062,7 @@ linux64-aarch64-shippable/opt:
     treeherder:
         platform: linux64-aarch64-shippable/opt
         symbol: Bpgo(B)
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 9000
         env:
@@ -2084,7 +2115,7 @@ linux64-aarch64-devedition/opt:
     treeherder:
         platform: linux64-aarch64-devedition/opt
         symbol: Bpgo(B)
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 9000
         env:

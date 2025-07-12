@@ -16,7 +16,7 @@ const test = new SearchConfigTest({
   aliases: ["@google"],
   default: {
     // Included everywhere apart from the exclusions below. These are basically
-    // just excluding what Yandex and Baidu include.
+    // just excluding what Baidu includes.
     excluded: [
       {
         regions: ["cn"],
@@ -41,6 +41,10 @@ const test = new SearchConfigTest({
         SearchUtils.MODIFIED_APP_CHANNEL == "esr"
           ? "client=firefox-b-1-e"
           : "client=firefox-b-1-d",
+      partnerCode:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr"
+          ? "firefox-b-1-e"
+          : "firefox-b-1-d",
     },
     {
       excluded: [{ regions: ["us", "by", "kz", "ru", "tr"] }],
@@ -52,11 +56,16 @@ const test = new SearchConfigTest({
         SearchUtils.MODIFIED_APP_CHANNEL == "esr"
           ? "client=firefox-b-e"
           : "client=firefox-b-d",
+      partnerCode:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr"
+          ? "firefox-b-e"
+          : "firefox-b-d",
     },
     {
       included: [{ regions: ["by", "kz", "ru", "tr"] }],
       domain: "google.com",
       telemetryId: "google-com-nocodes",
+      partnerCode: "",
     },
   ],
 });
@@ -86,13 +95,17 @@ add_task(async function test_searchConfig_google_with_pref_param() {
       locale: "en-US",
       region: "US",
       pref: "google_channel_us",
-      expected: "us_param",
+      // On ESR, the channel parameter is always `entpr`
+      expected:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "entpr" : "us_param",
     },
     {
       locale: "en-US",
       region: "GB",
       pref: "google_channel_row",
-      expected: "row_param",
+      // On ESR, the channel parameter is always `entpr`
+      expected:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "entpr" : "row_param",
     },
   ];
 
@@ -136,12 +149,18 @@ add_task(async function test_searchConfig_google_with_nimbus() {
     {
       locale: "en-US",
       region: "US",
-      expected: "nimbus_us_param",
+      // On ESR, the channel parameter is always `entpr`
+      expected:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "entpr" : "nimbus_us_param",
     },
     {
       locale: "en-US",
       region: "GB",
-      expected: "nimbus_row_param",
+      // On ESR, the channel parameter is always `entpr`
+      expected:
+        SearchUtils.MODIFIED_APP_CHANNEL == "esr"
+          ? "entpr"
+          : "nimbus_row_param",
     },
   ];
 

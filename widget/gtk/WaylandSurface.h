@@ -26,6 +26,7 @@ class MessageLoop;
 namespace mozilla::widget {
 
 class WaylandBuffer;
+class BufferTransaction;
 
 // WaylandSurface is a wrapper for Wayland rendering target
 // which is wl_surface / wl_subsurface.
@@ -42,29 +43,29 @@ class WaylandSurface final {
   void SetLoggingWidget(void* aWidget) { mLoggingWidget = aWidget; }
 #endif
 
-  void InitialFrameCallbackHandler(struct wl_callback* aCallback);
+  void ReadyToDrawFrameCallbackHandler(struct wl_callback* aCallback);
   void AddOrFireReadyToDrawCallback(const std::function<void(void)>& aDrawCB);
   void ClearReadyToDrawCallbacks();
 
   void FrameCallbackHandler(struct wl_callback* aCallback, uint32_t aTime,
                             bool aRoutedFromChildSurface);
-  // Run only once at most.
-  void AddOneTimeFrameCallbackLocked(
-      const WaylandSurfaceLock& aProofOfLock,
-      const std::function<void(wl_callback*, uint32_t)>& aFrameCallbackHandler);
 
   // Run frame callback repeatedly. Callback is removed on Unmap.
   // If aEmulateFrameCallback is set to true and WaylandSurface is mapped and
   // ready to draw and we don't have buffer attached yet,
   // fire aFrameCallbackHandler without frame callback from
   // compositor in sFrameCheckTimeoutMs.
-  void AddPersistentFrameCallbackLocked(
+  void SetFrameCallbackLocked(
       const WaylandSurfaceLock& aProofOfLock,
       const std::function<void(wl_callback*, uint32_t)>& aFrameCallbackHandler,
       bool aEmulateFrameCallback = false);
 
   // Enable/Disable any frame callback emission (includes emulated ones).
-  void SetFrameCallbackState(bool aEnabled);
+  void SetFrameCallbackStateLocked(const WaylandSurfaceLock& aProofOfLock,
+                                   bool aEnabled);
+  void SetFrameCallbackStateHandlerLocked(
+      const WaylandSurfaceLock& aProofOfLock,
+      const std::function<void(bool)>& aFrameCallbackStateHandler);
 
   // Create and resize EGL window.
   // GetEGLWindow() takes unscaled window size as we derive size from GdkWindow.
@@ -125,17 +126,13 @@ class WaylandSurface final {
 
   // Attach WaylandBuffer which shows WaylandBuffer content
   // on screen.
-  bool AttachLocked(WaylandSurfaceLock& aSurfaceLock,
-                    RefPtr<WaylandBuffer> aWaylandBuffer);
+  bool AttachLocked(const WaylandSurfaceLock& aSurfaceLock,
+                    RefPtr<WaylandBuffer> aBuffer);
 
   // If there's any WaylandBuffer recently attached, detach it.
   // It makes the WaylandSurface invisible and it doesn't have any
   // content.
-  void RemoveAttachedBufferLocked(WaylandSurfaceLock& aProofOfLock);
-
-  // Called from Wayland compostor async handler when wl_buffer is
-  // detached or deleted.
-  void BufferFreeCallbackHandler(uintptr_t aWlBufferID, bool aWlBufferDelete);
+  void RemoveAttachedBufferLocked(const WaylandSurfaceLock& aProofOfLock);
 
   // CommitLocked() is needed to call after some of *Locked() method
   // to submit the action to Wayland compositor by wl_surface_commit().
@@ -262,6 +259,10 @@ class WaylandSurface final {
       void* aData, struct wp_image_description_v1* aImageDescription,
       uint32_t aIdentity);
 
+  void AssertCurrentThreadOwnsMutex();
+
+  void ForceCommit() { mSurfaceNeedsCommit = true; }
+
  private:
   ~WaylandSurface();
 
@@ -280,10 +281,8 @@ class WaylandSurface final {
   void Commit(WaylandSurfaceLock* aProofOfLock, bool aForceCommit,
               bool aForceDisplayFlush);
 
-  // Force release/detele all buffers. Some of them may be attached to
-  // compostor and may get wl_buffer::release callback so we need to sync
-  // delete with wayland compostor.
-  void ReleaseAllWaylandBuffersLocked(WaylandSurfaceLock& aSurfaceLock);
+  // Force release/detele all transactions and wl_buffers attached to them.
+  void ReleaseAllWaylandTransactionsLocked(WaylandSurfaceLock& aSurfaceLock);
 
   void RequestFrameCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
   void ClearFrameCallbackLocked(const WaylandSurfaceLock& aProofOfLock);
@@ -334,7 +333,13 @@ class WaylandSurface final {
 
   // wl_surface setup/states
   wl_surface* mSurface = nullptr;
-  bool mSurfaceNeedsCommit = false;
+  mozilla::Atomic<bool, mozilla::Relaxed> mSurfaceNeedsCommit{false};
+
+  // When subsurface is desynced, we need to commit to parent surface
+  // to see the change in subsurface (this one).
+  // In such case we set mSurfaceNeedsCommit to parent for it.
+  bool mSubsurfaceDesync = true;
+
   wl_subsurface* mSubsurface = nullptr;
   gfx::IntPoint mSubsurfacePosition{-1, -1};
 
@@ -344,7 +349,7 @@ class WaylandSurface final {
   // previous buffer is hold by compositor. We need to keep
   // there buffers live until compositor notify us that we
   // can release them.
-  AutoTArray<RefPtr<WaylandBuffer>, 3> mAttachedBuffers;
+  AutoTArray<RefPtr<BufferTransaction>, 3> mBufferTransactions;
 
   // Indicates mSurface has buffer attached so we can attach subsurface
   // to it and expect to get frame callbacks from Wayland compositor.
@@ -366,21 +371,22 @@ class WaylandSurface final {
   // Frame callback registered to parent surface. When we get it we know
   // parent surface is ready and we can paint.
   wl_callback* mReadyToDrawFrameCallback = nullptr;
-  std::vector<std::function<void(void)>> mReadToDrawCallbacks;
+  std::vector<std::function<void(void)>> mReadyToDrawCallbacks;
 
   // Frame callbacks of this surface
   wl_callback* mFrameCallback = nullptr;
 
   struct FrameCallback {
-    std::function<void(wl_callback*, uint32_t)> mCb;
+    std::function<void(wl_callback*, uint32_t)> mCb = nullptr;
     bool mEmulated = false;
+    bool IsSet() const { return !!mCb; }
   };
 
   bool mFrameCallbackEnabled = true;
-  // Frame callback handlers called every frame
-  std::vector<FrameCallback> mPersistentFrameCallbackHandlers;
-  // Frame callback handlers called only once
-  std::vector<FrameCallback> mOneTimeFrameCallbackHandlers;
+  std::function<void(bool)> mFrameCallbackStateHandler = nullptr;
+
+  // Frame callback handler called every frame
+  FrameCallback mFrameCallbackHandler;
 
   // WaylandSurface is used from Compositor/Rendering/Main threads.
   mozilla::Mutex mMutex{"WaylandSurface"};

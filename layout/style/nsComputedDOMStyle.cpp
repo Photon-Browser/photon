@@ -8,57 +8,54 @@
 
 #include "nsComputedDOMStyle.h"
 
+#include <algorithm>
+
+#include "mozilla/AppUnits.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/ComputedStyleInlines.h"
+#include "mozilla/EffectSet.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/FontPropertyTypes.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/ReflowInput.h"
+#include "mozilla/RestyleManager.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/StaticPrefs_layout.h"
-
-#include "nsError.h"
-#include "nsIFrame.h"
-#include "nsIFrameInlines.h"
-#include "mozilla/ComputedStyle.h"
-#include "nsContentUtils.h"
-#include "nsDocShell.h"
-#include "nsIContent.h"
-#include "nsStyleConsts.h"
-
-#include "nsDOMCSSValueList.h"
-#include "nsFlexContainerFrame.h"
-#include "nsGridContainerFrame.h"
-#include "nsGkAtoms.h"
-#include "mozilla/ReflowInput.h"
-#include "nsStyleUtil.h"
-#include "nsStyleStructInlines.h"
-#include "nsROCSSPrimitiveValue.h"
-
-#include "nsPresContext.h"
-#include "mozilla/dom/Document.h"
-
-#include "nsCSSProps.h"
-#include "nsCSSPseudoElements.h"
-#include "mozilla/EffectSet.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/ServoStyleSet.h"
-#include "mozilla/RestyleManager.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/ViewportFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsDisplayList.h"
-#include "nsDOMCSSDeclaration.h"
-#include "nsStyleTransformMatrix.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
-#include "prtime.h"
-#include "nsWrapperCacheInlines.h"
-#include "mozilla/AppUnits.h"
-#include <algorithm>
-#include "mozilla/ComputedStyleInlines.h"
+#include "nsCSSProps.h"
+#include "nsCSSPseudoElements.h"
+#include "nsContentUtils.h"
+#include "nsDOMCSSDeclaration.h"
+#include "nsDOMCSSValueList.h"
+#include "nsDisplayList.h"
+#include "nsDocShell.h"
+#include "nsError.h"
+#include "nsFlexContainerFrame.h"
+#include "nsGkAtoms.h"
+#include "nsGridContainerFrame.h"
+#include "nsIContent.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
 #include "nsPrintfCString.h"
+#include "nsROCSSPrimitiveValue.h"
+#include "nsStyleConsts.h"
+#include "nsStyleStructInlines.h"
+#include "nsStyleTransformMatrix.h"
+#include "nsStyleUtil.h"
+#include "nsWrapperCacheInlines.h"
+#include "prtime.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1919,9 +1916,9 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetNonStaticPositionOffset(
     PercentageBaseGetter aHeightGetter) {
   const nsStylePosition* positionData = StylePosition();
   int32_t sign = 1;
-  const auto positionProperty = StyleDisplay()->mPosition;
   const auto anchorResolutionParams =
-      AnchorPosResolutionParams::UseCBFrameSize(mOuterFrame, positionProperty);
+      AnchorPosOffsetResolutionParams::UseCBFrameSize(
+          AnchorPosResolutionParams::From(this));
   auto coord =
       positionData->GetAnchorResolvedInset(aSide, anchorResolutionParams);
 
@@ -1957,9 +1954,9 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetNonStaticPositionOffset(
 
 already_AddRefed<CSSValue> nsComputedDOMStyle::GetAbsoluteOffset(
     mozilla::Side aSide) {
-  const auto positionProperty = StyleDisplay()->mPosition;
   const auto anchorResolutionParams =
-      AnchorPosResolutionParams::UseCBFrameSize(mOuterFrame, positionProperty);
+      AnchorPosOffsetResolutionParams::UseCBFrameSize(
+          AnchorPosResolutionParams::From(this));
   const auto coord =
       StylePosition()->GetAnchorResolvedInset(aSide, anchorResolutionParams);
   const auto oppositeCoord = StylePosition()->GetAnchorResolvedInset(
@@ -2042,8 +2039,8 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetStaticOffset(
     mozilla::Side aSide) {
   auto val = MakeRefPtr<nsROCSSPrimitiveValue>();
   const auto resolved = StylePosition()->GetAnchorResolvedInset(
-      aSide, AnchorPosResolutionParams::UseCBFrameSize(
-                 mOuterFrame, StyleDisplay()->mPosition));
+      aSide, AnchorPosOffsetResolutionParams::UseCBFrameSize(
+                 AnchorPosResolutionParams::From(this)));
   if (resolved->IsAuto()) {
     val->SetString("auto");
   } else {

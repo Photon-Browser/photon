@@ -69,8 +69,6 @@ async function reformatExpectedWebCompatInfo(tab, overrides) {
     forcedAcceleratedLayers: "layers.acceleration.force-enabled",
     globalPrivacyControlEnabled: "privacy.globalprivacycontrol.enabled",
     installtriggerEnabled: "extensions.InstallTrigger.enabled",
-    h1InSectionUseragentStylesEnabled:
-      "layout.css.h1-in-section-ua-styles.enabled",
     opaqueResponseBlocking: "browser.opaqueResponseBlocking",
     resistFingerprintingEnabled: "privacy.resistFingerprinting",
     softwareWebrender: "gfx.webrender.software",
@@ -183,8 +181,18 @@ async function reformatExpectedWebCompatInfo(tab, overrides) {
   if (expectedCodecs) {
     reformatted.details.additionalData.gfxData.codecSupport = rawActual => {
       const actual = Object.entries(rawActual)
-        .map(([name, { hardware, software }]) =>
-          `${name} ${software ? "SW" : ""} ${hardware ? "HW" : ""}`.trim()
+        .map(
+          ([
+            name,
+            { hardwareDecode, softwareDecode, hardwareEncode, softwareEncode },
+          ]) =>
+            (
+              `${name} ` +
+              `${softwareDecode ? "SWDEC " : ""}` +
+              `${hardwareDecode ? "HWDEC " : ""}` +
+              `${softwareEncode ? "SWENC " : ""}` +
+              `${hardwareEncode ? "HWENC " : ""}`
+            ).trim()
         )
         .sort()
         .join("\n");

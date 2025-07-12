@@ -326,7 +326,7 @@ function assertSearchStringIsInUrlbar(
   );
   let state = win.gURLBar.getBrowserState(win.gBrowser.selectedBrowser);
   Assert.equal(
-    state.persist.searchTerms,
+    state.persist?.searchTerms,
     searchString,
     `Search terms should match.`
   );
@@ -397,13 +397,14 @@ async function focusSwitcher(win = window) {
     value: "",
     fireInputEvent: true,
   });
-  Assert.ok(win.gURLBar.hasAttribute("focused"));
+  Assert.ok(win.gURLBar.hasAttribute("focused"), "Urlbar was focused");
 
   EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, win);
   let switcher = win.document.getElementById("urlbar-searchmode-switcher");
   await BrowserTestUtils.waitForCondition(
     () => win.document.activeElement == switcher
   );
+  Assert.ok(true, "Search mode switcher was focused");
 }
 
 /**
@@ -412,4 +413,10 @@ async function focusSwitcher(win = window) {
 function clearSAPTelemetry() {
   TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS");
   Services.fog.testResetFOG();
+}
+
+async function waitForIdle() {
+  for (let i = 0; i < 10; i++) {
+    await new Promise(resolve => Services.tm.idleDispatchToMainThread(resolve));
+  }
 }

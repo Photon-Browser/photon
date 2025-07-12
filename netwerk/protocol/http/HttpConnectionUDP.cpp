@@ -207,6 +207,24 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
   LOG1(("HttpConnectionUDP::Activate [this=%p trans=%p caps=%x]\n", this, trans,
         caps));
 
+  nsHttpTransaction* hTrans = trans->QueryHttpTransaction();
+  nsHttpConnectionInfo* transCI = trans->ConnectionInfo();
+  NetAddr peerAddr;
+  if (!transCI->UsingProxy() && hTrans &&
+      NS_SUCCEEDED(GetPeerAddr(&peerAddr))) {
+    // set the targetIpAddressSpace in the transaction object, this might be
+    // needed by the channel for determining the kind of LNA permissions and/or
+    // LNA telemetry
+    if (!hTrans->AllowedToConnectToIpAddressSpace(
+            peerAddr.GetIpAddressSpace())) {
+      // we could probably fail early and avoid recreating the H3 session
+      // See Bug 1968908
+      CloseTransaction(mHttp3Session, NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED);
+      trans->Close(NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED);
+      return NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED;
+    }
+  }
+
   if (!mExperienced && !trans->IsNullTransaction()) {
     mHasFirstHttpTransaction = true;
     // For QUIC we have HttpConnecitonUDP before the actual connection
@@ -217,7 +235,6 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
     }
     if (mBootstrappedTimingsSet) {
       mBootstrappedTimingsSet = false;
-      nsHttpTransaction* hTrans = trans->QueryHttpTransaction();
       if (hTrans) {
         hTrans->BootstrapTimings(mBootstrappedTimings);
       }
@@ -654,14 +671,10 @@ void HttpConnectionUDP::SetEvent(nsresult aStatus) {
       break;
     case NS_NET_STATUS_CONNECTING_TO:
       mBootstrappedTimings.connectStart = TimeStamp::Now();
+      mBootstrappedTimings.secureConnectionStart =
+          mBootstrappedTimings.connectStart;
       break;
     case NS_NET_STATUS_CONNECTED_TO:
-      mBootstrappedTimings.connectEnd = TimeStamp::Now();
-      break;
-    case NS_NET_STATUS_TLS_HANDSHAKE_STARTING:
-      mBootstrappedTimings.secureConnectionStart = TimeStamp::Now();
-      break;
-    case NS_NET_STATUS_TLS_HANDSHAKE_ENDED:
       mBootstrappedTimings.connectEnd = TimeStamp::Now();
       break;
     default:

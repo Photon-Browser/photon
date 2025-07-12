@@ -92,7 +92,9 @@ nsresult HttpTransactionParent::Init(
     uint64_t browserId, HttpTrafficCategory trafficCategory,
     nsIRequestContext* requestContext, ClassOfService classOfService,
     uint32_t initialRwin, bool responseTimeoutEnabled, uint64_t channelId,
-    TransactionObserverFunc&& transactionObserver) {
+    TransactionObserverFunc&& transactionObserver,
+    nsILoadInfo::IPAddressSpace aParentIpAddressSpace,
+    const LNAPerms& aLnaPermissionStatus) {
   LOG(("HttpTransactionParent::Init [this=%p caps=%x]\n", this, caps));
 
   if (!CanSend()) {
@@ -140,7 +142,8 @@ nsresult HttpTransactionParent::Init(
                 static_cast<uint8_t>(trafficCategory), requestContextID,
                 classOfService, initialRwin, responseTimeoutEnabled, mChannelId,
                 !!mTransactionObserver, throttleQueue, mIsDocumentLoad,
-                mRedirectStart, mRedirectEnd)) {
+                aParentIpAddressSpace, aLnaPermissionStatus, mRedirectStart,
+                mRedirectEnd)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -272,6 +275,10 @@ void HttpTransactionParent::GetNetworkAddresses(
   aEffectiveTRRMode = mEffectiveTRRMode;
   aSkipReason = mTRRSkipReason;
   aEchConfigUsed = mEchConfigUsed;
+}
+
+nsILoadInfo::IPAddressSpace HttpTransactionParent::GetTargetIPAddressSpace() {
+  return mTargetIPAddressSpace;
 }
 
 bool HttpTransactionParent::HasStickyConnection() const {
@@ -412,7 +419,8 @@ mozilla::ipc::IPCResult HttpTransactionParent::RecvOnStartRequest(
     const uint32_t& aHTTPSSVCReceivedStage, const bool& aSupportsHttp3,
     const nsIRequest::TRRMode& aMode, const TRRSkippedReason& aTrrSkipReason,
     const uint32_t& aCaps, const TimeStamp& aOnStartRequestStartTime,
-    const HttpConnectionInfoCloneArgs& aArgs) {
+    const HttpConnectionInfoCloneArgs& aArgs,
+    const nsILoadInfo::IPAddressSpace& aTargetIPAddressSpace) {
   RefPtr<nsHttpConnectionInfo> cinfo =
       nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(aArgs);
   mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
@@ -424,13 +432,14 @@ mozilla::ipc::IPCResult HttpTransactionParent::RecvOnStartRequest(
        aDataForSniffer = CopyableTArray{std::move(aDataForSniffer)},
        aAltSvcUsed, aDataToChildProcess, aRestarted, aHTTPSSVCReceivedStage,
        aSupportsHttp3, aMode, aTrrSkipReason, aCaps, aOnStartRequestStartTime,
-       cinfo{std::move(cinfo)}]() mutable {
+       aTargetIPAddressSpace, cinfo{std::move(cinfo)}]() mutable {
         self->DoOnStartRequest(
             aStatus, std::move(aResponseHead), securityInfo,
             aProxyConnectFailed, aTimings, aProxyConnectResponseCode,
             std::move(aDataForSniffer), aAltSvcUsed, aDataToChildProcess,
             aRestarted, aHTTPSSVCReceivedStage, aSupportsHttp3, aMode,
-            aTrrSkipReason, aCaps, aOnStartRequestStartTime, cinfo);
+            aTrrSkipReason, aCaps, aOnStartRequestStartTime, cinfo,
+            aTargetIPAddressSpace);
       }));
   return IPC_OK();
 }
@@ -463,7 +472,8 @@ void HttpTransactionParent::DoOnStartRequest(
     const uint32_t& aHTTPSSVCReceivedStage, const bool& aSupportsHttp3,
     const nsIRequest::TRRMode& aMode, const TRRSkippedReason& aSkipReason,
     const uint32_t& aCaps, const TimeStamp& aOnStartRequestStartTime,
-    nsHttpConnectionInfo* aConnInfo) {
+    nsHttpConnectionInfo* aConnInfo,
+    const nsILoadInfo::IPAddressSpace& aTargetIPAddressSpace) {
   LOG(("HttpTransactionParent::DoOnStartRequest [this=%p aStatus=%" PRIx32
        "]\n",
        this, static_cast<uint32_t>(aStatus)));
@@ -484,6 +494,7 @@ void HttpTransactionParent::DoOnStartRequest(
   mSecurityInfo = aSecurityInfo;
   mOnStartRequestStartTime = aOnStartRequestStartTime;
   mConnInfo = aConnInfo;
+  mTargetIPAddressSpace = aTargetIPAddressSpace;
 
   if (aResponseHead.isSome()) {
     mResponseHead =

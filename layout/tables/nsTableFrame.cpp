@@ -6,54 +6,51 @@
 
 #include "nsTableFrame.h"
 
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Helpers.h"
+#include <algorithm>
+
+#include "BasicTableLayoutStrategy.h"
+#include "FixedTableLayoutStrategy.h"
+#include "gfxContext.h"
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/Range.h"
+#include "mozilla/RestyleManager.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/WritingModes.h"
-
-#include "gfxContext.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Helpers.h"
+#include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/StackingContextHelper.h"
 #include "nsCOMPtr.h"
-#include "mozilla/ComputedStyle.h"
-#include "nsIFrameInlines.h"
-#include "nsFrameList.h"
-#include "nsStyleConsts.h"
-#include "nsIContent.h"
+#include "nsCSSAnonBoxes.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsCSSProps.h"
+#include "nsCSSRendering.h"
 #include "nsCellMap.h"
-#include "nsTableCellFrame.h"
+#include "nsContentUtils.h"
+#include "nsDisplayList.h"
+#include "nsError.h"
+#include "nsFrameList.h"
+#include "nsFrameManager.h"
+#include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
+#include "nsIContent.h"
+#include "nsIFrameInlines.h"
+#include "nsIScriptError.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
+#include "nsStyleChangeList.h"
+#include "nsStyleConsts.h"
+#include "nsTableCellFrame.h"
 #include "nsTableColFrame.h"
 #include "nsTableColGroupFrame.h"
 #include "nsTableRowFrame.h"
 #include "nsTableRowGroupFrame.h"
 #include "nsTableWrapperFrame.h"
-
-#include "BasicTableLayoutStrategy.h"
-#include "FixedTableLayoutStrategy.h"
-
-#include "nsPresContext.h"
-#include "nsContentUtils.h"
-#include "nsCSSRendering.h"
-#include "nsGkAtoms.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsIScriptError.h"
-#include "nsFrameManager.h"
-#include "nsError.h"
-#include "nsCSSFrameConstructor.h"
-#include "mozilla/Range.h"
-#include "mozilla/RestyleManager.h"
-#include "mozilla/ServoStyleSet.h"
-#include "nsDisplayList.h"
-#include "nsCSSProps.h"
-#include "nsLayoutUtils.h"
-#include "nsStyleChangeList.h"
-#include <algorithm>
-
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/RenderRootStateManager.h"
 
 using namespace mozilla;
 using namespace mozilla::image;
@@ -3642,18 +3639,18 @@ bool nsTableFrame::ColumnHasCellSpacingBefore(int32_t aColIndex) const {
   // Check if we have a <col> element with a non-zero definite inline size.
   // Note: percentages and calc(%) are intentionally not considered.
   if (const auto* col = fif->GetColFrame(aColIndex)) {
-    const auto positionProperty = col->StyleDisplay()->mPosition;
-    const auto iSize =
-        col->StylePosition()->ISize(GetWritingMode(), positionProperty);
+    const auto anchorResolutionParams = AnchorPosResolutionParams::From(col);
+    const auto iSize = col->StylePosition()->ISize(
+        GetWritingMode(), anchorResolutionParams.mPosition);
     if (iSize->ConvertsToLength() && iSize->ToLength() > 0) {
-      const auto maxISize =
-          col->StylePosition()->MaxISize(GetWritingMode(), positionProperty);
+      const auto maxISize = col->StylePosition()->MaxISize(
+          GetWritingMode(), anchorResolutionParams.mPosition);
       if (!maxISize->ConvertsToLength() || maxISize->ToLength() > 0) {
         return true;
       }
     }
-    const auto minISize =
-        col->StylePosition()->MinISize(GetWritingMode(), positionProperty);
+    const auto minISize = col->StylePosition()->MinISize(
+        GetWritingMode(), anchorResolutionParams.mPosition);
     if (minISize->ConvertsToLength() && minISize->ToLength() > 0) {
       return true;
     }

@@ -207,6 +207,8 @@
     <toolbarbutton id="PanelUI-historyMore"
                    class="subviewbutton panel-subview-footer-button"
                    data-l10n-id="appmenu-manage-history"
+                   key="showAllHistoryKb"
+                   command="Browser:ShowAllHistory"
                    />
   </panelview>
 
@@ -241,12 +243,12 @@
                      class="subviewbutton subviewbutton-iconic"
                      data-l10n-id="appmenu-create-profile"
                      />
-      <toolbarseparator/>
-      <toolbarbutton id="profiles-manage-profiles-button"
-                     class="subviewbutton"
-                     data-l10n-id="appmenu-manage-profiles"
-                     />
     </vbox>
+    <toolbarseparator/>
+    <toolbarbutton id="profiles-manage-profiles-button"
+                    class="subviewbutton panel-subview-footer-button"
+                    data-l10n-id="appmenu-manage-profiles"
+                    />
   </panelview>
 
   <panelview id="appMenu-library-recentlyClosedTabs"/>
@@ -446,15 +448,6 @@
           class="panel-subview-body"
           role="group">
       <!-- Developer Tools menu items are inserted here -->
-    </vbox>
-  </panelview>
-
-  <panelview id="PanelUI-savetopocket"
-             class="PanelUI-subView"
-             remote="true"
-             neverhidden="true"
-             closemenu="none">
-    <vbox class="PanelUI-savetopocket-container">
     </vbox>
   </panelview>
 
@@ -830,6 +823,25 @@
                 class="learnMore"
                 support-page="data-loss-prevention"/>
       </description>
+    </vbox>
+  </panelview>
+
+  <panelview id="PanelUI-ipprotection"
+             class="PanelUI-subView"
+             mainview-with-header="true">
+    <vbox id="PanelUI-ipprotection-header-container">
+      <hbox id="PanelUI-ipprotection-header-bar"
+            class="panel-header panel-header-with-additional-element">
+        <html:div id="PanelUI-ipprotection-header" namespaceURI="http://www.w3.org/1999/xhtml">
+          <!-- Root for ipprotection-header -->
+        </html:div>
+      </hbox>
+    </vbox>
+    <toolbarseparator />
+    <vbox id="PanelUI-ipprotection-content-container" class="panel-subview-body">
+      <html:div id="PanelUI-ipprotection-content" namespaceURI="http://www.w3.org/1999/xhtml">
+        <!-- Root for ipprotection-content -->
+      </html:div>
     </vbox>
   </panelview>
 

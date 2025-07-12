@@ -4,55 +4,60 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
+#include "mozilla/dom/InspectorUtils.h"
 
-#include "inLayoutUtils.h"
-
-#include "gfxTextRun.h"
-#include "mozilla/dom/HTMLSlotElement.h"
-#include "nsArray.h"
-#include "nsContentList.h"
-#include "nsString.h"
-#include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/HTMLTemplateElement.h"
 #include "ChildIterator.h"
-#include "nsComputedDOMStyle.h"
+#include "gfxTextRun.h"
+#include "inLayoutUtils.h"
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/DeclarationBlock.h"
 #include "mozilla/EventStateManager.h"
-#include "nsAtom.h"
-#include "nsBlockFrame.h"
-#include "nsPresContext.h"
-#include "nsRange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoCSSParser.h"
+#include "mozilla/ServoStyleRuleMap.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheetInlines.h"
-#include "mozilla/dom/CharacterData.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CSS2PropertiesBinding.h"
 #include "mozilla/dom/CSSBinding.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/CSSStyleRule.h"
 #include "mozilla/dom/CSSKeyframesRule.h"
+#include "mozilla/dom/CSSStyleRule.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/CharacterData.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLSlotElement.h"
+#include "mozilla/dom/HTMLTemplateElement.h"
 #include "mozilla/dom/Highlight.h"
 #include "mozilla/dom/HighlightRegistry.h"
+#include "mozilla/dom/InspectorFontFace.h"
 #include "mozilla/dom/InspectorUtilsBinding.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/gfx/Matrix.h"
+#include "nsArray.h"
+#include "nsAtom.h"
+#include "nsBlockFrame.h"
 #include "nsCSSProps.h"
 #include "nsCSSValue.h"
 #include "nsColor.h"
-#include "mozilla/ServoStyleSet.h"
+#include "nsComputedDOMStyle.h"
+#include "nsContentList.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIContentInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
-#include "nsStyleUtil.h"
+#include "nsPresContext.h"
 #include "nsQueryObject.h"
-#include "mozilla/ServoBindings.h"
-#include "mozilla/ServoStyleRuleMap.h"
-#include "mozilla/ServoCSSParser.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/dom/InspectorUtils.h"
-#include "mozilla/dom/InspectorFontFace.h"
-#include "mozilla/gfx/Matrix.h"
+#include "nsRange.h"
+#include "nsString.h"
+#include "nsStyleUtil.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -251,15 +256,97 @@ void InspectorUtils::GetChildrenForNode(nsINode& aNode,
   }
 }
 
+class ReadOnlyInspectorDeclaration final : public nsDOMCSSDeclaration {
+ public:
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ReadOnlyInspectorDeclaration)
+
+  explicit ReadOnlyInspectorDeclaration(const StyleLockedDeclarationBlock* aRaw)
+      : mRaw(aRaw) {}
+
+  nsINode* GetAssociatedNode() const final { return nullptr; }
+  nsISupports* GetParentObject() const final { return nullptr; }
+  void GetPropertyValue(const nsACString& aPropName, nsACString& aValue) final {
+    Servo_DeclarationBlock_GetPropertyValue(mRaw, &aPropName, &aValue);
+  }
+  void GetPropertyValue(nsCSSPropertyID aId, nsACString& aValue) final {
+    Servo_DeclarationBlock_GetPropertyValueById(mRaw, aId, &aValue);
+  }
+  void IndexedGetter(uint32_t aIndex, bool& aFound,
+                     nsACString& aPropName) final {
+    aFound = Servo_DeclarationBlock_GetNthProperty(mRaw, aIndex, &aPropName);
+  }
+  void RemoveProperty(const nsACString& aPropertyName, nsACString& aValue,
+                      ErrorResult& aRv) final {
+    aRv.ThrowInvalidModificationError("Can't mutate this declaration");
+  }
+  void SetProperty(const nsACString& aPropertyName, const nsACString& aValue,
+                   const nsACString& aPriority, nsIPrincipal* aSubjectPrincipal,
+                   ErrorResult& aRv) final {
+    aRv.ThrowInvalidModificationError("Can't mutate this declaration");
+  }
+  void SetPropertyValue(nsCSSPropertyID aId, const nsACString& aValue,
+                        nsIPrincipal* aSubjectPrincipal,
+                        ErrorResult& aRv) final {
+    aRv.ThrowInvalidModificationError("Can't mutate this declaration");
+  }
+  void SetCssText(const nsACString& aString, nsIPrincipal* aSubjectPrincipal,
+                  ErrorResult& aRv) final {
+    aRv.ThrowInvalidModificationError("Can't mutate this declaration");
+  }
+  void GetCssText(nsACString& aString) final {
+    Servo_DeclarationBlock_GetCssText(mRaw, &aString);
+  }
+  uint32_t Length() final { return Servo_DeclarationBlock_Count(mRaw); }
+  void GetPropertyPriority(const nsACString& aPropName,
+                           nsACString& aPriority) final {
+    if (Servo_DeclarationBlock_GetPropertyIsImportant(mRaw, &aPropName)) {
+      aPriority.AssignLiteral("important");
+    }
+  }
+  css::Rule* GetParentRule() final { return nullptr; }
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) final {
+    return CSS2Properties_Binding::Wrap(aCx, this, aGivenProto);
+  }
+  // These ones are a bit sad, but matches e.g. nsComputedDOMStyle.
+  nsresult SetCSSDeclaration(DeclarationBlock* aDecl,
+                             MutationClosureData*) final {
+    MOZ_CRASH("called ReadOnlyInspectorDeclaration::SetCSSDeclaration");
+  }
+  DeclarationBlock* GetOrCreateCSSDeclaration(Operation,
+                                              DeclarationBlock**) override {
+    MOZ_CRASH("called ReadOnlyInspectorDeclaration::GetOrCreateCSSDeclaration");
+  }
+  ParsingEnvironment GetParsingEnvironment(nsIPrincipal*) const final {
+    MOZ_CRASH("called ReadOnlyInspectorDeclaration::GetParsingEnvironment");
+  }
+
+ private:
+  ~ReadOnlyInspectorDeclaration() = default;
+
+  RefPtr<const StyleLockedDeclarationBlock> mRaw;
+};
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ReadOnlyInspectorDeclaration)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_INTERFACE_MAP_ENTRY(nsICSSDeclaration)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(ReadOnlyInspectorDeclaration)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(ReadOnlyInspectorDeclaration)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(ReadOnlyInspectorDeclaration)
+
 static void GetCSSRulesFromComputedValues(
     Element& aElement, const ComputedStyle* aComputedStyle,
-    nsTArray<RefPtr<css::Rule>>& aResult) {
+    nsTArray<OwningCSSRuleOrInspectorDeclaration>& aResult) {
   const PresShell* presShell = aElement.OwnerDoc()->GetPresShell();
   if (!presShell) {
     return;
   }
 
-  AutoTArray<const StyleLockedDeclarationBlock*, 8> rawDecls;
+  AutoTArray<StyleMatchingDeclarationBlock, 8> rawDecls;
   Servo_ComputedValues_GetMatchingDeclarations(aComputedStyle, &rawDecls);
 
   AutoTArray<ServoStyleRuleMap*, 8> maps;
@@ -296,23 +383,50 @@ static void GetCSSRulesFromComputedValues(
   }
 
   // Find matching rules in the table.
-  for (const StyleLockedDeclarationBlock* rawDecl : Reversed(rawDecls)) {
+  for (const StyleMatchingDeclarationBlock& block : Reversed(rawDecls)) {
+    bool found = false;
     for (ServoStyleRuleMap* map : maps) {
-      if (css::Rule* rule = map->Lookup(rawDecl)) {
-        aResult.AppendElement(rule);
+      if (css::Rule* rule = map->Lookup(block.block)) {
+        aResult.AppendElement()->SetAsCSSRule() = rule;
+        found = true;
         break;
       }
+    }
+    if (!found) {
+      auto& declaration = aResult.AppendElement()->SetAsInspectorDeclaration();
+      declaration.mStyle = OwningNonNull<ReadOnlyInspectorDeclaration>(
+          *new ReadOnlyInspectorDeclaration(block.block));
+      declaration.mDeclarationOrigin = [&] {
+        switch (block.origin) {
+          case StyleMatchingDeclarationBlockOrigin::Author:
+            return DeclarationOrigin::Style_attribute;
+          case StyleMatchingDeclarationBlockOrigin::User:
+            MOZ_ASSERT_UNREACHABLE(
+                "Where did this user agent declaration come from?");
+            return DeclarationOrigin::User;
+          case StyleMatchingDeclarationBlockOrigin::UserAgent:
+            return DeclarationOrigin::User_agent;
+          case StyleMatchingDeclarationBlockOrigin::Animations:
+            return DeclarationOrigin::Animations;
+          case StyleMatchingDeclarationBlockOrigin::Transitions:
+            return DeclarationOrigin::Transitions;
+          case StyleMatchingDeclarationBlockOrigin::SMIL:
+            return DeclarationOrigin::Smil;
+          case StyleMatchingDeclarationBlockOrigin::PresHints:
+            return DeclarationOrigin::Pres_hints;
+        }
+        MOZ_ASSERT_UNREACHABLE("Unkown origin?");
+        return DeclarationOrigin::Pres_hints;
+      }();
     }
   }
 }
 
 /* static */
-void InspectorUtils::GetMatchingCSSRules(GlobalObject& aGlobalObject,
-                                         Element& aElement,
-                                         const nsAString& aPseudo,
-                                         bool aIncludeVisitedStyle,
-                                         bool aWithStartingStyle,
-                                         nsTArray<RefPtr<css::Rule>>& aResult) {
+void InspectorUtils::GetMatchingCSSRules(
+    GlobalObject& aGlobalObject, Element& aElement, const nsAString& aPseudo,
+    bool aIncludeVisitedStyle, bool aWithStartingStyle,
+    nsTArray<OwningCSSRuleOrInspectorDeclaration>& aResult) {
   auto pseudo = nsCSSPseudoElements::ParsePseudoElement(
       aPseudo, CSSEnabledState::ForAllContent);
   if (!pseudo) {
@@ -632,18 +746,31 @@ void InspectorUtils::RgbToColorName(GlobalObject&, uint8_t aR, uint8_t aG,
 }
 
 /* static */
-void InspectorUtils::ColorToRGBA(GlobalObject&, const nsACString& aColorString,
-                                 const Document* aDoc,
+void InspectorUtils::ColorToRGBA(GlobalObject& aGlobal,
+                                 const nsACString& aColorString,
                                  Nullable<InspectorRGBATuple>& aResult) {
-  nscolor color = NS_RGB(0, 0, 0);
-
-  ServoStyleSet* styleSet = nullptr;
-  if (aDoc) {
-    if (PresShell* ps = aDoc->GetPresShell()) {
-      styleSet = ps->StyleSet();
+  auto* styleSet = [&]() -> ServoStyleSet* {
+    nsCOMPtr<nsIGlobalObject> global =
+        do_QueryInterface(aGlobal.GetAsSupports());
+    if (!global) {
+      return nullptr;
     }
-  }
+    auto* win = global->GetAsInnerWindow();
+    if (!win) {
+      return nullptr;
+    }
+    Document* doc = win->GetExtantDoc();
+    if (!doc) {
+      return nullptr;
+    }
+    PresShell* ps = doc->GetPresShell();
+    if (!ps) {
+      return nullptr;
+    }
+    return ps->StyleSet();
+  }();
 
+  nscolor color = NS_RGB(0, 0, 0);
   if (!ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorString,
                                     &color)) {
     aResult.SetNull();
@@ -903,10 +1030,12 @@ static bool FrameHasSpecifiedSize(const nsIFrame* aFrame) {
   auto wm = aFrame->GetWritingMode();
 
   const nsStylePosition* stylePos = aFrame->StylePosition();
-  const auto positionProperty = aFrame->StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(aFrame);
 
-  return stylePos->ISize(wm, positionProperty)->IsLengthPercentage() ||
-         stylePos->BSize(wm, positionProperty)->IsLengthPercentage();
+  return stylePos->ISize(wm, anchorResolutionParams.mPosition)
+             ->IsLengthPercentage() ||
+         stylePos->BSize(wm, anchorResolutionParams.mPosition)
+             ->IsLengthPercentage();
 }
 
 static bool IsFrameOutsideOfAncestor(const nsIFrame* aFrame,
@@ -1081,5 +1210,51 @@ void InspectorUtils::ReplaceBlockRuleBodyTextInStylesheet(
     nsACString& aNewStyleSheetText) {
   Servo_ReplaceBlockRuleBodyTextInStylesheetText(
       &aStyleSheetText, aLine, aColumn, &aNewBodyText, &aNewStyleSheetText);
+}
+
+void InspectorUtils::SetVerticalClipping(GlobalObject&,
+                                         BrowsingContext* aContext,
+                                         mozilla::ScreenIntCoord aOffset) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  if (!aContext) {
+    return;
+  }
+
+  CanonicalBrowsingContext* canonical = aContext->Canonical();
+  if (!canonical) {
+    return;
+  }
+
+  BrowserParent* parent = canonical->GetBrowserParent();
+  if (!parent) {
+    return;
+  }
+  parent->DynamicToolbarOffsetChanged(aOffset);
+
+  RefPtr<nsIWidget> widget = canonical->GetParentProcessWidgetContaining();
+  if (!widget) {
+    return;
+  }
+  widget->DynamicToolbarOffsetChanged(aOffset);
+}
+
+void InspectorUtils::SetDynamicToolbarMaxHeight(
+    GlobalObject&, BrowsingContext* aContext, mozilla::ScreenIntCoord aHeight) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  if (!aContext) {
+    return;
+  }
+
+  CanonicalBrowsingContext* canonical = aContext->Canonical();
+  if (!canonical) {
+    return;
+  }
+
+  BrowserParent* parent = canonical->GetBrowserParent();
+  if (!parent) {
+    return;
+  }
+
+  parent->DynamicToolbarMaxHeightChanged(aHeight);
 }
 }  // namespace mozilla::dom

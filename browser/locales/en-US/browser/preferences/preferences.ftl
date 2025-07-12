@@ -408,6 +408,9 @@ download-choose-folder =
 download-always-ask-where =
     .label = Always ask you where to save files
     .accesskey = A
+download-private-browsing-delete =
+    .label = Delete files downloaded in private browsing when all private windows are closed
+    .accesskey = D
 
 applications-header = Applications
 
@@ -742,6 +745,10 @@ home-prefs-weather-header =
   .label = Weather
 home-prefs-weather-description = Today’s forecast at a glance
 home-prefs-weather-learn-more-link = Learn more
+
+home-prefs-trending-search-header =
+    .label = Trending searches
+home-prefs-trending-search-description = Popular and frequently searched topics
 
 # "Support" here means to help sustain or contribute to something, especially through funding or sponsorship.
 home-prefs-support-firefox-header =
@@ -1352,8 +1359,14 @@ content-blocking-etp-standard-tcp-rollout-learn-more = Learn more
 content-blocking-etp-standard-tcp-title = Includes Total Cookie Protection, our most powerful privacy feature ever
 
 content-blocking-warning-title = Heads up!
-content-blocking-and-isolating-etp-warning-description-2 = This setting may cause some websites to not display content or work correctly. If a site seems broken, you may want to turn off tracking protection for that site to load all content.
+content-blocking-and-isolating-etp-warning-description-3 = This setting may cause some websites to not display content or function correctly. We provide optional exceptions for websites that we know can be affected by your configuration. To reduce the chance of broken websites, allow these tracker exceptions. If a site appears broken, you can turn off tracking protection for that site to load all content and report the issue so we can help fix it for everyone.
 content-blocking-warning-learn-how = Learn how
+
+content-blocking-baseline-exceptions =
+    .label = Allow { -brand-short-name } to automatically apply exceptions required to avoid major website breakage.
+
+content-blocking-convenience-exceptions =
+    .label = Also apply exceptions automatically that are only required to fix minor issues and make convenience features available.
 
 content-blocking-reload-description = You will need to reload your tabs to apply these changes.
 content-blocking-reload-tabs-button =
@@ -1369,7 +1382,6 @@ content-blocking-tracking-protection-option-all-windows =
 content-blocking-option-private =
   .label = Only in private windows
   .accesskey = p
-content-blocking-tracking-protection-change-block-list = Change block list
 
 content-blocking-cookies-label =
   .label = Cookies

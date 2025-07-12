@@ -71,6 +71,7 @@
 #include "nsHashKeys.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
+#include "nsIClassifiedChannel.h"
 #include "nsID.h"
 #include "nsIDocumentViewer.h"
 #include "nsIInterfaceRequestor.h"
@@ -131,6 +132,7 @@ class InfallibleAllocPolicy;
 class JSObject;
 class JSTracer;
 class PLDHashTable;
+class PolicyContainer;
 class gfxUserFontSet;
 class mozIDOMWindowProxy;
 class nsCachableElementsByNameNodeList;
@@ -166,6 +168,7 @@ class nsIInputStream;
 class nsILayoutHistoryState;
 class nsIObjectLoadingContent;
 class nsIPermissionDelegateHandler;
+class nsIPolicyContainer;
 class nsIRadioVisitor;
 class nsIRequest;
 class nsIRunnable;
@@ -257,7 +260,7 @@ class HTMLDialogElement;
 class HTMLSharedElement;
 class HTMLVideoElement;
 class HTMLImageElement;
-class ImageTracker;
+class IntegrityPolicy;
 enum class InteractiveWidget : uint8_t;
 struct LifecycleCallbackArgs;
 class Link;
@@ -777,9 +780,6 @@ class Document : public nsINode,
    * available yet, hence we sync CSP of document and Client when the
    * Client becomes available within nsGlobalWindowInner::EnsureClientSource().
    */
-  nsIContentSecurityPolicy* GetCsp() const;
-  void SetCsp(nsIContentSecurityPolicy* aCSP);
-
   nsIContentSecurityPolicy* GetPreloadCsp() const;
   void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCSP);
 
@@ -789,6 +789,9 @@ class Document : public nsINode,
    * Set referrer policy and upgrade-insecure-requests flags
    */
   void ApplySettingsFromCSP(bool aSpeculative);
+
+  nsIPolicyContainer* GetPolicyContainer() const;
+  void SetPolicyContainer(nsIPolicyContainer* aPolicyContainer);
 
   already_AddRefed<nsIParser> CreatorParserOrNull() {
     nsCOMPtr<nsIParser> parser = mParser;
@@ -1526,7 +1529,9 @@ class Document : public nsINode,
  protected:
   friend class nsUnblockOnloadEvent;
 
+  nsresult InitPolicyContainer(nsIChannel* aChannel);
   nsresult InitCSP(nsIChannel* aChannel);
+  nsresult InitIntegrityPolicy(nsIChannel* aChannel);
   nsresult InitCOEP(nsIChannel* aChannel);
   nsresult InitDocPolicy(nsIChannel* aChannel);
 
@@ -3164,7 +3169,20 @@ class Document : public nsINode,
   // This returns true when the document tree is being teared down.
   bool InUnlinkOrDeletion() { return mInUnlinkOrDeletion; }
 
-  dom::ImageTracker* ImageTracker();
+  void TrackImage(imgIRequest*);
+  enum class RequestDiscard : bool { No = false, Yes };
+  void UntrackImage(imgIRequest*, RequestDiscard = RequestDiscard::No);
+
+  // Makes the images on this document locked/unlocked. By default, the locking
+  // state is unlocked/false.
+  bool GetLockingImages() const { return mLockingImages; }
+  void SetLockingImages(bool);
+
+  // Makes the images on this document capable of having their animation
+  // active or suspended. An Image will animate as long as at least one of its
+  // owning Documents needs it to animate; otherwise it can suspend.
+  void SetImageAnimationState(bool);
+  void PropagateMediaFeatureChangeToTrackedImages(const MediaFeatureChange&);
 
   // Adds an element to mResponsiveContent when the element is
   // added to the tree.
@@ -3884,10 +3902,23 @@ class Document : public nsINode,
   // The URLs passed to this function should match what
   // JS::DescribeScriptedCaller() returns, since this API is used to
   // determine whether some code is being called from a tracking script.
-  void NoteScriptTrackingStatus(const nsACString& aURL, bool isTracking);
+  void NoteScriptTrackingStatus(const nsACString& aURL,
+                                net::ClassificationFlags& aFlags);
   // The JSContext passed to this method represents the context that we want to
   // determine if it belongs to a tracker.
   bool IsScriptTracking(JSContext* aCx) const;
+
+  // Acquires the script tracking flags for the currently executing script. If
+  // the currently executing script is not a tracker, it will return the
+  // classification flags of the document.
+  net::ClassificationFlags GetScriptTrackingFlags() const;
+
+  net::ClassificationFlags GetClassificationFlags() {
+    return mClassificationFlags;
+  }
+  void SetClassificationFlags(net::ClassificationFlags aFlags) {
+    mClassificationFlags = aFlags;
+  }
 
   // ResizeObserver usage.
   void AddResizeObserver(ResizeObserver& aObserver) {
@@ -4067,6 +4098,10 @@ class Document : public nsINode,
 
  private:
   bool IsErrorPage() const;
+
+  // Notifies the pres context that an image we track may have started or
+  // stopped animating.
+  void AnimatedImageStateMaybeChanged(bool aAnimating);
 
   // Takes the bits from mStyleUseCounters if appropriate, and sets them in
   // mUseCounters.
@@ -4679,7 +4714,7 @@ class Document : public nsINode,
   RefPtr<AttributeStyles> mAttributeStyles;
 
   // Tracking for images in the document.
-  RefPtr<dom::ImageTracker> mImageTracker;
+  nsTHashMap<nsPtrHashKey<imgIRequest>, uint32_t> mTrackedImages;
 
   // A hashtable of ShadowRoots belonging to the composed doc.
   //
@@ -4956,6 +4991,9 @@ class Document : public nsINode,
   bool mValidMaxScale : 1;
   bool mWidthStrEmpty : 1;
 
+  bool mLockingImages : 1;
+  bool mAnimatingImages : 1;
+
   // Parser aborted. True if the parser of this document was forcibly
   // terminated instead of letting it finish at its own pace.
   bool mParserAborted : 1;
@@ -5152,11 +5190,8 @@ class Document : public nsINode,
   // The channel that got passed to Document::StartDocumentLoad(), if any.
   nsCOMPtr<nsIChannel> mChannel;
 
-  // The CSP for every load lives in the Client within the LoadInfo. For all
-  // document-initiated subresource loads we can use that cached version of the
-  // CSP so we do not have to deserialize the CSP from the Client all the time.
-  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
   nsCOMPtr<nsIContentSecurityPolicy> mPreloadCSP;
+  RefPtr<PolicyContainer> mPolicyContainer;
 
  private:
   nsCString mContentType;
@@ -5294,10 +5329,10 @@ class Document : public nsINode,
 
   RefPtr<nsCommandManager> mMidasCommandManager;
 
-  // The set of all the tracking script URLs.  URLs are added to this set by
+  // The hashmap of all the tracking script URLs.  URLs are added to this map by
   // calling NoteScriptTrackingStatus().  Currently we assume that a URL not
-  // existing in the set means the corresponding script isn't a tracking script.
-  nsTHashSet<nsCString> mTrackingScripts;
+  // existing in the map means the corresponding script isn't a tracking script.
+  nsTHashMap<nsCStringHashKey, net::ClassificationFlags> mTrackingScripts;
 
   // Pointer to our parser if we're currently in the process of being
   // parsed into.
@@ -5479,7 +5514,9 @@ class Document : public nsINode,
   nsTHashSet<RefPtr<nsAtom>> mLanguagesUsed;
 
   // TODO(emilio): Is this hot enough to warrant to be cached?
-  RefPtr<nsAtom> mLanguageFromCharset;
+  // EncodingToLang.cpp keeps the atom alive until shutdown, so
+  // no need for a RefPtr.
+  nsAtom* mLanguageFromCharset;
 
   // Restyle root for servo's style system.
   //
@@ -5524,6 +5561,8 @@ class Document : public nsINode,
   nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
 
   bool mHasStoragePermission;
+
+  net::ClassificationFlags mClassificationFlags;
 
   // Document generation. Gets incremented everytime it changes.
   int32_t mGeneration;

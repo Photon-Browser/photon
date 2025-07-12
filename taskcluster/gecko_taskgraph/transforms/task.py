@@ -200,6 +200,8 @@ task_description_schema = Schema(
         },
         # Override the default priority for the project
         Optional("priority"): str,
+        # Override the default 5 retries
+        Optional("retries"): int,
     }
 )
 
@@ -934,7 +936,6 @@ def build_beetmover_payload(config, task, task_def):
     release_properties = worker["release-properties"]
 
     task_def["payload"] = {
-        "maxRunTime": worker["max-run-time"],
         "releaseProperties": {
             "appName": release_properties["app-name"],
             "appVersion": release_properties["app-version"],
@@ -968,7 +969,6 @@ def build_beetmover_push_to_release_payload(config, task, task_def):
     partners = [f"{p}/{s}" for p, s, _ in get_partners_to_be_published(config)]
 
     task_def["payload"] = {
-        "maxRunTime": worker["max-run-time"],
         "product": worker["product"],
         "version": release_config["version"],
         "build_number": release_config["build_number"],
@@ -1367,6 +1367,7 @@ def build_push_addons_payload(config, task, task_def):
                 ],
             }
         ],
+        Optional("actions"): object,
         Optional("merge-info"): object,
         Optional("android-l10n-import-info"): {
             Required("from-repo-url"): str,
@@ -2108,7 +2109,7 @@ def try_task_config_chemspill_prio(config, tasks):
         return
 
     for task in tasks:
-        if task["priority"] in ("lowest", "very-low"):
+        if task.get("priority") in (None, "lowest", "very-low"):
             task["priority"] = "low"
         yield task
 
@@ -2318,6 +2319,8 @@ def build_task(config, tasks):
 
         if task.get("requires", None):
             task_def["requires"] = task["requires"]
+        if task.get("retries") is not None:
+            task_def["retries"] = task["retries"]
 
         if task_th:
             # link back to treeherder in description

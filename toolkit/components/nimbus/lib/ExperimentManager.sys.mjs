@@ -54,6 +54,10 @@ export const UnenrollmentCause = {
           reason = UnenrollReason.BUCKETING;
           break;
 
+        case lazy.MatchStatus.UNENROLLED_IN_ANOTHER_PROFILE:
+          reason = UnenrollReason.UNENROLLED_IN_ANOTHER_PROFILE;
+          break;
+
         // TARGETING_AND_BUCKETING cannot cause unenrollment.
       }
     } else {
@@ -239,7 +243,7 @@ export class ExperimentManager {
     this._prefFlips.init();
 
     if (!lazy.ExperimentAPI.studiesEnabled) {
-      await this._handleStudiesOptOut();
+      this._handleStudiesOptOut();
     }
 
     lazy.NimbusFeatures.nimbusTelemetry.onUpdate(() => {
@@ -330,6 +334,14 @@ export class ExperimentManager {
           slug: recipe.slug,
           status: EnrollmentStatus.NOT_ENROLLED,
           reason: EnrollmentStatusReason.NOT_SELECTED,
+        });
+        break;
+
+      case lazy.MatchStatus.UNENROLLED_IN_ANOTHER_PROFILE:
+        lazy.NimbusTelemetry.recordEnrollmentStatus({
+          slug: recipe.slug,
+          status: EnrollmentStatus.NOT_ENROLLED,
+          reason: EnrollmentStatusReason.UNENROLLED_IN_ANOTHER_PROFILE,
         });
         break;
 
@@ -601,7 +613,7 @@ export class ExperimentManager {
 
     // Unenroll in any conflicting prefFlips enrollments.
     if (prefsToSet.length) {
-      await this._prefFlips._handleSetPrefConflict(
+      this._prefFlips._handleSetPrefConflict(
         slug,
         prefs.map(p => p.name)
       );
@@ -637,8 +649,7 @@ export class ExperimentManager {
 
     await this._prefFlips._annotateEnrollment(enrollment);
 
-    await this.store._addEnrollmentToDatabase(enrollment, recipe);
-    this.store.addEnrollment(enrollment);
+    this.store.addEnrollment(enrollment, recipe);
 
     this._setEnrollmentPrefs(prefsToSet);
     this._updatePrefObservers(enrollment);
@@ -673,7 +684,7 @@ export class ExperimentManager {
           } found for the same feature ${feature.featureId}, unenrolling.`
         );
 
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromReason(
             lazy.NimbusTelemetry.UnenrollReason.FORCE_ENROLLMENT
@@ -730,7 +741,7 @@ export class ExperimentManager {
     if (enrollment.active) {
       if (!result.ok) {
         // If the recipe failed validation then we must unenroll.
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromCheckRecipeResult(result)
         );
@@ -739,7 +750,7 @@ export class ExperimentManager {
 
       if (result.status === lazy.MatchStatus.NOT_SEEN) {
         // If the recipe was not present in the source we must unenroll.
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromCheckRecipeResult(result)
         );
@@ -750,7 +761,7 @@ export class ExperimentManager {
         // Our branch has been removed so we must unenroll.
         //
         // This should not happen in practice.
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromReason(UnenrollReason.BRANCH_REMOVED)
         );
@@ -760,7 +771,7 @@ export class ExperimentManager {
       if (result.status === lazy.MatchStatus.NO_MATCH) {
         // If we have an active enrollment and we no longer match targeting we
         // must unenroll.
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromCheckRecipeResult(result)
         );
@@ -773,11 +784,18 @@ export class ExperimentManager {
       ) {
         // If we no longer fall in the bucketing allocation for this rollout we
         // must unenroll.
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromCheckRecipeResult(result)
         );
         return false;
+      }
+
+      if (result.status === lazy.MatchStatus.UNENROLLED_IN_ANOTHER_PROFILE) {
+        this._unenroll(
+          enrollment,
+          UnenrollmentCause.fromCheckRecipeResult(result)
+        );
       }
 
       if (result.status === lazy.MatchStatus.TARGETING_AND_BUCKETING) {
@@ -827,7 +845,7 @@ export class ExperimentManager {
    *
    *        See `UnenrollCause` for details.
    */
-  async unenroll(slug, cause) {
+  unenroll(slug, cause) {
     const enrollment = this.store.get(slug);
     if (!enrollment) {
       lazy.NimbusTelemetry.recordUnenrollmentFailure(
@@ -863,7 +881,7 @@ export class ExperimentManager {
    *        If true, this indicates that this was during the call to
    *        `_restoreEnrollmentPrefs`.
    */
-  async _unenroll(enrollment, cause, { duringRestore = false } = {}) {
+  _unenroll(enrollment, cause, { duringRestore = false } = {}) {
     const { slug } = enrollment;
 
     if (!enrollment.active) {
@@ -876,27 +894,13 @@ export class ExperimentManager {
       );
     }
 
-    // TODO(bug 1956082): This is an async method that we are not awaiting.
-    //
-    // Changing the entire unenrollment flow to be asynchronous requires changes
-    // to a lot of tests and it only really matters once we're actually checking
-    // the database contents.
-    //
-    // For now, we're going to return the promise which will make unenroll()
-    // awaitable in the few contexts that need to synchronize reads and writes
-    // right now (i.e., tests).
-    await this.store._deactivateEnrollmentInDatabase(slug, cause.reason);
-
-    this.store.updateExperiment(slug, {
-      active: false,
-      unenrollReason: cause.reason,
-    });
+    this.store.deactivateEnrollment(slug, cause.reason);
 
     lazy.NimbusTelemetry.recordUnenrollment(enrollment, cause);
 
     this._unsetEnrollmentPrefs(enrollment, cause, { duringRestore });
 
-    lazy.log.debug(`Recipe unenrolled: ${slug}`);
+    lazy.log.debug(`Recipe unenrolled: ${slug} (${cause.reason})`);
   }
 
   /**
@@ -904,7 +908,7 @@ export class ExperimentManager {
    */
   async _handleStudiesOptOut() {
     for (const enrollment of this.store.getAllActiveExperiments()) {
-      await this._unenroll(
+      this._unenroll(
         enrollment,
         UnenrollmentCause.fromReason(
           lazy.NimbusTelemetry.UnenrollReason.STUDIES_OPT_OUT
@@ -912,7 +916,7 @@ export class ExperimentManager {
       );
     }
     for (const enrollment of this.store.getAllActiveRollouts()) {
-      await this._unenroll(
+      this._unenroll(
         enrollment,
         UnenrollmentCause.fromReason(
           lazy.NimbusTelemetry.UnenrollReason.STUDIES_OPT_OUT
@@ -1276,7 +1280,7 @@ export class ExperimentManager {
     for (const { name, featureId, variable } of prefs) {
       // If the feature no longer exists, unenroll.
       if (!Object.hasOwn(lazy.NimbusFeatures, featureId)) {
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromReason(UnenrollReason.INVALID_FEATURE),
           { duringRestore: true }
@@ -1288,7 +1292,7 @@ export class ExperimentManager {
 
       // If the feature is missing a variable that set a pref, unenroll.
       if (!Object.hasOwn(variables, variable)) {
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromReason(UnenrollReason.PREF_VARIABLE_MISSING),
           { duringRestore: true }
@@ -1300,7 +1304,7 @@ export class ExperimentManager {
 
       // If the variable is no longer a pref-setting variable, unenroll.
       if (!Object.hasOwn(variableDef, "setPref")) {
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromReason(UnenrollReason.PREF_VARIABLE_NO_LONGER),
           { duringRestore: true }
@@ -1315,7 +1319,7 @@ export class ExperimentManager {
           : variableDef.setPref;
 
       if (prefName !== name) {
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.fromReason(UnenrollReason.PREF_VARIABLE_CHANGED),
           { duringRestore: true }
@@ -1571,7 +1575,7 @@ export class ExperimentManager {
    *          The original values of any prefs that were being set by setPref
    *          enrollments.
    */
-  async _handlePrefFlipsConflict(conflictingSlug, prefs) {
+  _handlePrefFlipsConflict(conflictingSlug, prefs) {
     const originalValues = {};
 
     for (const [pref, branch] of prefs) {
@@ -1598,7 +1602,7 @@ export class ExperimentManager {
           }
         }
 
-        await this._unenroll(
+        this._unenroll(
           enrollment,
           UnenrollmentCause.PrefFlipsConflict(conflictingSlug)
         );

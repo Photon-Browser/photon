@@ -1,0 +1,358 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+const { GenAI } = ChromeUtils.importESModule(
+  "resource:///modules/GenAI.sys.mjs"
+);
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
+const CONTENT_AREA_CONTEXT_MENU = "contentAreaContextMenu";
+const TAB_CONTEXT_MENU = "tabContextMenu";
+
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("sidebar.new-sidebar.has-used");
+});
+
+// Bug 1895789 to standarize contextmenu helpers in BrowserTestUtils
+async function openContextMenu({ menuId, browser }) {
+  const tab = gBrowser.getTabForBrowser(browser);
+  const win = tab.ownerGlobal;
+
+  const contextMenu = win.document.getElementById(menuId);
+  if (!contextMenu) {
+    throw new Error(`Context menu with ${menuId} not found`);
+  }
+
+  const promise = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+
+  if (menuId === TAB_CONTEXT_MENU) {
+    EventUtils.synthesizeMouseAtCenter(
+      tab,
+      { type: "contextmenu", button: 2 },
+      win
+    );
+  } else {
+    BrowserTestUtils.synthesizeMouse(
+      null,
+      0,
+      0,
+      { type: "contextmenu" },
+      browser
+    );
+  }
+  await promise;
+}
+
+async function hideContextMenu(menuId) {
+  const contextMenu = document.getElementById(menuId);
+  const promise = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
+  contextMenu.hidePopup();
+  await promise;
+}
+
+async function runContextMenuTest({
+  menuId,
+  targetId,
+  expectedLabel,
+  expectedDescription,
+  stub,
+  browser,
+}) {
+  await openContextMenu({ menuId, browser });
+
+  await TestUtils.waitForCondition(() => {
+    return (
+      document.getElementById(targetId).getItemAtIndex(0)?.label ===
+      expectedLabel
+    );
+  }, expectedDescription);
+
+  document.getElementById(targetId).getItemAtIndex(0).click();
+  await hideContextMenu(menuId);
+
+  if (stub) {
+    assertContextMenuStubResult(stub);
+  }
+
+  stub.resetHistory();
+}
+
+function assertContextMenuStubResult(stub) {
+  Assert.equal(stub.callCount, 1, "one menu prompt");
+  Assert.equal(stub.firstCall.args[0].id, "summarize", "summarize prompt");
+  Assert.ok(stub.firstCall.args[0].badge, "new badge");
+  Assert.equal(
+    Services.prefs.getBoolPref("browser.ml.chat.page.menuBadge"),
+    false,
+    "badge dismissed"
+  );
+}
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
+/**
+ * Check page and tab menu have summarize prompt
+ */
+add_task(async function test_page_and_tab_menu_prompt() {
+  const sandbox = sinon.createSandbox();
+  const stub = sandbox.stub(GenAI, "handleAskChat");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.provider", "http://localhost:8080"],
+      ["browser.ml.chat.page", true],
+      ["browser.ml.chat.page.menuBadge", true],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab("about:blank", async browser => {
+    await runContextMenuTest({
+      menuId: CONTENT_AREA_CONTEXT_MENU,
+      targetId: "context-ask-chat",
+      expectedLabel: "Summarize Page",
+      expectedDescription: "Page prompt added",
+      stub,
+      browser,
+    });
+
+    await runContextMenuTest({
+      menuId: TAB_CONTEXT_MENU,
+      targetId: "context_askChat",
+      expectedLabel: "Summarize Page",
+      expectedDescription: "Page prompt added",
+      stub,
+      browser,
+    });
+  });
+
+  sandbox.restore();
+  SidebarController.hide();
+});
+
+/**
+ * Check situations page menu should not be shown
+ */
+add_task(async function test_page_menu_no_chatbot() {
+  await SpecialPowers.pushPrefEnv({
+    clear: [["browser.ml.chat.provider"]],
+    set: [["browser.ml.chat.page", true]],
+  });
+  await BrowserTestUtils.withNewTab("about:blank", async browser => {
+    await openContextMenu({ menuId: CONTENT_AREA_CONTEXT_MENU, browser });
+
+    Assert.equal(
+      document.getElementById("context-ask-chat").hidden,
+      false,
+      "chatbot menu shown"
+    );
+
+    await hideContextMenu(CONTENT_AREA_CONTEXT_MENU);
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.ml.chat.menu", false]],
+    });
+    await openContextMenu({ menuId: CONTENT_AREA_CONTEXT_MENU, browser });
+
+    Assert.ok(
+      document.getElementById("context-ask-chat").hidden,
+      "hidden for no menu pref"
+    );
+
+    await hideContextMenu(CONTENT_AREA_CONTEXT_MENU);
+    await SpecialPowers.popPrefEnv();
+    await SpecialPowers.pushPrefEnv({
+      set: [["sidebar.revamp", false]],
+    });
+    await openContextMenu({ menuId: CONTENT_AREA_CONTEXT_MENU, browser });
+
+    Assert.equal(
+      document.getElementById("context-ask-chat").hidden,
+      false,
+      "old sidebar shows menu"
+    );
+
+    await hideContextMenu(CONTENT_AREA_CONTEXT_MENU);
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["sidebar.revamp", true],
+        ["sidebar.main.tools", "history"],
+      ],
+    });
+    await openContextMenu({ menuId: CONTENT_AREA_CONTEXT_MENU, browser });
+
+    Assert.ok(
+      document.getElementById("context-ask-chat").hidden,
+      "hidden for no chatbot tool"
+    );
+
+    await hideContextMenu(CONTENT_AREA_CONTEXT_MENU);
+    await SpecialPowers.pushPrefEnv({
+      set: [["sidebar.main.tools", "aichat,history"]],
+    });
+    await openContextMenu({ menuId: CONTENT_AREA_CONTEXT_MENU, browser });
+
+    Assert.equal(
+      document.getElementById("context-ask-chat").hidden,
+      false,
+      "new sidebar with tool shows menu"
+    );
+
+    await hideContextMenu(CONTENT_AREA_CONTEXT_MENU);
+  });
+});
+
+/**
+ * Check tab menu should not be shown
+ *
+ */
+add_task(async function test_tab_menu_no_chatbot() {
+  const tab1 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank"
+  );
+  const tab2 = await BrowserTestUtils.addTab(gBrowser, "https://example.com");
+
+  // chatbot menu is hidden for multiselection
+  gBrowser.selectedTabs = [tab1, tab2];
+
+  await openContextMenu({
+    menuId: TAB_CONTEXT_MENU,
+    browser: tab1.linkedBrowser,
+  });
+  Assert.ok(
+    document.getElementById("context_askChat").hidden,
+    "Chatbot menu item is hidden when multiple tabs are selected"
+  );
+
+  await hideContextMenu(TAB_CONTEXT_MENU);
+  gBrowser.clearMultiSelectedTabs();
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
+
+  // chatbot menu is hidden when page pref is false
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.page", false]],
+  });
+
+  await openContextMenu({
+    menuId: TAB_CONTEXT_MENU,
+    browser: gBrowser.selectedTab.linkedBrowser,
+  });
+  Assert.ok(
+    document.getElementById("context_askChat").hidden,
+    "Chatbot menu item in tab context menu is hidden"
+  );
+
+  await hideContextMenu(TAB_CONTEXT_MENU);
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Check badge toggle by prefs
+ */
+add_task(async function test_toggle_new_badge() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.provider", "http://localhost:8080"],
+      ["browser.ml.chat.sidebar", true],
+      ["browser.ml.chat.page", true],
+      ["browser.ml.chat.page.footerBadge", true],
+    ],
+  });
+
+  await SidebarController.show("viewGenaiChatSidebar");
+
+  const { document } = SidebarController.browser.contentWindow;
+  const buttonContainer = document.getElementById("summarize-btn-container");
+  const badge = buttonContainer.querySelector(".badge");
+
+  Assert.notEqual(
+    getComputedStyle(badge).display,
+    "none",
+    "new badge set visible"
+  );
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.page.footerBadge", false]],
+  });
+
+  await TestUtils.waitForCondition(
+    () => getComputedStyle(badge).display == "none",
+    "Badge changed by css"
+  );
+
+  Assert.equal(
+    getComputedStyle(badge).display,
+    "none",
+    "new badge set dismissed"
+  );
+});
+
+/**
+ * Test badge dismissal and check if summarizeCurrentPage() is executed
+ */
+add_task(async function test_click_summarize_button() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.page.footerBadge", true]],
+  });
+
+  const { document } = SidebarController.browser.contentWindow;
+  const summarizeButton = document.getElementById("summarize-button");
+
+  const sandbox = sinon.createSandbox();
+  const stub = sandbox.stub(GenAI, "summarizeCurrentPage");
+
+  summarizeButton.click();
+
+  Assert.equal(
+    Services.prefs.getBoolPref("browser.ml.chat.page.footerBadge"),
+    false
+  );
+  Assert.equal(stub.callCount, 1);
+
+  sandbox.restore();
+  SidebarController.hide();
+});
+
+/**
+ * Test provider-less summarization - onboarding then summarize
+ */
+add_task(async function test_provider_less_summarization() {
+  const origTabs = gBrowser.tabs.length;
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.provider", ""],
+      ["browser.ml.chat.sidebar", false],
+    ],
+  });
+
+  await GenAI.summarizeCurrentPage(window, "test");
+
+  await TestUtils.waitForCondition(
+    () => SidebarController.isOpen,
+    "Sidebar opened for onboarding"
+  );
+  Assert.equal(gBrowser.tabs.length, origTabs, "No tabs opened");
+
+  // Mock selecting a provider with onboarding
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.provider", "http://localhost:8080"]],
+  });
+  const resolve = await TestUtils.waitForCondition(
+    () => SidebarController.browser.contentWindow.showOnboarding?.resolve,
+    "Chat loaded ready for onboarding"
+  );
+  resolve();
+
+  await TestUtils.waitForCondition(
+    () => gBrowser.tabs.length == origTabs + 1,
+    "Chat opened tab for summarize"
+  );
+
+  SidebarController.hide();
+  gBrowser.removeTab(gBrowser.selectedTab);
+});

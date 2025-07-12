@@ -11,6 +11,7 @@
 
 interface nsIChannel;
 interface nsIContentSecurityPolicy;
+interface nsIPolicyContainer;
 interface nsICookieJarSettings;
 interface nsICSPEventListener;
 interface nsINode;
@@ -36,6 +37,7 @@ class ClientSource;
 struct FeaturePolicyInfo;
 class PerformanceStorage;
 class ServiceWorkerDescriptor;
+enum class RequestMode : uint8_t;
 } // namespace dom
 } // namespace mozilla
 %}
@@ -58,8 +60,10 @@ native OriginAttributes(mozilla::OriginAttributes);
 [ptr] native PerformanceStoragePtr(mozilla::dom::PerformanceStorage);
       native LoadTainting(mozilla::LoadTainting);
       native CSPRef(already_AddRefed<nsIContentSecurityPolicy>);
+      native PolicyContainerRef(already_AddRefed<nsIPolicyContainer>);
       native MaybeFeaturePolicyInfo(mozilla::Maybe<mozilla::dom::FeaturePolicyInfo>);
 [ref] native const_FeaturePolicyInfoRef(const mozilla::dom::FeaturePolicyInfo);
+      native MaybeRequestMode(mozilla::Maybe<mozilla::dom::RequestMode>);
 
 typedef unsigned long nsSecurityFlags;
 
@@ -311,6 +315,12 @@ interface nsILoadInfo : nsISupports
   readonly attribute nsIPrincipal triggeringPrincipal;
 
   /**
+   * This method is intended to override the triggering principal
+   * in test environments.
+   */
+  void setTriggeringPrincipalForTesting(in nsIPrincipal aPrincipal);
+
+  /**
    * A C++-friendly version of triggeringPrincipal.
    */
   [noscript, notxpcom, nostdcall, binaryname(TriggeringPrincipal)]
@@ -450,6 +460,24 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean triggeringStorageAccess;
 
   /**
+   * The classification flags of the first-party context responsible for causing
+   * the load to start. If the load is not triggered by a first-party context,
+   * this will be 0.
+   *
+   * See nsIClassifiedChannel.idl for the list of flags.
+   */
+  [infallible] attribute unsigned long triggeringFirstPartyClassificationFlags;
+
+  /**
+   * The classification flags of the third-party context responsible for causing
+   * the load to start. If the load is not triggered by a third-party context,
+   * this will be 0.
+   *
+   * See nsIClassifiedChannel.idl for the list of flags.
+   */
+  [infallible] attribute unsigned long triggeringThirdPartyClassificationFlags;
+
+  /**
    * Allows to query only the security mode bits from above.
    */
   [infallible] readonly attribute unsigned long securityMode;
@@ -574,6 +602,13 @@ interface nsILoadInfo : nsISupports
    * the script was created by the HTML parser.
    */
   [infallible] attribute boolean parserCreatedScript;
+
+  /**
+   * Request mode of the request. This is only set by ScriptLoader
+   * for script loads.
+   */
+  [noscript]
+  attribute MaybeRequestMode requestMode;
 
   /**
    * True if this request is known to have been triggered by a user
@@ -1392,9 +1427,10 @@ interface nsILoadInfo : nsISupports
    * After evaluating what CSP to use for frame navigations we should
    * update the above documentation to match the outcome of Bug 1557114.
    */
-  [notxpcom,nostdcall] CSPRef GetCsp();
   [notxpcom,nostdcall] CSPRef GetPreloadCsp();
-  [notxpcom,nostdcall] CSPRef GetCspToInherit();
+
+  [notxpcom,nostdcall] PolicyContainerRef GetPolicyContainer();
+  [notxpcom,nostdcall] PolicyContainerRef GetPolicyContainerToInherit();
 
   /**
     * The possibly cross-origin container feature policy required to

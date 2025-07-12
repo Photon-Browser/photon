@@ -8,8 +8,8 @@
 #ifndef mozilla_dom_InspectorUtils_h
 #define mozilla_dom_InspectorUtils_h
 
-#include "mozilla/dom/InspectorUtilsBinding.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/InspectorUtilsBinding.h"
 #include "nsLayoutUtils.h"
 
 class nsAtom;
@@ -31,8 +31,6 @@ class InspectorFontFace;
 }  // namespace mozilla
 
 namespace mozilla::dom {
-class CSSStyleRule;
-
 /**
  * A collection of utility methods for use by devtools.
  */
@@ -41,11 +39,10 @@ class InspectorUtils {
   static void GetAllStyleSheets(GlobalObject& aGlobal, Document& aDocument,
                                 bool aDocumentOnly,
                                 nsTArray<RefPtr<StyleSheet>>& aResult);
-  static void GetMatchingCSSRules(GlobalObject& aGlobal, Element& aElement,
-                                  const nsAString& aPseudo,
-                                  bool aIncludeVisitedStyle,
-                                  bool aWithStartingStyle,
-                                  nsTArray<RefPtr<css::Rule>>& aResult);
+  static void GetMatchingCSSRules(
+      GlobalObject& aGlobal, Element& aElement, const nsAString& aPseudo,
+      bool aIncludeVisitedStyle, bool aWithStartingStyle,
+      nsTArray<OwningCSSRuleOrInspectorDeclaration>& aResult);
 
   /**
    * Get the line number of a rule.
@@ -116,7 +113,6 @@ class InspectorUtils {
   // NOTE: Converting a color to RGBA may be lossy when converting from some
   // formats e.g. CMYK.
   static void ColorToRGBA(GlobalObject&, const nsACString& aColorString,
-                          const Document*,
                           Nullable<InspectorRGBATuple>& aResult);
 
   // Convert a given CSS color string to another color space.
@@ -299,6 +295,12 @@ class InspectorUtils {
       GlobalObject&, const nsACString& aStyleSheetText, uint32_t aLine,
       uint32_t aColumn, const nsACString& aNewBodyText,
       nsACString& aNewStyleSheetText);
+
+  static void SetVerticalClipping(GlobalObject&, BrowsingContext* aContext,
+                                  mozilla::ScreenIntCoord aOffset);
+  static void SetDynamicToolbarMaxHeight(GlobalObject&,
+                                         BrowsingContext* aContext,
+                                         mozilla::ScreenIntCoord aHeight);
 };
 
 }  // namespace mozilla::dom

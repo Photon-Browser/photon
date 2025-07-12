@@ -2,15 +2,17 @@ use alloc::{borrow::Cow, borrow::ToOwned as _, boxed::Box, string::String, sync:
 use core::{
     borrow::Borrow,
     fmt,
-    mem::{self, ManuallyDrop},
+    mem::{self, size_of, ManuallyDrop},
     num::NonZeroU64,
     ops::Range,
     ptr::NonNull,
 };
-
 use smallvec::SmallVec;
 use thiserror::Error;
-use wgt::TextureSelector;
+use wgt::{
+    error::{ErrorType, WebGpuError},
+    TextureSelector,
+};
 
 #[cfg(feature = "trace")]
 use crate::device::trace;
@@ -28,6 +30,7 @@ use crate::{
     },
     init_tracker::{BufferInitTracker, TextureInitTracker},
     lock::{rank, Mutex, RwLock},
+    ray_tracing::{BlasCompactReadyPendingClosure, BlasPrepareCompactError},
     resource_log,
     snatch::{SnatchGuard, Snatchable},
     timestamp_normalization::TimestampNormalizationBindGroup,
@@ -284,6 +287,30 @@ pub enum BufferAccessError {
     InvalidResource(#[from] InvalidResourceError),
 }
 
+impl WebGpuError for BufferAccessError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        let e: &dyn WebGpuError = match self {
+            Self::Device(e) => e,
+            Self::InvalidResource(e) => e,
+            Self::DestroyedResource(e) => e,
+
+            Self::Failed
+            | Self::AlreadyMapped
+            | Self::MapAlreadyPending
+            | Self::MissingBufferUsage(_)
+            | Self::NotMapped
+            | Self::UnalignedRange
+            | Self::UnalignedOffset { .. }
+            | Self::UnalignedRangeSize { .. }
+            | Self::OutOfBoundsUnderrun { .. }
+            | Self::OutOfBoundsOverrun { .. }
+            | Self::NegativeRange { .. }
+            | Self::MapAborted => return ErrorType::Validation,
+        };
+        e.webgpu_error_type()
+    }
+}
+
 #[derive(Clone, Debug, Error)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[error("Usage flags {actual:?} of {res} do not contain required usage flags {expected:?}")]
@@ -291,6 +318,12 @@ pub struct MissingBufferUsageError {
     pub(crate) res: ResourceErrorIdent,
     pub(crate) actual: wgt::BufferUsages,
     pub(crate) expected: wgt::BufferUsages,
+}
+
+impl WebGpuError for MissingBufferUsageError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        ErrorType::Validation
+    }
 }
 
 #[derive(Clone, Debug, Error)]
@@ -301,15 +334,33 @@ pub struct MissingTextureUsageError {
     pub(crate) expected: wgt::TextureUsages,
 }
 
+impl WebGpuError for MissingTextureUsageError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        ErrorType::Validation
+    }
+}
+
 #[derive(Clone, Debug, Error)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[error("{0} has been destroyed")]
 pub struct DestroyedResourceError(pub ResourceErrorIdent);
 
+impl WebGpuError for DestroyedResourceError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        ErrorType::Validation
+    }
+}
+
 #[derive(Clone, Debug, Error)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[error("{0} is invalid")]
 pub struct InvalidResourceError(pub ResourceErrorIdent);
+
+impl WebGpuError for InvalidResourceError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        ErrorType::Validation
+    }
+}
 
 pub enum Fallible<T: ParentDevice> {
     Valid(Arc<T>),
@@ -407,9 +458,9 @@ impl Buffer {
             .ok_or_else(|| DestroyedResourceError(self.error_ident()))
     }
 
-    pub(crate) fn check_destroyed<'a>(
-        &'a self,
-        guard: &'a SnatchGuard,
+    pub(crate) fn check_destroyed(
+        &self,
+        guard: &SnatchGuard,
     ) -> Result<(), DestroyedResourceError> {
         self.raw
             .get(guard)
@@ -785,6 +836,23 @@ crate::impl_parent_device!(Buffer);
 crate::impl_storage_item!(Buffer);
 crate::impl_trackable!(Buffer);
 
+impl WebGpuError for CreateBufferError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        let e: &dyn WebGpuError = match self {
+            Self::Device(e) => e,
+            Self::AccessError(e) => e,
+            Self::MissingDownlevelFlags(e) => e,
+            Self::IndirectValidationBindGroup(e) => e,
+
+            Self::UnalignedSize
+            | Self::InvalidUsage(_)
+            | Self::UsageMismatch(_)
+            | Self::MaxBufferSize { .. } => return ErrorType::Validation,
+        };
+        e.webgpu_error_type()
+    }
+}
+
 /// A buffer that has been marked as destroyed and is staged for actual deletion soon.
 #[derive(Debug)]
 pub struct DestroyedBuffer {
@@ -1149,6 +1217,16 @@ impl Texture {
             .ok_or_else(|| DestroyedResourceError(self.error_ident()))
     }
 
+    pub(crate) fn check_destroyed(
+        &self,
+        guard: &SnatchGuard,
+    ) -> Result<(), DestroyedResourceError> {
+        self.inner
+            .get(guard)
+            .map(|_| ())
+            .ok_or_else(|| DestroyedResourceError(self.error_ident()))
+    }
+
     pub(crate) fn get_clear_view<'a>(
         clear_mode: &'a TextureClearMode,
         desc: &'a wgt::TextureDescriptor<(), Vec<wgt::TextureFormat>>,
@@ -1383,20 +1461,15 @@ impl Global {
 
         let cmd_buf = hub.command_buffers.get(id.into_command_buffer_id());
         let mut cmd_buf_data = cmd_buf.data.lock();
-        let cmd_buf_data_guard = cmd_buf_data.record();
-
-        if let Ok(mut cmd_buf_data_guard) = cmd_buf_data_guard {
-            let cmd_buf_raw = cmd_buf_data_guard
-                .encoder
-                .open()
-                .ok()
-                .and_then(|encoder| encoder.as_any_mut().downcast_mut());
-            let ret = hal_command_encoder_callback(cmd_buf_raw);
-            cmd_buf_data_guard.mark_successful();
-            ret
-        } else {
-            hal_command_encoder_callback(None)
-        }
+        cmd_buf_data.record_as_hal_mut(|opt_cmd_buf| -> R {
+            hal_command_encoder_callback(opt_cmd_buf.and_then(|cmd_buf| {
+                cmd_buf
+                    .encoder
+                    .open()
+                    .ok()
+                    .and_then(|encoder| encoder.as_any_mut().downcast_mut())
+            }))
+        })
     }
 
     /// # Safety
@@ -1564,6 +1637,12 @@ pub enum TextureDimensionError {
     MultisampledDepthOrArrayLayer(u32),
 }
 
+impl WebGpuError for TextureDimensionError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        ErrorType::Validation
+    }
+}
+
 #[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum CreateTextureError {
@@ -1615,6 +1694,31 @@ crate::impl_trackable!(Texture);
 impl Borrow<TextureSelector> for Texture {
     fn borrow(&self) -> &TextureSelector {
         &self.full_range
+    }
+}
+
+impl WebGpuError for CreateTextureError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        let e: &dyn WebGpuError = match self {
+            Self::Device(e) => e,
+            Self::CreateTextureView(e) => e,
+            Self::InvalidDimension(e) => e,
+            Self::MissingFeatures(_, e) => e,
+            Self::MissingDownlevelFlags(e) => e,
+
+            Self::InvalidUsage(_)
+            | Self::InvalidDepthDimension(_, _)
+            | Self::InvalidCompressedDimension(_, _)
+            | Self::InvalidMipLevelCount { .. }
+            | Self::InvalidFormatUsages(_, _, _)
+            | Self::InvalidViewFormat(_, _)
+            | Self::InvalidDimensionUsages(_, _)
+            | Self::InvalidMultisampledStorageBinding
+            | Self::InvalidMultisampledFormat(_)
+            | Self::InvalidSampleCount(..)
+            | Self::MultisampledNotRenderAttachment => return ErrorType::Validation,
+        };
+        e.webgpu_error_type()
     }
 }
 
@@ -1716,6 +1820,7 @@ impl TextureView {
         &'a self,
         guard: &'a SnatchGuard,
     ) -> Result<&'a dyn hal::DynTextureView, DestroyedResourceError> {
+        self.parent.check_destroyed(guard)?;
         self.raw
             .get(guard)
             .map(|it| it.as_ref())
@@ -1798,6 +1903,33 @@ pub enum CreateTextureViewError {
     InvalidResource(#[from] InvalidResourceError),
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
+}
+
+impl WebGpuError for CreateTextureViewError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+
+            Self::InvalidTextureViewDimension { .. }
+            | Self::InvalidResource(_)
+            | Self::InvalidMultisampledTextureViewDimension(_)
+            | Self::InvalidCubemapTextureDepth { .. }
+            | Self::InvalidCubemapArrayTextureDepth { .. }
+            | Self::InvalidCubeTextureViewSize
+            | Self::ZeroMipLevelCount
+            | Self::ZeroArrayLayerCount
+            | Self::TooManyMipLevels { .. }
+            | Self::TooManyArrayLayers { .. }
+            | Self::InvalidArrayLayerCount { .. }
+            | Self::InvalidAspect { .. }
+            | Self::FormatReinterpretation { .. }
+            | Self::DestroyedResource(_)
+            | Self::TextureViewFormatNotRenderable(_)
+            | Self::TextureViewFormatNotStorage(_)
+            | Self::InvalidTextureViewUsage { .. }
+            | Self::MissingFeatures(_) => ErrorType::Validation,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Error)]
@@ -1916,6 +2048,21 @@ crate::impl_parent_device!(Sampler);
 crate::impl_storage_item!(Sampler);
 crate::impl_trackable!(Sampler);
 
+impl WebGpuError for CreateSamplerError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        let e: &dyn WebGpuError = match self {
+            Self::Device(e) => e,
+            Self::MissingFeatures(e) => e,
+
+            Self::InvalidLodMinClamp(_)
+            | Self::InvalidLodMaxClamp { .. }
+            | Self::InvalidAnisotropy(_)
+            | Self::InvalidFilterModeWithAnisotropy { .. } => return ErrorType::Validation,
+        };
+        e.webgpu_error_type()
+    }
+}
+
 #[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum CreateQuerySetError {
@@ -1927,6 +2074,18 @@ pub enum CreateQuerySetError {
     TooManyQueries { count: u32, maximum: u32 },
     #[error(transparent)]
     MissingFeatures(#[from] MissingFeatures),
+}
+
+impl WebGpuError for CreateQuerySetError {
+    fn webgpu_error_type(&self) -> ErrorType {
+        let e: &dyn WebGpuError = match self {
+            Self::Device(e) => e,
+            Self::MissingFeatures(e) => e,
+
+            Self::TooManyQueries { .. } | Self::ZeroCount => return ErrorType::Validation,
+        };
+        e.webgpu_error_type()
+    }
 }
 
 pub type QuerySetDescriptor<'a> = wgt::QuerySetDescriptor<Label<'a>>;
@@ -1974,6 +2133,45 @@ pub(crate) trait AccelerationStructure: Trackable {
     ) -> Result<&'a dyn hal::DynAccelerationStructure, DestroyedResourceError>;
 }
 
+pub type BlasPrepareCompactResult = Result<(), BlasPrepareCompactError>;
+
+#[cfg(send_sync)]
+pub type BlasCompactCallback = Box<dyn FnOnce(BlasPrepareCompactResult) + Send + 'static>;
+#[cfg(not(send_sync))]
+pub type BlasCompactCallback = Box<dyn FnOnce(BlasPrepareCompactResult) + 'static>;
+
+pub(crate) struct BlasPendingCompact {
+    pub(crate) op: Option<BlasCompactCallback>,
+    // hold the parent alive while the mapping is active
+    pub(crate) _parent_blas: Arc<Blas>,
+}
+
+impl fmt::Debug for BlasPendingCompact {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BlasPendingCompact")
+            .field("op", &())
+            .field("_parent_blas", &self._parent_blas)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum BlasCompactState {
+    /// Created from a compact operation.
+    Compacted,
+    /// Waiting for GPU to be done before mapping to get compacted size
+    Waiting(BlasPendingCompact),
+    /// Ready to be compacted
+    Ready { size: wgt::BufferAddress },
+    /// Ready to prepare to compact.
+    Idle,
+}
+
+#[cfg(send_sync)]
+unsafe impl Send for BlasCompactState {}
+#[cfg(send_sync)]
+unsafe impl Sync for BlasCompactState {}
+
 #[derive(Debug)]
 pub struct Blas {
     pub(crate) raw: Snatchable<Box<dyn hal::DynAccelerationStructure>>,
@@ -1987,15 +2185,24 @@ pub struct Blas {
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
     pub(crate) tracking_data: TrackingData,
+    pub(crate) compaction_buffer: Option<ManuallyDrop<Box<dyn hal::DynBuffer>>>,
+    pub(crate) compacted_state: Mutex<BlasCompactState>,
 }
 
 impl Drop for Blas {
     fn drop(&mut self) {
         resource_log!("Destroy raw {}", self.error_ident());
-        // SAFETY: We are in the Drop impl, and we don't use self.raw anymore after this point.
+        // SAFETY: We are in the Drop impl, and we don't use self.raw or self.compaction_buffer anymore after this point.
         if let Some(raw) = self.raw.take() {
             unsafe {
                 self.device.raw().destroy_acceleration_structure(raw);
+            }
+        }
+        if let Some(mut raw) = self.compaction_buffer.take() {
+            unsafe {
+                self.device
+                    .raw()
+                    .destroy_buffer(ManuallyDrop::take(&mut raw))
             }
         }
     }
@@ -2010,6 +2217,107 @@ impl AccelerationStructure for Blas {
             .get(guard)
             .map(|raw| raw.as_ref())
             .ok_or_else(|| DestroyedResourceError(self.error_ident()))
+    }
+}
+
+impl Blas {
+    pub(crate) fn prepare_compact_async(
+        self: &Arc<Self>,
+        op: Option<BlasCompactCallback>,
+    ) -> Result<SubmissionIndex, (Option<BlasCompactCallback>, BlasPrepareCompactError)> {
+        let device = &self.device;
+        if let Err(e) = device.check_is_valid() {
+            return Err((op, e.into()));
+        }
+
+        if self.built_index.read().is_none() {
+            return Err((op, BlasPrepareCompactError::NotBuilt));
+        }
+
+        if !self
+            .flags
+            .contains(wgt::AccelerationStructureFlags::ALLOW_COMPACTION)
+        {
+            return Err((op, BlasPrepareCompactError::CompactionUnsupported));
+        }
+
+        let mut state = self.compacted_state.lock();
+        *state = match *state {
+            BlasCompactState::Compacted => {
+                return Err((op, BlasPrepareCompactError::DoubleCompaction))
+            }
+            BlasCompactState::Waiting(_) => {
+                return Err((op, BlasPrepareCompactError::CompactionPreparingAlready))
+            }
+            BlasCompactState::Ready { .. } => {
+                return Err((op, BlasPrepareCompactError::CompactionPreparingAlready))
+            }
+            BlasCompactState::Idle => BlasCompactState::Waiting(BlasPendingCompact {
+                op,
+                _parent_blas: self.clone(),
+            }),
+        };
+
+        let submit_index = if let Some(queue) = device.get_queue() {
+            queue.lock_life().prepare_compact(self).unwrap_or(0) // '0' means no wait is necessary
+        } else {
+            // We can safely unwrap below since we just set the `compacted_state` to `BlasCompactState::Waiting`.
+            let (mut callback, status) = self.read_back_compact_size().unwrap();
+            if let Some(callback) = callback.take() {
+                callback(status);
+            }
+            0
+        };
+
+        Ok(submit_index)
+    }
+
+    /// This function returns [`None`] only if [`Self::compacted_state`] is not [`BlasCompactState::Waiting`].
+    #[must_use]
+    pub(crate) fn read_back_compact_size(&self) -> Option<BlasCompactReadyPendingClosure> {
+        let mut state = self.compacted_state.lock();
+        let pending_compact = match mem::replace(&mut *state, BlasCompactState::Idle) {
+            BlasCompactState::Waiting(pending_mapping) => pending_mapping,
+            // Compaction cancelled e.g. by rebuild
+            BlasCompactState::Idle => return None,
+            BlasCompactState::Ready { .. } => {
+                unreachable!("This should be validated out by `prepare_for_compaction`")
+            }
+            _ => panic!("No pending mapping."),
+        };
+        let status = {
+            let compaction_buffer = self.compaction_buffer.as_ref().unwrap().as_ref();
+            unsafe {
+                let map_res = self.device.raw().map_buffer(
+                    compaction_buffer,
+                    0..size_of::<wgpu_types::BufferAddress>() as wgt::BufferAddress,
+                );
+                match map_res {
+                    Ok(mapping) => {
+                        if !mapping.is_coherent {
+                            // Clippy complains about this because it might not be intended, but
+                            // this is intentional.
+                            #[expect(clippy::single_range_in_vec_init)]
+                            self.device.raw().flush_mapped_ranges(
+                                compaction_buffer,
+                                &[0..size_of::<wgpu_types::BufferAddress>() as wgt::BufferAddress],
+                            );
+                        }
+                        let size = core::ptr::read_unaligned(
+                            mapping.ptr.as_ptr().cast::<wgt::BufferAddress>(),
+                        );
+                        self.device.raw().unmap_buffer(compaction_buffer);
+                        if self.size_info.acceleration_structure_size != 0 {
+                            debug_assert_ne!(size, 0);
+                        }
+                        *state = BlasCompactState::Ready { size };
+                        Ok(())
+                    }
+                    Err(err) => Err(BlasPrepareCompactError::from(DeviceError::from_hal(err))),
+                }
+            }
+        };
+        Some((pending_compact.op, status))
     }
 }
 

@@ -3,10 +3,6 @@
 
 "use strict";
 
-const { RemoteSettings } = ChromeUtils.importESModule(
-  "resource://services-settings/remote-settings.sys.mjs"
-);
-
 const FOO_FAKE_FEATURE_MANIFEST = {
   isEarlyStartup: true,
   variables: {
@@ -54,30 +50,19 @@ const REMOTE_CONFIGURATION_BAR =
 
 const SYNC_DEFAULTS_PREF_BRANCH = "nimbus.syncdefaultsstore.";
 
-add_setup(function () {
-  const client = RemoteSettings("nimbus-desktop-experiments");
-  sinon.stub(client, "get").resolves([]);
-
-  const secureClient = RemoteSettings("nimbus-secure-experiments");
-  sinon.stub(secureClient, "get").resolves([]);
-
-  registerCleanupFunction(() => {
-    client.get.restore();
-    secureClient.get.restore();
+async function setup(configuration) {
+  await resetRemoteSettingsCollections({
+    experiments: configuration ?? [
+      REMOTE_CONFIGURATION_FOO,
+      REMOTE_CONFIGURATION_BAR,
+    ],
   });
-});
 
-function setup(configuration) {
-  const client = RemoteSettings("nimbus-desktop-experiments");
-  client.get.resolves(
-    configuration ?? [REMOTE_CONFIGURATION_FOO, REMOTE_CONFIGURATION_BAR]
-  );
-  const secureClient = RemoteSettings("nimbus-secure-experiments");
-  secureClient.get.resolves([]);
+  const cleanup = async () => {
+    await resetRemoteSettingsCollections();
+  };
 
-  // Simulate a state where no experiment exists.
-  const cleanup = () => client.get.resolves([]);
-  return { client, cleanup };
+  return { cleanup };
 }
 
 add_task(async function test_remote_fetch_and_ready() {
@@ -104,7 +89,7 @@ add_task(async function test_remote_fetch_and_ready() {
 
   await ExperimentAPI.ready();
 
-  const { cleanup } = setup();
+  const { cleanup } = await setup();
 
   // Fake being initialized so we can update recipes
   // we don't need to start any timers
@@ -179,7 +164,7 @@ add_task(async function test_remote_fetch_and_ready() {
   );
 
   // Clear RS db and load again. No configurations so should clear the cache.
-  cleanup();
+  await cleanup();
   await ExperimentAPI._rsLoader.updateRecipes("browser_rsel_remote_defaults");
 
   Assert.ok(
@@ -220,9 +205,10 @@ add_task(async function test_remote_fetch_and_ready() {
   ExperimentAPI.manager.store._deleteForTests("bar");
   ExperimentAPI.manager.store._deleteForTests(REMOTE_CONFIGURATION_FOO.slug);
   ExperimentAPI.manager.store._deleteForTests(REMOTE_CONFIGURATION_BAR.slug);
+  await NimbusTestUtils.flushStore();
   sandbox.restore();
 
-  cleanup();
+  await cleanup();
   cleanupTestFeatures();
 });
 
@@ -370,9 +356,10 @@ add_task(async function test_finalizeRemoteConfigs_cleanup() {
   // only sets the recipe as inactive
   ExperimentAPI.manager.store._deleteForTests("bar-rollout");
   ExperimentAPI.manager.store._deleteForTests("foo-rollout");
+  await NimbusTestUtils.flushStore();
 
   cleanupTestFeatures();
-  cleanup();
+  await cleanup();
 });
 
 // If the remote config data returned from the store is not modified
@@ -401,8 +388,6 @@ add_task(async function remote_defaults_no_mutation() {
 });
 
 add_task(async function remote_defaults_active_remote_defaults() {
-  ExperimentAPI.manager.store._deleteForTests("foo");
-  ExperimentAPI.manager.store._deleteForTests("bar");
   let barFeature = new ExperimentFeature("bar", {
     description: "mochitest",
     variables: { enabled: { type: "boolean" } },
@@ -417,33 +402,40 @@ add_task(async function remote_defaults_active_remote_defaults() {
     fooFeature
   );
 
-  let rollout1 = NimbusTestUtils.factories.recipe.withFeatureConfig(
-    "bar",
-    {
-      branchSlug: "bar-rollout-branch",
-      featureId: "bar",
-      value: { enabled: true },
-    },
-    { isRollout: true, targeting: "true" }
-  );
+  const now = Date.now();
+  const rollout1Date = new Date(now);
+  const rollout2Date = new Date(now + 1000);
 
-  let rollout2 = NimbusTestUtils.factories.recipe.withFeatureConfig(
+  let rollout1 = NimbusTestUtils.factories.recipe.withFeatureConfig(
     "foo",
     {
       branchSlug: "foo-rollout-branch",
       featureId: "foo",
       value: { enabled: true },
     },
-    { isRollout: true, targeting: "'bar' in activeRollouts" }
+    {
+      isRollout: true,
+      targeting: "'bar' in activeRollouts",
+      publishedDate: rollout1Date.toJSON(),
+    }
   );
 
-  // Order is important, rollout2 won't match at first
-  const { cleanup } = setup([rollout2, rollout1]);
-  let updatePromise = new Promise(resolve => barFeature.onUpdate(resolve));
-  ExperimentAPI._rsLoader._enabled = true;
-  await ExperimentAPI._rsLoader.updateRecipes("mochitest");
+  let rollout2 = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "bar",
+    {
+      branchSlug: "bar-rollout-branch",
+      featureId: "bar",
+      value: { enabled: true },
+    },
+    {
+      isRollout: true,
+      targeting: "true",
+      publishedDate: rollout2Date.toJSON(),
+    }
+  );
 
-  await updatePromise;
+  const { cleanup } = await setup([rollout1, rollout2]);
+  await ExperimentAPI._rsLoader.updateRecipes("mochitest");
 
   Assert.ok(barFeature.getVariable("enabled"), "Enabled on first sync");
   Assert.ok(!fooFeature.getVariable("enabled"), "Targeting doesn't match");
@@ -457,8 +449,9 @@ add_task(async function remote_defaults_active_remote_defaults() {
   await NimbusTestUtils.cleanupManager(["foo", "bar"]);
   ExperimentAPI.manager.store._deleteForTests("foo");
   ExperimentAPI.manager.store._deleteForTests("bar");
+  await NimbusTestUtils.flushStore();
 
-  cleanup();
+  await cleanup();
   cleanupTestFeatures();
 });
 
@@ -492,8 +485,6 @@ add_task(async function remote_defaults_variables_storage() {
     enabled: true,
   };
 
-  // TODO(bug 1959831): isEarlyStartup is checked directly on the feature
-  // manifest, not NimbusFeatures.
   const featureCleanup = NimbusTestUtils.addTestFeatures(barFeature);
 
   let doCleanup = await NimbusTestUtils.enrollWithFeatureConfig(
@@ -533,7 +524,7 @@ add_task(async function remote_defaults_variables_storage() {
   Assert.ok(!barFeature.getVariable("string"), "Variable is no longer defined");
   ExperimentAPI.manager.store._deleteForTests("bar");
   ExperimentAPI.manager.store._deleteForTests("bar-rollout");
+  await NimbusTestUtils.flushStore();
 
-  delete NimbusFeatures.bar;
   featureCleanup();
 });

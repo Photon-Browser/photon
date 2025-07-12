@@ -4,18 +4,13 @@
 
 package org.mozilla.fenix.home.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
@@ -37,7 +34,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.TertiaryButton
+import mozilla.components.feature.top.sites.TopSite
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.History
 import org.mozilla.fenix.GleanMetrics.HomeBookmarks
@@ -67,10 +64,8 @@ import org.mozilla.fenix.home.recentvisits.interactor.RecentVisitsInteractor
 import org.mozilla.fenix.home.recentvisits.view.RecentVisitMenuItem
 import org.mozilla.fenix.home.recentvisits.view.RecentlyVisited
 import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
-import org.mozilla.fenix.home.sessioncontrol.CustomizeHomeIteractor
 import org.mozilla.fenix.home.sessioncontrol.MessageCardInteractor
-import org.mozilla.fenix.home.sessioncontrol.viewholders.FeltPrivacyModeInfoCard
-import org.mozilla.fenix.home.sessioncontrol.viewholders.PrivateBrowsingDescription
+import org.mozilla.fenix.home.sessioncontrol.TopSiteInteractor
 import org.mozilla.fenix.home.setup.ui.SetupChecklist
 import org.mozilla.fenix.home.store.HomepageState
 import org.mozilla.fenix.home.store.NimbusMessageState
@@ -93,7 +88,7 @@ private const val MIDDLE_SEARCH_SCROLL_THRESHOLD_PX = 10
  * @param onTopSitesItemBound Invoked during the composition of a top site item.
  */
 @OptIn(ExperimentalComposeUiApi::class)
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 internal fun Homepage(
     state: HomepageState,
@@ -109,29 +104,32 @@ internal fun Homepage(
                 testTagsAsResourceId = true
                 testTag = HOMEPAGE
             }
-            .verticalScroll(scrollState)
-            .animateContentSize(),
+            .pointerInput(state.isSearchInProgress) {
+                if (state.isSearchInProgress) {
+                    awaitPointerEventScope {
+                        interactor.onHomeContentFocusedWhileSearchIsActive()
+                    }
+                }
+            }
+            .verticalScroll(scrollState),
     ) {
-        HomepageHeader(
-            showPrivateBrowsingButton = state.showPrivateBrowsingButton,
-            browsingMode = state.browsingMode,
-            browsingModeChanged = interactor::onPrivateModeButtonClicked,
-        )
+        if (state.showHeader) {
+            HomepageHeader(
+                browsingMode = state.browsingMode,
+                browsingModeChanged = interactor::onPrivateModeButtonClicked,
+            )
+        } else {
+            Spacer(modifier = Modifier.height(40.dp))
+        }
 
         if (state.firstFrameDrawn) {
             with(state) {
                 when (this) {
                     is HomepageState.Private -> {
                         Box(modifier = Modifier.padding(horizontal = horizontalMargin)) {
-                            if (feltPrivateBrowsingEnabled) {
-                                FeltPrivacyModeInfoCard(
-                                    onLearnMoreClick = interactor::onLearnMoreClicked,
-                                )
-                            } else {
-                                PrivateBrowsingDescription(
-                                    onLearnMoreClick = interactor::onLearnMoreClicked,
-                                )
-                            }
+                            PrivateBrowsingDescription(
+                                onLearnMoreClick = interactor::onLearnMoreClicked,
+                            )
                         }
                     }
 
@@ -144,7 +142,7 @@ internal fun Homepage(
                         }
 
                         if (showTopSites) {
-                            TopSites(
+                            TopSitesSection(
                                 topSites = topSites,
                                 topSiteColors = topSiteColors,
                                 interactor = interactor,
@@ -163,13 +161,16 @@ internal fun Homepage(
                                 onMiddleSearchBarVisibilityChanged(atTopOfList)
                             }
 
-                            AnimatedVisibility(
-                                visible = showSearchBar && atTopOfList,
-                                enter = fadeIn(),
-                                exit = fadeOut(),
-                            ) {
-                                SearchBar(onClick = interactor::onNavigateSearch)
-                            }
+                            val alpha by animateFloatAsState(
+                                targetValue = if (showSearchBar && atTopOfList) 1f else 0f,
+                            )
+
+                            Spacer(modifier = Modifier.height(32.dp))
+
+                            SearchBar(
+                                modifier = Modifier.graphicsLayer { this.alpha = alpha },
+                                onClick = interactor::onNavigateSearch,
+                            )
                         }
 
                         MaybeAddSetupChecklist(setupChecklistState, interactor)
@@ -218,22 +219,17 @@ internal fun Homepage(
                             )
                         }
 
-                        CollectionsSection(
-                            collectionsState = collectionsState,
-                            interactor = interactor,
-                        )
+                        if (showCollections) {
+                            CollectionsSection(
+                                collectionsState = collectionsState,
+                                interactor = interactor,
+                            )
+                        }
 
                         if (showPocketStories) {
                             PocketSection(
                                 state = pocketState,
                                 cardBackgroundColor = cardBackgroundColor,
-                                interactor = interactor,
-                            )
-                        }
-
-                        if (showCustomizeHome) {
-                            CustomizeHomeButton(
-                                buttonBackgroundColor = customizeHomeButtonBackgroundColor,
                                 interactor = interactor,
                             )
                         }
@@ -273,6 +269,28 @@ private fun NimbusMessageCardSection(
             onCloseButtonClick = { interactor.onMessageClosedClicked(message) },
         )
     }
+}
+
+@Composable
+private fun TopSitesSection(
+    topSites: List<TopSite>,
+    topSiteColors: TopSiteColors = TopSiteColors.colors(),
+    interactor: TopSiteInteractor,
+    onTopSitesItemBound: () -> Unit,
+) {
+    HomeSectionHeader(
+        headerText = stringResource(R.string.homepage_shortcuts_title),
+        modifier = Modifier.padding(horizontal = horizontalMargin),
+    )
+
+    Spacer(Modifier.height(16.dp))
+
+    TopSites(
+        topSites = topSites,
+        topSiteColors = topSiteColors,
+        interactor = interactor,
+        onTopSitesItemBound = onTopSitesItemBound,
+    )
 }
 
 @Composable
@@ -442,21 +460,6 @@ private fun CollectionsSection(
 }
 
 @Composable
-private fun CustomizeHomeButton(buttonBackgroundColor: Color, interactor: CustomizeHomeIteractor) {
-    Spacer(modifier = Modifier.height(24.dp))
-
-    TertiaryButton(
-        text = stringResource(R.string.browser_menu_customize_home_1),
-        modifier = Modifier
-            .heightIn(min = 48.dp)
-            .padding(horizontal = dimensionResource(R.dimen.home_item_horizontal_margin))
-            .fillMaxWidth(),
-        backgroundColor = buttonBackgroundColor,
-        onClick = interactor::openCustomizeHomePage,
-    )
-}
-
-@Composable
 @PreviewLightDark
 private fun HomepagePreview() {
     FirefoxTheme {
@@ -481,7 +484,8 @@ private fun HomepagePreview() {
                     showBookmarks = true,
                     showRecentlyVisited = true,
                     showPocketStories = true,
-                    showPrivateBrowsingButton = true,
+                    showCollections = true,
+                    showHeader = false,
                     searchBarEnabled = false,
                     firstFrameDrawn = true,
                     showSearchBar = true,
@@ -490,8 +494,8 @@ private fun HomepagePreview() {
                     cardBackgroundColor = WallpaperState.default.cardBackgroundColor,
                     buttonTextColor = WallpaperState.default.buttonTextColor,
                     buttonBackgroundColor = WallpaperState.default.buttonBackgroundColor,
-                    customizeHomeButtonBackgroundColor = FirefoxTheme.colors.actionTertiary,
                     bottomSpacerHeight = 188.dp,
+                    isSearchInProgress = false,
                 ),
                 interactor = FakeHomepagePreview.homepageInteractor,
                 onTopSitesItemBound = {},
@@ -521,7 +525,8 @@ private fun HomepagePreviewCollections() {
                 showBookmarks = false,
                 showRecentlyVisited = true,
                 showPocketStories = true,
-                showPrivateBrowsingButton = true,
+                showCollections = true,
+                showHeader = false,
                 showSearchBar = true,
                 searchBarEnabled = false,
                 firstFrameDrawn = true,
@@ -530,8 +535,8 @@ private fun HomepagePreviewCollections() {
                 cardBackgroundColor = WallpaperState.default.cardBackgroundColor,
                 buttonTextColor = WallpaperState.default.buttonTextColor,
                 buttonBackgroundColor = WallpaperState.default.buttonBackgroundColor,
-                customizeHomeButtonBackgroundColor = FirefoxTheme.colors.actionTertiary,
                 bottomSpacerHeight = 188.dp,
+                isSearchInProgress = false,
             ),
             interactor = FakeHomepagePreview.homepageInteractor,
             onTopSitesItemBound = {},
@@ -551,9 +556,9 @@ private fun PrivateHomepagePreview() {
         ) {
             Homepage(
                 HomepageState.Private(
-                    showPrivateBrowsingButton = true,
-                    feltPrivateBrowsingEnabled = false,
+                    showHeader = false,
                     firstFrameDrawn = true,
+                    isSearchInProgress = false,
                     bottomSpacerHeight = 188.dp,
                 ),
                 interactor = FakeHomepagePreview.homepageInteractor,

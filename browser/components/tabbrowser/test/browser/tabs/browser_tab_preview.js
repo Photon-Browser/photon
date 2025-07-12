@@ -45,6 +45,7 @@ async function closePreviews(win = window) {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["test.wait300msAfterTabSwitch", true],
       ["browser.tabs.hoverPreview.enabled", true],
       ["browser.tabs.hoverPreview.showThumbnails", false],
       ["browser.tabs.tooltipsShowPidAndActiveness", false],
@@ -726,7 +727,11 @@ add_task(async function otherPanelOpenTests() {
   await TestUtils.waitForTick();
 
   // As a popup was already open, the preview panel should not have opened.
-  Assert.ok(previewComponent._panel.state === "closed", "Panel is closed");
+  Assert.strictEqual(
+    previewComponent._panel.state,
+    "closed",
+    "Panel is closed"
+  );
   Assert.ok(
     previewComponent._panel.openPopup.notCalled,
     "openPopup was not invoked"
@@ -927,8 +932,9 @@ add_task(async function tabPreview_verticalTabsPositioning() {
   let tabRect = tab.getBoundingClientRect();
   let panelRect = previewPanel.getBoundingClientRect();
 
-  Assert.ok(
-    Math.abs(tabRect.top - panelRect.top) < 5,
+  Assert.less(
+    Math.abs(tabRect.top - panelRect.top),
+    5,
     "Preview panel not displayed beneath tab"
   );
 

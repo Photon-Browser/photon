@@ -9,7 +9,7 @@
 #include "mozilla/dom/HTMLDetailsElementBinding.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/ScopeExit.h"
+#include "mozilla/BuiltInStyleSheets.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsTextNode.h"
@@ -154,28 +154,32 @@ JSObject* HTMLDetailsElement::WrapNode(JSContext* aCx,
   return HTMLDetailsElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool HTMLDetailsElement::IsValidInvokeAction(InvokeAction aAction) const {
-  return nsGenericHTMLElement::IsValidInvokeAction(aAction) ||
-         aAction == InvokeAction::Toggle || aAction == InvokeAction::Close ||
-         aAction == InvokeAction::Open;
+bool HTMLDetailsElement::IsValidCommandAction(Command aCommand) const {
+  return nsGenericHTMLElement::IsValidCommandAction(aCommand) ||
+         (StaticPrefs::dom_element_commandfor_on_details_enabled() &&
+          (aCommand == Command::Toggle || aCommand == Command::Close ||
+           aCommand == Command::Open));
 }
 
-bool HTMLDetailsElement::HandleInvokeInternal(Element* aInvoker,
-                                              InvokeAction aAction,
-                                              ErrorResult& aRv) {
-  if (nsGenericHTMLElement::HandleInvokeInternal(aInvoker, aAction, aRv)) {
+bool HTMLDetailsElement::HandleCommandInternal(Element* aSource,
+                                               Command aCommand,
+                                               ErrorResult& aRv) {
+  if (nsGenericHTMLElement::HandleCommandInternal(aSource, aCommand, aRv)) {
     return true;
   }
 
-  if (aAction == InvokeAction::Auto || aAction == InvokeAction::Toggle) {
+  MOZ_ASSERT(StaticPrefs::dom_element_commandfor_on_details_enabled());
+  if (aCommand == Command::Toggle) {
     ToggleOpen();
     return true;
-  } else if (aAction == InvokeAction::Close) {
+  }
+  if (aCommand == Command::Close) {
     if (Open()) {
       SetOpen(false, IgnoreErrors());
     }
     return true;
-  } else if (aAction == InvokeAction::Open) {
+  }
+  if (aCommand == Command::Open) {
     if (!Open()) {
       SetOpen(true, IgnoreErrors());
     }

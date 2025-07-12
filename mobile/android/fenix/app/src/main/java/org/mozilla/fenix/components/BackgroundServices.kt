@@ -29,6 +29,8 @@ import mozilla.components.feature.syncedtabs.commands.SyncedTabsCommands
 import mozilla.components.feature.syncedtabs.commands.SyncedTabsCommandsFlushScheduler
 import mozilla.components.feature.syncedtabs.storage.SyncedTabsStorage
 import mozilla.components.lib.crash.CrashReporter
+import mozilla.components.lib.state.Middleware
+import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.service.fxa.PeriodicSyncConfig
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.SyncConfig
@@ -36,6 +38,8 @@ import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.manager.SCOPE_SESSION
 import mozilla.components.service.fxa.manager.SCOPE_SYNC
+import mozilla.components.service.fxa.store.SyncAction
+import mozilla.components.service.fxa.store.SyncState
 import mozilla.components.service.fxa.store.SyncStore
 import mozilla.components.service.fxa.store.SyncStoreSupport
 import mozilla.components.service.fxa.sync.GlobalSyncableStoreProvider
@@ -44,7 +48,8 @@ import mozilla.components.service.sync.logins.SyncableLoginsStorage
 import mozilla.components.support.utils.RunWhenReadyQueue
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.Config
-import org.mozilla.fenix.FeatureFlags
+import org.mozilla.fenix.GleanMetrics.Metrics.clientAssociation
+import org.mozilla.fenix.GleanMetrics.Pings.fxAccounts
 import org.mozilla.fenix.GleanMetrics.SyncAuth
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
@@ -54,6 +59,7 @@ import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.sync.SyncedTabsIntegration
+import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.getUndoDelay
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -72,6 +78,7 @@ private val DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY = 5.seconds
 class BackgroundServices(
     private val context: Context,
     private val push: Push,
+    settings: Settings,
     crashReporter: CrashReporter,
     historyStorage: Lazy<PlacesHistoryStorage>,
     bookmarkStorage: Lazy<PlacesBookmarksStorage>,
@@ -118,7 +125,7 @@ class BackgroundServices(
             SyncEngine.Passwords,
             SyncEngine.Tabs,
             SyncEngine.CreditCards,
-            if (FeatureFlags.SYNC_ADDRESSES_FEATURE) SyncEngine.Addresses else null,
+            if (settings.isAddressSyncEnabled) SyncEngine.Addresses else null,
         )
     private val syncConfig =
         SyncConfig(supportedEngines, PeriodicSyncConfig(periodMinutes = 240)) // four hours
@@ -140,7 +147,7 @@ class BackgroundServices(
             storePair = SyncEngine.CreditCards to creditCardsStorage,
             keyProvider = lazy { creditCardKeyProvider },
         )
-        if (FeatureFlags.SYNC_ADDRESSES_FEATURE) {
+        if (settings.isAddressSyncEnabled) {
             GlobalSyncableStoreProvider.configureStore(SyncEngine.Addresses to creditCardsStorage)
         }
     }
@@ -152,7 +159,7 @@ class BackgroundServices(
     val accountAbnormalities = AccountAbnormalities(context, crashReporter, strictMode)
 
     val syncStore by lazyMonitored {
-        SyncStore()
+        SyncStore(middleware = listOf(TelemetryMiddleware()))
     }
 
     private lateinit var syncStoreSupport: SyncStoreSupport
@@ -254,6 +261,22 @@ private class AccountManagerReadyObserver(
 ) : AccountObserver {
     override fun onReady(authenticatedAccount: OAuthAccount?) {
         accountManagerAvailableQueue.ready()
+    }
+}
+
+internal class TelemetryMiddleware : Middleware<SyncState, SyncAction> {
+    override fun invoke(
+        context: MiddlewareContext<SyncState, SyncAction>,
+        next: (SyncAction) -> Unit,
+        action: SyncAction,
+    ) {
+        val prevState = context.store.state
+        next(action)
+        val accountUid = context.store.state.account?.uid
+        if (prevState.account?.uid != accountUid && accountUid != null) {
+            clientAssociation.set(accountUid)
+            fxAccounts.submit()
+        }
     }
 }
 

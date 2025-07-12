@@ -44,8 +44,6 @@ internal object DownloadNotification {
     private const val LEGACY_NOTIFICATION_CHANNEL_ID = "Downloads"
     internal const val PERCENTAGE_MULTIPLIER = 100
 
-    internal const val EXTRA_DOWNLOAD_ID = "downloadId"
-
     @VisibleForTesting
     internal fun createDownloadGroupNotification(
         context: Context,
@@ -89,7 +87,7 @@ internal object DownloadNotification {
         downloadState: DownloadState,
         fileSizeFormatter: FileSizeFormatter,
         notificationAccentColor: Int,
-        downloadEstimator: DownloadEstimator?,
+        downloadEstimator: DownloadEstimator,
     ): Notification {
         val channelId = ensureChannelExists(context)
         val isIndeterminate = downloadState.isIndeterminate()
@@ -103,7 +101,9 @@ internal object DownloadNotification {
                         formatDownloadTimeRemaining(
                             context = context,
                             downloadEstimator = downloadEstimator,
-                            curBytes = downloadState.currentBytesCopied,
+                            startTime = downloadState.createdTime,
+                            currentBytes = downloadState.currentBytesCopied,
+                            totalBytes = downloadState.contentLength,
                         ),
                     ),
             )
@@ -327,7 +327,7 @@ internal object DownloadNotification {
     private fun createPendingIntent(context: Context, action: String, downloadStateId: String): PendingIntent {
         val intent = Intent(action)
         intent.setPackage(context.applicationContext.packageName)
-        intent.putExtra(EXTRA_DOWNLOAD_ID, downloadStateId)
+        intent.putExtra(INTENT_EXTRA_DOWNLOAD_ID, downloadStateId)
 
         // We generate a random requestCode in order to generate a distinct PendingIntent:
         // https://developer.android.com/reference/android/app/PendingIntent.html
@@ -349,30 +349,22 @@ internal fun NotificationCompat.Builder.setCompatGroup(groupKey: String): Notifi
     }
 }
 
-private fun DownloadState.getPercent(): Int? {
-    val bytesCopied = currentBytesCopied
-    val contentLength = contentLength
-    return if (contentLength == null || contentLength == 0L) {
-        null
-    } else {
-        (DownloadNotification.PERCENTAGE_MULTIPLIER * bytesCopied / contentLength).toInt()
+private fun DownloadState.getPercent(): Int? =
+    progress?.let { progress ->
+        (DownloadNotification.PERCENTAGE_MULTIPLIER * progress).toInt()
     }
-}
 
 @VisibleForTesting
 internal fun DownloadState.getProgress(fileSizeFormatter: FileSizeFormatter): String {
     return if (isIndeterminate()) {
-        ""
+        fileSizeFormatter.formatSizeInBytes(currentBytesCopied)
     } else {
         "${fileSizeFormatter.formatSizeInBytes(currentBytesCopied)} / " +
             fileSizeFormatter.formatSizeInBytes(contentLength!!)
     }
 }
 
-private fun DownloadState.isIndeterminate(): Boolean {
-    val bytesCopied = currentBytesCopied
-    return contentLength == null || bytesCopied == 0L || contentLength == 0L
-}
+private fun DownloadState.isIndeterminate(): Boolean = contentLength == null || contentLength == 0L
 
 @VisibleForTesting
 internal fun DownloadState.getStatusDescription(
@@ -402,10 +394,17 @@ internal fun DownloadState.getStatusDescription(
 
 private fun formatDownloadTimeRemaining(
     context: Context,
-    downloadEstimator: DownloadEstimator?,
-    curBytes: Long?,
+    downloadEstimator: DownloadEstimator,
+    startTime: Long,
+    currentBytes: Long,
+    totalBytes: Long?,
 ): String {
-    val timeRemaining = downloadEstimator?.estimatedRemainingTime(curBytes ?: 0)
+    if (totalBytes == null) return context.getString(R.string.mozac_feature_downloads_time_remaining_unknown)
+    val timeRemaining = downloadEstimator.estimatedRemainingTime(
+        startTime = startTime,
+        bytesDownloaded = currentBytes,
+        totalBytes = totalBytes,
+    )
     if (timeRemaining == null) return ""
     val formattedTimeRemaining = timeRemaining.seconds.toString()
     return context.getString(

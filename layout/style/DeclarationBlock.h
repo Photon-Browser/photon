@@ -14,7 +14,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/ServoBindings.h"
-
 #include "nsCSSPropertyID.h"
 #include "nsString.h"
 
@@ -35,7 +34,8 @@ class DeclarationBlock final {
   }
 
  public:
-  explicit DeclarationBlock(already_AddRefed<StyleLockedDeclarationBlock> aRaw)
+  explicit DeclarationBlock(
+      already_AddRefed<const StyleLockedDeclarationBlock> aRaw)
       : mRaw(aRaw), mImmutable(false), mIsDirty(false) {
     mContainer.mRaw = 0;
   }
@@ -162,7 +162,7 @@ class DeclarationBlock final {
     return FromCssText(value, aExtraData, aMode, aLoader, aRuleType);
   }
 
-  StyleLockedDeclarationBlock* Raw() const { return mRaw; }
+  const StyleLockedDeclarationBlock* Raw() const { return mRaw; }
 
   void ToString(nsACString& aResult) const {
     Servo_DeclarationBlock_GetCssText(mRaw, &aResult);
@@ -221,7 +221,7 @@ class DeclarationBlock final {
     AttributeStyles* mAttributeStyles;
   } mContainer;
 
-  RefPtr<StyleLockedDeclarationBlock> mRaw;
+  RefPtr<const StyleLockedDeclarationBlock> mRaw;
 
   // set when declaration put in the rule tree;
   bool mImmutable;

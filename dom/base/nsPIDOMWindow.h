@@ -32,6 +32,7 @@ class nsICSSDeclaration;
 class nsIDocShell;
 class nsIDocShellTreeOwner;
 class nsDocShellLoadState;
+class nsIPolicyContainer;
 class nsIPrincipal;
 class nsIRunnable;
 class nsIScriptTimeoutHandler;
@@ -66,6 +67,7 @@ class ServiceWorker;
 class ServiceWorkerDescriptor;
 class Timeout;
 class TimeoutManager;
+class WebIdentityHandler;
 class WindowContext;
 class WindowGlobalChild;
 class CustomElementRegistry;
@@ -367,9 +369,10 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const;
   mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController() const;
 
-  void SetCsp(nsIContentSecurityPolicy* aCsp);
+  void SetPolicyContainer(nsIPolicyContainer* aPolicyContainer);
+  nsIPolicyContainer* GetPolicyContainer();
+
   void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp);
-  nsIContentSecurityPolicy* GetCsp();
 
   void NoteCalledRegisterForServiceWorkerScope(const nsACString& aScope);
 
@@ -621,6 +624,8 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   bool UsingStorageAccess();
 
+  mozilla::dom::WebIdentityHandler* GetOrCreateWebIdentityHandler();
+
   uint32_t UpdateLockCount(bool aIncrement) {
     MOZ_ASSERT_IF(!aIncrement, mLockCount > 0);
     mLockCount += aIncrement ? 1 : -1;
@@ -636,6 +641,12 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   bool HasActiveWebTransports() { return mWebTransportCount > 0; }
 
   mozilla::dom::CloseWatcherManager* EnsureCloseWatcherManager();
+
+  // Called when a CloseWatcher is added to the manager
+  void NotifyCloseWatcherAdded();
+
+  // Called when a CloseWatcher is removed from the manager
+  void NotifyCloseWatcherRemoved();
 
  protected:
   void CreatePerformanceObjectIfNeeded();
@@ -666,6 +677,7 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   RefPtr<mozilla::dom::Performance> mPerformance;
   mozilla::UniquePtr<mozilla::dom::TimeoutManager> mTimeoutManager;
+  RefPtr<mozilla::dom::WebIdentityHandler> mWebIdentityHandler;
 
   RefPtr<mozilla::dom::Navigation> mNavigation;
 
@@ -885,9 +897,9 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   }
 
   // Set the window up with an about:blank document with the given principal and
-  // potentially a CSP and a COEP.
+  // potentially a policyContainer and a COEP.
   virtual void SetInitialPrincipal(
-      nsIPrincipal* aNewWindowPrincipal, nsIContentSecurityPolicy* aCSP,
+      nsIPrincipal* aNewWindowPrincipal, nsIPolicyContainer* aPolicyContainer,
       const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCoep) = 0;
 
   // Returns an object containing the window's state.  This also suspends

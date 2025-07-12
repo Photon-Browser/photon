@@ -7,9 +7,8 @@
 #ifndef mozilla_CSSStyleRule_h
 #define mozilla_CSSStyleRule_h
 
-#include "mozilla/css/GroupRule.h"
 #include "mozilla/ServoBindingTypes.h"
-
+#include "mozilla/css/GroupRule.h"
 #include "nsDOMCSSDeclaration.h"
 
 namespace mozilla {
@@ -83,7 +82,7 @@ class CSSStyleRule final : public css::GroupRule {
   nsICSSDeclaration* Style() { return &mDecls; }
 
   StyleLockedStyleRule* Raw() const { return mRawRule; }
-  StyleLockedDeclarationBlock* RawStyle() const;
+  const StyleLockedDeclarationBlock* RawStyle() const;
   void SetRawAfterClone(RefPtr<StyleLockedStyleRule>);
   already_AddRefed<StyleLockedCssRules> GetOrCreateRawRules() final;
 

@@ -694,6 +694,7 @@ skip script test262/built-ins/String/prototype/search/cstm-search-on-string-prim
 skip script test262/built-ins/String/prototype/search/cstm-search-on-boolean-primitive.js
 skip script test262/built-ins/String/prototype/search/cstm-search-on-number-primitive.js
 
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1970162
 # https://github.com/tc39/ecma402/pull/989
 skip script test262/intl402/PluralRules/constructor-options-throwing-getters.js
 skip script test262/intl402/PluralRules/default-options-object-prototype.js
@@ -702,18 +703,7 @@ skip script test262/intl402/PluralRules/prototype/select/notation.js
 skip script test262/intl402/PluralRules/prototype/resolvedOptions/properties.js
 skip script test262/intl402/PluralRules/prototype/resolvedOptions/order.js
 skip script test262/intl402/PluralRules/prototype/constructor/notation.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1950162
-skip script test262/intl402/Temporal/ZonedDateTime/construct-non-utc-non-iso.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/weekOfYear/non-iso-week-of-year.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/yearOfWeek/non-iso-week-of-year.js
-skip script test262/intl402/Temporal/PlainDate/prototype/weekOfYear/non-iso-week-of-year.js
-skip script test262/intl402/Temporal/PlainDate/prototype/yearOfWeek/non-iso-week-of-year.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/weekOfYear/non-iso-week-of-year.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/yearOfWeek/non-iso-week-of-year.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1962010
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/rule-change-without-offset-transition.js
+skip script test262/intl402/PluralRules/notation.js
 
 
 ###########################################################
@@ -949,3 +939,21 @@ skip-if(release_or_beta) script test262/intl402/Temporal/PlainMonthDay/from/cons
 # Try re-enabling when Bug 1954138 or Bug 1955545 are fixed.
 skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic.js
 skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-rgsa.js
+
+# https://github.com/tc39/proposal-intl-era-monthcode/issues/23. ICU4X 2.0 doesn't have inverse type
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-coptic.js
+
+# https://github.com/tc39/proposal-intl-era-monthcode/issues/4. ICU4X 2.0 doesn't have inverse type
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-ethiopic.js
+
+# https://github.com/tc39/proposal-intl-era-monthcode/issues/23 and https://github.com/tc39/proposal-intl-era-monthcode/issues/4
+skip script test262/staging/sm/Temporal/PlainDate/non-positive-era-year.js
+
+# Canonical era names have changed.
+skip script test262/intl402/Temporal/ZonedDateTime/from/canonicalize-era-codes.js 
+skip script test262/staging/Intl402/Temporal/old/japanese-before-era.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-gregory.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamicc.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-civil.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-tbla.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-umalqura.js

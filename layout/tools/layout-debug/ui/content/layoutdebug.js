@@ -37,6 +37,7 @@ const SIMPLE_COMMANDS = [
   "dumpTextRuns",
   "dumpViews",
   "dumpCounterManager",
+  "dumpRetainedDisplayList",
   "dumpStyleSheets",
   "dumpMatchedRules",
   "dumpComputedStyles",
@@ -388,6 +389,9 @@ function OnLDBLoad() {
         case "cmd_dumpTextRuns":
           gDebugger.dumpTextRuns();
           break;
+        case "cmd_dumpRetainedDisplayList":
+          gDebugger.dumpRetainedDisplayList();
+          break;
         case "cmd_openDevTools":
           gDebugger.openDevTools();
           break;
@@ -419,13 +423,16 @@ function OnLDBLoad() {
           gDebugger.dumpFramesInCSSPixels();
           break;
         case "menu_dumpTextRuns":
-          gDebugger.dumTextRuns();
+          gDebugger.dumpTextRuns();
           break;
         case "menu_dumpViews":
           gDebugger.dumpViews();
           break;
         case "menu_dumpCounterManager":
           gDebugger.dumpCounterManager();
+          break;
+        case "menu_dumpRetainedDisplayList":
+          gDebugger.dumpRetainedDisplayList();
           break;
         case "menu_dumpStyleSheets":
           gDebugger.dumpStyleSheets();

@@ -19,6 +19,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -31,7 +32,6 @@ import androidx.test.espresso.contrib.PickerActions
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
-import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
@@ -46,6 +46,7 @@ import androidx.test.uiautomator.Until
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.mediasession.MediaSession
+import mozilla.components.concept.engine.utils.EngineReleaseChannel
 import org.hamcrest.CoreMatchers.allOf
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -240,16 +241,6 @@ class BrowserRobot {
         assertUIObjectExists(itemWithText(getStringResource(R.string.tab_crash_send_report)))
         assertUIObjectExists(itemWithResId("$packageName:id/restoreTabButton"))
         assertUIObjectExists(itemWithResId("$packageName:id/closeTabButton"))
-    }
-
-    fun verifyPocketPageContent() {
-        sessionLoadedIdlingResource = SessionLoadedIdlingResource()
-        registerAndCleanupIdlingResources(sessionLoadedIdlingResource) {
-            assertUIObjectExists(
-                itemWithResId("pocket-logo-nav"),
-                waitingTime = waitingTimeLong,
-            )
-        }
     }
 
     // Verifies the information displayed on the about:cache page
@@ -1116,8 +1107,8 @@ class BrowserRobot {
 
     fun verifyWebCompatReporterViewItems(composeTestRule: ComposeTestRule, websiteURL: String) {
         Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the report broken site description is displayed")
-        composeTestRule.onNodeWithText(
-            "Help make $appName better for everyone. Mozilla employees use the info you send to fix website problems.",
+        composeTestRule.onNodeWithContentDescription(
+            getStringResource(R.string.webcompat_reporter_description_2, appName) + " " + getStringResource(R.string.a11y_links_available),
         ).assertIsDisplayed()
         Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the report broken site description is displayed")
         Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"URL\" header is displayed")
@@ -1129,18 +1120,30 @@ class BrowserRobot {
         Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"What’s broken?\" header is displayed")
         composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_label_whats_broken_2)).assertIsDisplayed()
         Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"What’s broken?\" header is displayed")
-        Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"Choose reason\" field is displayed")
-        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_choose_reason)).assertIsDisplayed()
-        Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"Choose reason\" field is displayed")
+        Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"Choose a reason\" field is displayed")
+        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_choose_reason_2)).assertIsDisplayed()
+        Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"Choose a reason\" field is displayed")
         Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"Please choose a reason\" error message is displayed")
         composeTestRule.onNodeWithTag(BROKEN_SITE_REPORTER_CHOOSE_REASON_BUTTON).assertIsDisplayed()
         Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"Please choose a reason\" error message is displayed")
         Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"Describe the problem (optional)\" field is displayed")
         composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_label_description)).assertIsDisplayed()
         Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"Describe the problem (optional)\" field is displayed")
-        Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"Send more info\" link is displayed")
-        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_send_more_info)).assertIsDisplayed()
-        Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"Send more info\" link is displayed")
+        if (appContext.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE) {
+            Log.i(
+                TAG, "Release channel is ${appContext.components.core.engine.version.releaseChannel}",
+            )
+            Log.i(
+                TAG,
+                "verifyWebCompatReporterViewItems: Trying to verify that the \"Send more info\" link is displayed",
+            )
+            composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_send_more_info))
+                .assertIsDisplayed()
+            Log.i(
+                TAG,
+                "verifyWebCompatReporterViewItems: Verified that the \"Send more info\" link is displayed",
+            )
+        }
         Log.i(TAG, "verifyWebCompatReporterViewItems: Trying to verify that the \"Cancel\" button is displayed")
         composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_cancel))
         Log.i(TAG, "verifyWebCompatReporterViewItems: Verified that the \"Cancel \" button is displayed")
@@ -1153,9 +1156,9 @@ class BrowserRobot {
         Log.i(TAG, "verifyWhatIsBrokenField: Trying to verify that the \"What’s broken?\" header is displayed")
         composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_label_whats_broken_2)).assertIsDisplayed()
         Log.i(TAG, "verifyWhatIsBrokenField: Verified that the \"What’s broken?\" header is displayed")
-        Log.i(TAG, "verifyWhatIsBrokenField: Trying to verify that the \"Choose reason\" field is displayed")
-        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_choose_reason)).assertIsDisplayed()
-        Log.i(TAG, "verifyWhatIsBrokenField: Verified that the \"Choose reason\" field is displayed")
+        Log.i(TAG, "verifyWhatIsBrokenField: Trying to verify that the \"Choose a reason\" field is displayed")
+        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_choose_reason_2)).assertIsDisplayed()
+        Log.i(TAG, "verifyWhatIsBrokenField: Verified that the \"Choose a reason\" field is displayed")
         Log.i(TAG, "verifyWhatIsBrokenField: Trying to verify that the \"Please choose a reason\" error message is displayed")
         composeTestRule.onNodeWithTag(BROKEN_SITE_REPORTER_CHOOSE_REASON_BUTTON).assertIsDisplayed()
         Log.i(TAG, "verifyWhatIsBrokenField: Verified that the \"Please choose a reason\" error message is displayed")
@@ -1168,10 +1171,10 @@ class BrowserRobot {
     }
 
     fun clickChooseReasonField(composeTestRule: ComposeTestRule) {
-        Log.i(TAG, "clickChooseReasonField: Trying to click the \"Choose reason\" field")
-        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_choose_reason))
+        Log.i(TAG, "clickChooseReasonField: Trying to click the \"Choose a reason\" field")
+        composeTestRule.onNodeWithText(getStringResource(R.string.webcompat_reporter_choose_reason_2))
             .performClick()
-        Log.i(TAG, "clickChooseReasonField: Trying to clicked the \"Choose reason\" field")
+        Log.i(TAG, "clickChooseReasonField: Trying to clicked the \"Choose a reason\" field")
     }
 
     fun clickSiteDoesNotLoadReason(composeTestRule: ComposeTestRule) {
@@ -1293,10 +1296,10 @@ class BrowserRobot {
             return ThreeDotMenuMainRobot.Transition()
         }
 
-        fun openThreeDotMenuFromRedesignedToolbar(composeTestRule: ComposeTestRule, interact: ThreeDotMenuMainRobotCompose.() -> Unit): ThreeDotMenuMainRobotCompose.Transition {
-            Log.i(TAG, "openThreeDotMenuFromRedesignedToolbar: Trying to click main menu button")
+        fun openThreeDotMenu(composeTestRule: ComposeTestRule, interact: ThreeDotMenuMainRobotCompose.() -> Unit): ThreeDotMenuMainRobotCompose.Transition {
+            Log.i(TAG, "openThreeDotMenu: Trying to click main menu button")
             itemWithDescription(getStringResource(R.string.content_description_menu)).click()
-            Log.i(TAG, "openThreeDotMenuFromRedesignedToolbar: Clicked main menu button")
+            Log.i(TAG, "openThreeDotMenu: Clicked main menu button")
 
             ThreeDotMenuMainRobotCompose(composeTestRule).interact()
             return ThreeDotMenuMainRobotCompose.Transition(composeTestRule)
@@ -1397,29 +1400,11 @@ class BrowserRobot {
         @OptIn(ExperimentalTestApi::class)
         fun goToHomescreen(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             Log.i(TAG, "goToHomescreen: Trying to click the go to home screen button.")
-            onView(
-                allOf(
-                    withContentDescription("Home screen"),
-                    isDescendantOfA(withId(R.id.toolbar)),
-                ),
-            ).click()
+            itemWithResId("$packageName:id/mozac_browser_toolbar_navigation_actions").click()
             Log.i(TAG, "goToHomescreen: Clicked the go to home screen button.")
             Log.i(TAG, "goToHomescreen: Waiting for home screen to exist")
             composeTestRule.waitUntilAtLeastOneExists(hasTestTag(HOMEPAGE))
             Log.i(TAG, "goToHomescreen: Waited for home screen to exist")
-
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
-        }
-
-        fun goToHomescreenWithRedesignedToolbar(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
-            itemWithResId("$packageName:id/new_tab_button").click()
-            searchScreen {
-            }.dismissSearchBar {}
-            Log.i(TAG, "goToHomescreenWithRedesignedToolbar: Waiting for $waitingTime ms for for home screen layout or jump back in contextual hint to exist")
-            mDevice.findObject(UiSelector().resourceId("$packageName:id/homeLayout"))
-                .waitForExists(waitingTime)
-            Log.i(TAG, "goToHomescreenWithRedesignedToolbar: Waited for $waitingTime ms for for home screen layout or jump back in contextual hint to exist")
 
             HomeScreenRobot().interact()
             return HomeScreenRobot.Transition()

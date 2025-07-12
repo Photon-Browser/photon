@@ -6,7 +6,7 @@ package mozilla.components.compose.base.button
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material.Text
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,7 +19,7 @@ import java.util.Locale
  *
  * @param text The button text to be displayed.
  * @param onClick Invoked when the user clicks on the button.
- * @param modifier [Modifier] Used to shape and position the underlying [androidx.compose.material.TextButton].
+ * @param modifier [Modifier] Used to shape and position the underlying [androidx.compose.material3.TextButton].
  * @param enabled Controls the enabled state of the button. When `false`, this button will not
  * be clickable.
  * @param textColor [Color] to apply to the button text.
@@ -34,7 +34,7 @@ fun TextButton(
     textColor: Color = AcornTheme.colors.textAccent,
     upperCaseText: Boolean = true,
 ) {
-    androidx.compose.material.TextButton(
+    androidx.compose.material3.TextButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,

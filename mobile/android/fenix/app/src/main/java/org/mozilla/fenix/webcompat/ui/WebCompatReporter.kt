@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.webcompat.ui
 
-import android.annotation.SuppressLint
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,11 +18,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.Scaffold
-import androidx.compose.material.Text
-import androidx.compose.material.TopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -50,7 +52,10 @@ import mozilla.components.compose.base.text.Text.Resource
 import mozilla.components.compose.base.textfield.TextField
 import mozilla.components.compose.base.textfield.TextFieldColors
 import mozilla.components.lib.state.ext.observeAsState
+import org.mozilla.fenix.Config
 import org.mozilla.fenix.R
+import org.mozilla.fenix.compose.LinkText
+import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.BROKEN_SITE_REPORTER_CHOOSE_REASON_BUTTON
 import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.BROKEN_SITE_REPORTER_SEND_BUTTON
@@ -68,7 +73,6 @@ private const val PROBLEM_DESCRIPTION_MAX_LINES = 5
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("LongMethod")
-@SuppressLint("UnusedMaterialScaffoldPaddingParameter")
 @Composable
 fun WebCompatReporter(
     store: WebCompatReporterStore,
@@ -87,20 +91,32 @@ fun WebCompatReporter(
                 },
             )
         },
-        backgroundColor = FirefoxTheme.colors.layer2,
-    ) {
+        containerColor = FirefoxTheme.colors.layer2,
+    ) { paddingValues ->
         Column(
             modifier = Modifier.verticalScroll(rememberScrollState())
+                .padding(paddingValues)
                 .imePadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text(
+            LinkText(
                 text = stringResource(
-                    id = R.string.webcompat_reporter_description,
+                    id = R.string.webcompat_reporter_description_2,
                     stringResource(R.string.app_name),
                 ),
-                color = FirefoxTheme.colors.textPrimary,
-                style = FirefoxTheme.typography.body2,
+                linkTextStates = listOf(
+                    LinkTextState(
+                        text = stringResource(R.string.webcompat_reporter_learn_more),
+                        url = "",
+                        onClick = {
+                            store.dispatch(WebCompatReporterAction.LearnMoreClicked)
+                        },
+                    ),
+                ),
+                style = FirefoxTheme.typography.body2.copy(color = FirefoxTheme.colors.textPrimary),
+                linkTextColor = FirefoxTheme.colors.textAccent,
+                linkTextDecoration = TextDecoration.Underline,
+                textAlign = TextAlign.Start,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -124,7 +140,7 @@ fun WebCompatReporter(
 
             Dropdown(
                 label = stringResource(id = R.string.webcompat_reporter_label_whats_broken_2),
-                placeholder = stringResource(id = R.string.webcompat_reporter_choose_reason),
+                placeholder = stringResource(id = R.string.webcompat_reporter_choose_reason_2),
                 dropdownItems = state.toDropdownItems(
                     onDropdownItemClick = {
                         store.dispatch(WebCompatReporterAction.ReasonChanged(newReason = it))
@@ -157,7 +173,7 @@ fun WebCompatReporter(
                 onValueChange = {
                     store.dispatch(WebCompatReporterAction.ProblemDescriptionChanged(newProblemDescription = it))
                 },
-                placeholder = "",
+                placeholder = stringResource(id = R.string.webcompat_reporter_problem_description_placeholder_text),
                 errorText = "",
                 label = stringResource(id = R.string.webcompat_reporter_label_description),
                 singleLine = false,
@@ -173,18 +189,20 @@ fun WebCompatReporter(
                     .padding(vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(id = R.string.webcompat_reporter_send_more_info),
-                    modifier = Modifier
-                        .clickable {
-                            store.dispatch(WebCompatReporterAction.SendMoreInfoClicked)
-                        },
-                    style = FirefoxTheme.typography.body2,
-                    color = FirefoxTheme.colors.textAccent,
-                    textDecoration = TextDecoration.Underline,
-                )
+                if (Config.channel.isBeta || Config.channel.isNightlyOrDebug) {
+                    Text(
+                        text = stringResource(id = R.string.webcompat_reporter_send_more_info),
+                        modifier = Modifier
+                            .clickable {
+                                store.dispatch(WebCompatReporterAction.SendMoreInfoClicked)
+                            },
+                        style = FirefoxTheme.typography.body2,
+                        color = FirefoxTheme.colors.textAccent,
+                        textDecoration = TextDecoration.Underline,
+                    )
 
-                Spacer(modifier = Modifier.width(24.dp))
+                    Spacer(modifier = Modifier.width(24.dp))
+                }
 
                 Row(
                     modifier = Modifier.weight(1f),
@@ -238,12 +256,13 @@ private fun WebCompatReporterState.toDropdownItems(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TempAppBar(
     onBackClick: () -> Unit,
 ) {
     TopAppBar(
-        backgroundColor = FirefoxTheme.colors.layer1,
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = FirefoxTheme.colors.layer1),
         title = {
             Text(
                 text = stringResource(id = R.string.webcompat_reporter_screen_title),
@@ -277,7 +296,7 @@ private class WebCompatPreviewParameterProvider : PreviewParameterProvider<WebCo
             // Multi-line description
             WebCompatReporterState(
                 enteredUrl = "www.example.com/url_parameters_that_break_the_page",
-                reason = WebCompatReporterState.BrokenSiteReason.Slow,
+                reason = BrokenSiteReason.Slow,
                 problemDescription = "The site wouldn’t load and after I tried xyz it still wouldn’t " +
                     "load and then again site wouldn’t load and after I tried xyz it still wouldn’t " +
                     "load and then again site wouldn’t load and after I tried xyz it still wouldn’t " +

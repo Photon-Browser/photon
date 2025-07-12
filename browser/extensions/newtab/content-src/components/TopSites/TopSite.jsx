@@ -275,8 +275,11 @@ export class TopSiteLink extends React.PureComponent {
       selectedColor,
     } = this.calculateStyle();
 
-    let addButtonl10n = {
+    const addButtonLabell10n = {
       "data-l10n-id": "newtab-topsites-add-shortcut-label",
+    };
+    const addButtonTitlel10n = {
+      "data-l10n-id": "newtab-topsites-add-shortcut-title",
     };
 
     let draggableProps = {};
@@ -333,6 +336,8 @@ export class TopSiteLink extends React.PureComponent {
           tile={{
             position: this.props.index,
             source: NEWTAB_SOURCE,
+            isPinned: this.props.link.isPinned,
+            guid: this.props.link.guid,
           }}
           // For testing.
           IntersectionObserver={this.props.IntersectionObserver}
@@ -365,7 +370,11 @@ export class TopSiteLink extends React.PureComponent {
             data-is-sponsored-link={!!link.sponsored_tile_id}
             title={title}
             onFocus={this.props.onFocus}
+            {...(isAddButton && { ...addButtonTitlel10n })}
           >
+            {shortcutsRefresh && link.isPinned && (
+              <div className="icon icon-pin-small" />
+            )}
             <div className="tile" aria-hidden={true}>
               <div
                 className={
@@ -385,9 +394,6 @@ export class TopSiteLink extends React.PureComponent {
                   />
                 )}
               </div>
-              {shortcutsRefresh && link.isPinned && (
-                <div className="icon icon-pin-small" />
-              )}
               {!shortcutsRefresh && link.searchTopSite && (
                 <div className="top-site-icon search-topsite" />
               )}
@@ -402,7 +408,7 @@ export class TopSiteLink extends React.PureComponent {
               <span
                 className="title-label"
                 dir="auto"
-                {...(isAddButton && { ...addButtonl10n })}
+                {...(isAddButton && { ...addButtonLabell10n })}
               >
                 {!shortcutsRefresh && link.isPinned && (
                   <div className="icon icon-pin-small" />
@@ -562,6 +568,8 @@ export class TopSite extends React.PureComponent {
               type: "click",
               position: this.props.index,
               source: NEWTAB_SOURCE,
+              isPinned: this.props.link.isPinned,
+              guid: this.props.link.guid,
             },
           })
         );
@@ -654,7 +662,7 @@ TopSite.defaultProps = {
   onActivate() {},
 };
 
-export class TopSitePlaceholder extends React.PureComponent {
+export class TopSiteAddButton extends React.PureComponent {
   constructor(props) {
     super(props);
     this.onEditButtonClick = this.onEditButtonClick.bind(this);
@@ -668,24 +676,27 @@ export class TopSitePlaceholder extends React.PureComponent {
   }
 
   render() {
-    let addButtonProps = {};
-    if (this.props.isAddButton) {
-      addButtonProps = {
-        title: "newtab-topsites-add-shortcut-label",
-        onClick: this.onEditButtonClick,
-      };
-    }
-
     return (
       <TopSiteLink
         {...this.props}
-        {...(this.props.isAddButton ? { ...addButtonProps } : {})}
-        className={`placeholder ${this.props.className || ""} ${
-          this.props.isAddButton ? "add-button" : ""
-        }`}
+        isAddButton={true}
+        className={`add-button ${this.props.className || ""}`}
+        onClick={this.onEditButtonClick}
         setPref={this.props.setPref}
         isDraggable={false}
         tabIndex={this.props.tabIndex}
+      />
+    );
+  }
+}
+
+export class TopSitePlaceholder extends React.PureComponent {
+  render() {
+    return (
+      <TopSiteLink
+        {...this.props}
+        className={`placeholder ${this.props.className || ""}`}
+        isDraggable={false}
       />
     );
   }
@@ -952,29 +963,29 @@ export class _TopSiteList extends React.PureComponent {
       // tile for the about:home startup cache.
       if (
         !link ||
-        (props.App.isForStartupCache.TopSites && isSponsored(link)) ||
-        topSites[i]?.isAddButton
+        (props.App.isForStartupCache.TopSites && isSponsored(link))
       ) {
         if (link) {
-          topSiteLink = (
-            <TopSitePlaceholder
-              {...slotProps}
-              {...commonProps}
-              isAddButton={topSites[i] && topSites[i].isAddButton}
-              setRef={
-                i === this.state.focusedIndex
-                  ? el => {
-                      this.focusedRef = el;
-                    }
-                  : () => {}
-              }
-              tabIndex={i === this.state.focusedIndex ? 0 : -1}
-              onFocus={() => {
-                this.onTopsiteFocus(i);
-              }}
-            />
-          );
+          topSiteLink = <TopSitePlaceholder {...slotProps} {...commonProps} />;
         }
+      } else if (topSites[i]?.isAddButton) {
+        topSiteLink = (
+          <TopSiteAddButton
+            {...slotProps}
+            {...commonProps}
+            setRef={
+              i === this.state.focusedIndex
+                ? el => {
+                    this.focusedRef = el;
+                  }
+                : () => {}
+            }
+            tabIndex={i === this.state.focusedIndex ? 0 : -1}
+            onFocus={() => {
+              this.onTopsiteFocus(i);
+            }}
+          />
+        );
       } else {
         topSiteLink = (
           <TopSite

@@ -53,6 +53,7 @@ use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::clip::{ClipIntern, ClipItemKey, ClipItemKeyKind, ClipStore};
 use crate::clip::{ClipInternData, ClipNodeId, ClipLeafId};
 use crate::clip::{PolygonDataHandle, ClipTreeBuilder};
+use crate::gpu_types::BlurEdgeMode;
 use crate::segment::EdgeAaSegmentMask;
 use crate::spatial_tree::{SceneSpatialTree, SpatialNodeContainer, SpatialNodeIndex, get_external_scroll_offset};
 use crate::frame_builder::FrameBuilderConfig;
@@ -559,6 +560,7 @@ pub struct SceneBuilder<'a> {
 impl<'a> SceneBuilder<'a> {
     pub fn build(
         scene: &Scene,
+        root_pipeline: Option<PipelineId>,
         fonts: SharedFontResources,
         view: &SceneView,
         frame_builder_config: &FrameBuilderConfig,
@@ -571,7 +573,7 @@ impl<'a> SceneBuilder<'a> {
         profile_scope!("build_scene");
 
         // We checked that the root pipeline is available on the render backend.
-        let root_pipeline_id = scene.root_pipeline_id.unwrap();
+        let root_pipeline_id = root_pipeline.or(scene.root_pipeline_id).unwrap();
         let root_pipeline = scene.pipelines.get(&root_pipeline_id).unwrap();
         let root_reference_frame_index = spatial_tree.root_reference_frame_index();
 
@@ -1277,7 +1279,7 @@ impl<'a> SceneBuilder<'a> {
             },
         };
 
-        self.clip_tree_builder.push_clip_chain(Some(info.space_and_clip.clip_chain_id), false);
+        self.clip_tree_builder.push_clip_chain(Some(info.space_and_clip.clip_chain_id), false, false);
 
         // TODO(gw): This is the only remaining call site that relies on ClipId parenting, remove me!
         self.add_rect_clip_node(
@@ -2260,6 +2262,7 @@ impl<'a> SceneBuilder<'a> {
         self.clip_tree_builder.push_clip_chain(
             clip_chain_id,
             !composite_ops.is_empty(),
+            composite_ops.snapshot.is_some(),
         );
 
         let new_space = match (self.raster_space_stack.last(), requested_raster_space) {
@@ -2359,7 +2362,13 @@ impl<'a> SceneBuilder<'a> {
         // clip node doesn't affect the stacking context rect.
         let mut blit_reason = BlitReason::empty();
 
-        // Stacking context snapshots are offscreen syrfaces.
+        // If we are forcing a backdrop root here, isolate this context
+        // by using an intermediate surface.
+        if flags.contains(StackingContextFlags::IS_BACKDROP_ROOT) {
+            blit_reason = BlitReason::BACKDROP;
+        }
+
+        // Stacking context snapshots are offscreen surfaces.
         if composite_ops.snapshot.is_some() {
             blit_reason = BlitReason::SNAPSHOT;
         }
@@ -2699,7 +2708,7 @@ impl<'a> SceneBuilder<'a> {
             stacking_context.composite_ops.filters,
             stacking_context.composite_ops.filter_primitives,
             stacking_context.composite_ops.filter_datas,
-            None,
+            false,
             spatial_node_context_offset,
         );
 
@@ -3017,7 +3026,7 @@ impl<'a> SceneBuilder<'a> {
         clip_chain_id: api::ClipChainId,
         should_inflate: bool,
     ) {
-        self.clip_tree_builder.push_clip_chain(Some(clip_chain_id), false);
+        self.clip_tree_builder.push_clip_chain(Some(clip_chain_id), false, false);
 
         // Store this shadow in the pending list, for processing
         // during pop_all_shadows.
@@ -3063,6 +3072,7 @@ impl<'a> SceneBuilder<'a> {
                         width: std_deviation,
                         height: std_deviation,
                         should_inflate: pending_shadow.should_inflate,
+                        edge_mode: BlurEdgeMode::Duplicate,
                     };
                     let blur_is_noop = blur_filter.is_noop();
 
@@ -3541,6 +3551,7 @@ impl<'a> SceneBuilder<'a> {
             nine_patch,
             cached,
             edge_aa_mask,
+            enable_dithering: self.config.enable_dithering,
         })
     }
 
@@ -3851,7 +3862,7 @@ impl<'a> SceneBuilder<'a> {
             filters,
             filter_primitives,
             filter_datas,
-            Some(false),
+            true,
             LayoutVector2D::zero(),
         );
 
@@ -3950,7 +3961,7 @@ impl<'a> SceneBuilder<'a> {
         mut filter_ops: Vec<Filter>,
         mut filter_primitives: Vec<FilterPrimitive>,
         filter_datas: Vec<FilterData>,
-        should_inflate_override: Option<bool>,
+        is_backdrop_filter: bool,
         context_offset: LayoutVector2D,
     ) -> PictureChainBuilder {
         // TODO(cbrewster): Currently CSS and SVG filters live side by side in WebRender, but unexpected results will
@@ -4487,12 +4498,13 @@ impl<'a> SceneBuilder<'a> {
                     } else {
                         let mut filter = filter.clone();
 
-                        // backdrop-filter spec says that blurs should assume edgeMode=Duplicate
-                        // We can do this by not inflating the bounds, which means the blur
-                        // shader will duplicate pixels outside the sample rect
-                        if let Some(should_inflate_override) = should_inflate_override {
-                            if let Filter::Blur { ref mut should_inflate, .. } = filter {
-                                *should_inflate = should_inflate_override;
+                        // backdrop-filter spec says that blurs should assume edgeMode=Mirror
+                        // We can do this by not inflating the bounds and setting the edge
+                        // sampling mode to mirror.
+                        if is_backdrop_filter {
+                            if let Filter::Blur { ref mut should_inflate, ref mut edge_mode, .. } = filter {
+                                *should_inflate = false;
+                                *edge_mode = BlurEdgeMode::Mirror;
                             }
                         }
 

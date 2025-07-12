@@ -9,20 +9,16 @@ package org.mozilla.fenix.ui
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.rule.ActivityTestRule
-import mozilla.components.concept.engine.utils.EngineReleaseChannel
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertNativeAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertYoutubeAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
-import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
-import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
 import org.mozilla.fenix.helpers.Constants.PackageName.PRINT_SPOOLER
 import org.mozilla.fenix.helpers.DataGenerationHelper.createCustomTabIntent
@@ -32,13 +28,11 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
-import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeVeryShort
-import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.TestHelper.closeApp
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
@@ -51,10 +45,8 @@ import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.customTabScreen
 import org.mozilla.fenix.ui.robots.homeScreen
-import org.mozilla.fenix.ui.robots.mainMenuScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 
-@Ignore("Bugzilla issue: https://bugzilla.mozilla.org/show_bug.cgi?id=1963618")
 class MainMenuTestCompose : TestSetup() {
     @get:Rule
     val composeTestRule =
@@ -77,64 +69,30 @@ class MainMenuTestCompose : TestSetup() {
     @get:Rule
     val memoryLeaksRule = DetectMemoryLeaksRule()
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860735
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080168
     @SmokeTest
     @Test
-    fun homepageRedesignedMenuItemsTest() {
+    fun verifyTheHomepageRedesignedMenuItemsTest() {
         homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             verifyHomeMainMenuItems()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860835
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080124
     @SmokeTest
     @Test
-    fun webpageRedesignedMenuItemsTest() {
+    fun verifyTheWebpageRedesignedMenuItemsTest() {
         val testPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             verifyPageMainMenuItems()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860842
-    @SmokeTest
-    @Test
-    fun verifyTheNewTabButtonTest() {
-        val testPage = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.clickNewTabButton {
-            verifySearchToolbar(isDisplayed = true)
-        }.dismissSearchBar {
-            verifyIfInPrivateOrNormalMode(privateBrowsingEnabled = false)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860843
-    @SmokeTest
-    @Test
-    fun verifyTheNewPrivateTabButtonTest() {
-        val testPage = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.clickNewPrivateTabButton {
-            verifySearchToolbar(isDisplayed = true)
-        }.dismissSearchBar {
-            verifyIfInPrivateOrNormalMode(privateBrowsingEnabled = true)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860844
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080133
     @SmokeTest
     @Test
     fun verifySwitchToDesktopSiteIsDisabledOnPDFsTest() {
@@ -142,22 +100,23 @@ class MainMenuTestCompose : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(pdfPage.url) {
+            waitForPageToLoad()
             verifyPageContent(pdfPage.content)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
             verifySwitchToDesktopSiteButtonIsEnabled(isEnabled = false)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860846
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080130
     @SmokeTest
     @Test
-    fun findInPageTest() {
+    fun verifyTheFindInPageMenuItemTest() {
         val testPage = getGenericAsset(mockWebServer, 3)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
             mDevice.waitForIdle()
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.clickFindInPageButton {
             verifyFindInPageNextButton()
             verifyFindInPagePrevButton()
@@ -174,7 +133,7 @@ class MainMenuTestCompose : TestSetup() {
             verifyFindInPageResult("1/3")
         }.closeFindInPageWithCloseButton {
             verifyFindInPageBar(false)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.clickFindInPageButton {
             enterFindInPageQuery("3")
             verifyFindInPageResult("1/1")
@@ -183,33 +142,15 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860850
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080136
     @SmokeTest
     @Test
-    fun verifyBookmarksMenuButtonTest() {
+    fun verifyTheHistoryMenuItemTest() {
         val testPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openBookmarks(composeTestRule) {
-            verifyEmptyBookmarksMenuView()
-        }.goBackToBrowserScreen {
-            verifyPageContent(testPage.content)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860851
-    @SmokeTest
-    @Test
-    fun verifyHistoryMenuButtonTest() {
-        val testPage = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openHistory {
             verifyHistoryMenuView()
         }.goBack {
@@ -217,16 +158,15 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860852
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080138
     @SmokeTest
     @Test
-    fun verifyDownloadsMenuButtonTest() {
+    fun verifyTheDownloadsMenuItemTest() {
         val testPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openDownloads {
             verifyEmptyDownloadsList(composeTestRule)
             exitMenu()
@@ -235,32 +175,31 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860853
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080139
     @SmokeTest
     @Test
-    fun verifyPasswordsMenuButtonTest() {
+    fun verifyThePasswordsMenuItemTest() {
         val testPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openPasswords {
             verifySecurityPromptForLogins()
             tapSetupLater()
             verifyEmptySavedLoginsListView()
-            TestHelper.exitMenu()
+            exitMenu()
         }
         browserScreen {
             verifyPageContent(testPage.content)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860757
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080095
     // Verifies the main menu of a custom tab with a custom menu item
     @SmokeTest
     @Test
-    fun verifyCustomTabMenuItemsTest() {
+    fun verifyTheCustomTabsMainMenuItemsTest() {
         val customMenuItem = "TestMenuItem"
         val customTabPage = getGenericAsset(mockWebServer, 1)
 
@@ -278,11 +217,11 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860761
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080100
     // The test opens a link in a custom tab then sends it to the browser
     @SmokeTest
     @Test
-    fun openCustomTabInFirefoxTest() {
+    fun verifyOpenInFirefoxMainMenuTest() {
         val customTabPage = getGenericAsset(mockWebServer, 1)
 
         intentReceiverActivityTestRule.launchActivity(
@@ -294,161 +233,120 @@ class MainMenuTestCompose : TestSetup() {
         customTabScreen {
             verifyCustomTabCloseButton()
         }.openMainMenuFromRedesignedToolbar {
-        }.clickOpenInBrowserButtonFromRedesignedToolbar {
+        }.clickOpenInBrowserButtonFromRedesignedToolbar(composeTestRule) {
+            verifyPageContent(customTabPage.content)
             verifyTabCounter("1")
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860762
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080151
     @SmokeTest
     @Test
-    fun shareCustomTabUsingMainMenuButtonTest() {
-        val customTabPage = getGenericAsset(mockWebServer, 1)
-
-        intentReceiverActivityTestRule.launchActivity(
-            createCustomTabIntent(
-                customTabPage.url.toString(),
-            ),
-        )
-
-        customTabScreen {
-        }.openMainMenuFromRedesignedToolbar {
-        }.clickShareButtonFromRedesignedMenu {
-            verifyShareTabLayout()
-            verifySharingWithSelectedApp(
-                appName = "Gmail",
-                content = customTabPage.url.toString(),
-                subject = customTabPage.title,
-            )
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860771
-    @SmokeTest
-    @Test
-    fun verifyRecommendedExtensionsListTest() {
+    fun verifyRecommendedExtensionsListWhileNoExtensionIsInstalledTest() {
         val genericURL = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openExtensionsFromMainMenu {
             verifyRecommendedAddonsViewFromRedesignedMainMenu(composeTestRule)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860779
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080160
     @SmokeTest
     @Test
-    fun verifyRedesignedMenuAfterRemovingAnExtensionTest() {
-        val addonName = "uBlock Origin"
+    fun verifyTheExtensionsdMenuListAfterRemovingAnExtensionTest() {
+        var recommendedExtensionTitle = ""
         val genericURL = getGenericAsset(mockWebServer, 1)
 
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(genericURL.url) {
+        }.openThreeDotMenu(composeTestRule) {
         }.openExtensionsFromMainMenu {
-            waitForAddonsListProgressBarToBeGone()
-            clickInstallAddon(addonName)
-            verifyAddonPermissionPrompt(addonName)
+            recommendedExtensionTitle = getRecommendedExtensionTitle(composeTestRule)
+            installRecommendedAddon(recommendedExtensionTitle, composeTestRule)
+            verifyAddonPermissionPrompt(recommendedExtensionTitle)
             acceptPermissionToInstallAddon()
-            verifyAddonInstallCompletedPrompt(addonName, composeTestRule.activityRule)
+            verifyAddonInstallCompletedPrompt(recommendedExtensionTitle, composeTestRule.activityRule)
             closeAddonInstallCompletePrompt()
-        }.goBack {
         }
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openExtensionsFromMainMenu {
             clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
-        }.openDetailedMenuForAddon(addonName) {
+        }.openDetailedMenuForAddon(recommendedExtensionTitle) {
         }.removeAddon(composeTestRule.activityRule) {
-            verifySnackBarText("Successfully uninstalled $addonName")
+            verifySnackBarText("Successfully uninstalled $recommendedExtensionTitle")
             waitUntilSnackbarGone()
-        }.goBack {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            verifyNoExtensionsButton()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860784
-    @SmokeTest
-    @Test
-    fun verifyTheManageExtensionsSubMenuTest() {
-        val addonName = "uBlock Origin"
-        val genericURL = getGenericAsset(mockWebServer, 1)
-
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.openExtensionsFromMainMenu {
-            waitForAddonsListProgressBarToBeGone()
-            clickInstallAddon(addonName)
-            verifyAddonPermissionPrompt(addonName)
-            acceptPermissionToInstallAddon()
-            verifyAddonInstallCompletedPrompt(addonName, composeTestRule.activityRule)
-            closeAddonInstallCompletePrompt()
-        }.goBack {
-        }
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-            clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
         }.goBack {
         }
         browserScreen {
+        }.openThreeDotMenu(composeTestRule) {
+            verifyTryRecommendedExtensionButton()
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080163
+    @SmokeTest
+    @Test
+    fun verifyTheManageExtensionsItemTest() {
+        var recommendedExtensionTitle = ""
+        val genericURL = getGenericAsset(mockWebServer, 1)
+
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(genericURL.url) {
+        }.openThreeDotMenu(composeTestRule) {
+        }.openExtensionsFromMainMenu {
+            recommendedExtensionTitle = getRecommendedExtensionTitle(composeTestRule)
+            installRecommendedAddon(recommendedExtensionTitle, composeTestRule)
+            verifyAddonPermissionPrompt(recommendedExtensionTitle)
+            acceptPermissionToInstallAddon()
+            verifyAddonInstallCompletedPrompt(recommendedExtensionTitle, composeTestRule.activityRule)
+            closeAddonInstallCompletePrompt()
+        }
+
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(genericURL.url) {
+        }.openThreeDotMenu(composeTestRule) {
+        }.openExtensionsFromMainMenu {
+            clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
+            verifyAddonsListIsDisplayed(shouldBeDisplayed = true)
+            verifyAddonIsInstalled(recommendedExtensionTitle)
+            verifyEnabledTitleDisplayed()
+        }.goBackToBrowser {
             verifyPageContent(genericURL.content)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860812
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080129
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1968653")
     @SmokeTest
     @Test
-    fun verifyTheSaveSubMenuItemsTest() {
+    fun verifyTheBookmarkPageMenuOptionTest() {
         val testPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            clickSaveButton()
-            verifySaveSubMenuItems()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860813
-    @SmokeTest
-    @Test
-    fun verifyTheBookmarkThisPageSubMenuItemsTest() {
-        val testPage = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             clickSaveButton()
         }.clickBookmarkThisPageButton {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             clickSaveButton()
         }.clickEditBookmarkButton(composeTestRule) {
             verifyEditBookmarksView()
             clickDeleteBookmarkButtonInEditMode()
         }
         browserScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             clickSaveButton()
             verifyBookmarkThisPageButton()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860814
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080113
     @SmokeTest
     @Test
     fun verifyTheAddToShortcutsSubMenuOptionTest() {
@@ -457,25 +355,23 @@ class MainMenuTestCompose : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
             verifyPageContent(testPage.content)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            clickSaveButton()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
         }.clickAddToShortcutsButton {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
-        }.goToHomescreenWithRedesignedToolbar {
+        }.goToHomescreen(composeTestRule) {
             verifyExistingTopSitesTabs(composeTestRule, testPage.title)
         }.openTopSiteTabWithTitle(composeTestRule, testPage.title) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            clickSaveButton()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
         }.clickRemoveFromShortcutsButton {
             verifySnackBarText(getStringResource(R.string.snackbar_top_site_removed))
-        }.goToHomescreenWithRedesignedToolbar {
+        }.goToHomescreen(composeTestRule) {
             verifyNotExistingTopSiteItem(composeTestRule, testPage.title)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860815
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080114
     @SmokeTest
     @Test
     fun verifyTheAddToHomeScreenSubMenuOptionTest() {
@@ -483,16 +379,14 @@ class MainMenuTestCompose : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            clickSaveButton()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
         }.clickAddToHomeScreenButton {
             clickCancelShortcutButton()
         }
         browserScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            clickSaveButton()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
         }.clickAddToHomeScreenButton {
             clickAddShortcutButton()
             clickSystemHomeScreenShortcutAddButton()
@@ -501,7 +395,7 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860816
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080115
     @SmokeTest
     @Test
     fun verifyTheSaveToCollectionSubMenuOptionTest() {
@@ -523,20 +417,20 @@ class MainMenuTestCompose : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(secondTestPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            clickSaveButton()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
         }.clickSaveToCollectionButton {
         }.selectExistingCollection(collectionTitle) {
             verifySnackBarText("Tab saved!")
-        }.goToHomescreenWithRedesignedToolbar {
+        }.goToHomescreen(composeTestRule) {
         }.expandCollection(composeTestRule, collectionTitle) {
             verifyTabSavedInCollection(composeTestRule, firstTestPage.title)
             verifyTabSavedInCollection(composeTestRule, secondTestPage.title)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860817
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080118
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1968653")
     @SmokeTest
     @Test
     fun verifyTheSaveAsPDFSubMenuOptionTest() {
@@ -544,8 +438,7 @@ class MainMenuTestCompose : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             clickSaveButton()
         }.clickSaveAsPDFButton {
             verifyDownloadPrompt(testPage.title + ".pdf")
@@ -555,98 +448,32 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860796
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080111
     @SmokeTest
     @Test
-    fun verifyTheDefaultToolsMenuItemsTest() {
-        val testPage = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
-            verifyTheDefaultToolsMenuItems()
-            verifyReaderViewButtonIsEnabled(isEnabled = false)
-            verifyOpenInAppButtonIsEnabled(isEnabled = false)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860798
-    @SmokeTest
-    @Test
-    fun verifyTheReaderViewButtonTest() {
-        val readerViewPage = TestAssetHelper.getLoremIpsumAsset(mockWebServer)
-        val estimatedReadingTime = "1 - 2 minutes"
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(readerViewPage.url) {
-            verifyPageContent(readerViewPage.content)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
-            verifyReaderViewButtonIsEnabled(isEnabled = true)
-        }.clickTheReaderViewModeButton {
-            waitForPageToLoad()
-            verifyPageContent(estimatedReadingTime)
-        }
-        navigationToolbar {
-            verifyReaderViewNavigationToolbarButton(isReaderViewEnabled = true)
-        }
-        browserScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
-            verifyCustomizeReaderViewButtonIsDisplayed(isDisplayed = true)
-        }.clickCustomizeReaderViewButton {
-            verifyAppearanceFontGroup(true)
-            verifyAppearanceFontSansSerif(true)
-            verifyAppearanceFontSerif(true)
-            verifyAppearanceFontIncrease(true)
-            verifyAppearanceFontDecrease(true)
-            verifyAppearanceFontSize(3)
-            verifyAppearanceColorGroup(true)
-            verifyAppearanceColorDark(true)
-            verifyAppearanceColorLight(true)
-            verifyAppearanceColorSepia(true)
-        }.closeAppearanceMenu {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            openToolsMenu()
-        }.clickTurnOffReaderViewButton {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            openToolsMenu()
-            verifyReaderViewButtonIsEnabled(isEnabled = true)
-            verifyCustomizeReaderViewButtonIsDisplayed(isDisplayed = false)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860799
-    @SmokeTest
-    @Test
-    fun verifyTheTranslatePageButtonsStatesTest() {
+    fun verifyTheTranslatePageSubMenuOptionTest() {
         val testPage = TestAssetHelper.getFirstForeignWebPageAsset(mockWebServer)
 
         navigationToolbar {
         }.enterURL(testPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
         }.clickTranslateButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickTranslateButton {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            openToolsMenu()
-        }.clickTranslatedToButton("English") {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.clickTranslatedButton {
             verifyTranslationSheetIsDisplayed(isDisplayed = true)
         }.clickShowOriginalButton {
             verifyPageContent(testPage.content)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            openToolsMenu()
-            verifyTheDefaultToolsMenuItems()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+            verifyTranslatePageButton()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860802
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080128
     @SmokeTest
     @Test
     fun verifyTheShareButtonTest() {
@@ -655,9 +482,7 @@ class MainMenuTestCompose : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
             verifyPageContent(testPage.content)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.clickShareButton {
             verifyShareTabLayout()
             verifySharingWithSelectedApp(
@@ -668,131 +493,74 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860804
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080117
     @SmokeTest
     @Test
-    fun verifyOpenInAppButtonIsEnabledTest() {
+    fun verifyTheOpenInAppSubMenuOptionIsEnabledTest() {
         val youtubeURL = "vnd.youtube://".toUri()
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(youtubeURL) {
             waitForPageToLoad(waitingTime)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
             verifyOpenInAppButtonIsEnabled(appName = "YouTube", isEnabled = true)
             clickOpenInAppButton(appName = "YouTube")
             assertYoutubeAppOpens()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860746
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080131
     @SmokeTest
     @Test
-    fun homeMainMenuExtensionsButtonOpensManageExtensionsTest() {
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.openExtensionsFromMainMenu {
-            registerAndCleanupIdlingResources(
-                RecyclerViewIdlingResource(composeTestRule.activity.findViewById(R.id.add_ons_list), 1),
-            ) {
-                verifyAddonsItems()
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860845
-    @SmokeTest
-    @Test
-    fun switchDesktopSiteModeOnOffTest() {
+    fun verifyDesktopSiteModeOnOffIsEnabledTest() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
             verifySwitchToDesktopSiteButton()
+            verifyDesktopSiteButtonState(isEnabled = false)
             clickSwitchToDesktopSiteButton()
         }
         browserScreen {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            verifySwitchToMobileSiteButton()
-            clickSwitchToMobileSiteButton()
+        }.openThreeDotMenu(composeTestRule) {
+            verifyDesktopSiteButtonState(isEnabled = true)
+            clickSwitchToDesktopSiteButton()
         }
         browserScreen {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            verifySwitchToDesktopSiteButton()
+        }.openThreeDotMenu(composeTestRule) {
+            verifyDesktopSiteButtonState(isEnabled = false)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860801
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080119
     @SmokeTest
     @Test
-    fun verifyPrintSubMenuOptionTest() {
+    fun verifyThePrintSubMenuOptionTest() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             mDevice.waitForIdle()
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            openToolsMenu()
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
             clickPrintContentButton()
             assertNativeAppOpens(PRINT_SPOOLER)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860778
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080156
     @SmokeTest
     @Test
-    fun verifyRedesignedMenuAfterDisablingAnExtensionTest() {
-        val addonName = "uBlock Origin"
-        val genericURL = getGenericAsset(mockWebServer, 1)
-
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.openExtensionsFromMainMenu {
-            waitForAddonsListProgressBarToBeGone()
-            clickInstallAddon(addonName)
-            verifyAddonPermissionPrompt(addonName)
-            acceptPermissionToInstallAddon()
-            verifyAddonInstallCompletedPrompt(addonName, composeTestRule.activityRule)
-            closeAddonInstallCompletePrompt()
-        }.goBack {
-        }
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-            clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
-        }.openDetailedMenuForAddon(addonName) {
-            disableExtension()
-            verifySnackBarText("Successfully disabled $addonName")
-            waitUntilSnackbarGone()
-        }.goBack {
-        }.goBack {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-            verifyNoExtensionsButton()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860775
-    @SmokeTest
-    @Test
-    fun verifyExtensionInstallTest() {
+    fun verifyTheExtensionInstallationTest() {
         val genericURL = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openExtensionsFromMainMenu {
             val recommendedExtensionTitle = getRecommendedExtensionTitle(composeTestRule)
             installRecommendedAddon(recommendedExtensionTitle, composeTestRule)
@@ -802,11 +570,12 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860741
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080181
+    @SmokeTest
     @Test
-    fun verifyTheHomePageMainMenuSettingsButtonTest() {
+    fun verifyTheHomePageSettingsMenuItemTest() {
         homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.openSettings {
             verifySettingsToolbar()
         }.goBack {
@@ -814,39 +583,11 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860743
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080171
     @Test
-    fun verifyTheHomePageNewTabButtonInPrivateBrowsingModeTest() {
+    fun verifyTheHomePageCustomizeHomepageMainMenuItemTest() {
         homeScreen {
-        }.togglePrivateBrowsingMode()
-
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.clickNewTabButton {
-            verifySearchToolbar(isDisplayed = true)
-        }.dismissSearchBar {
-            verifyIfInPrivateOrNormalMode(privateBrowsingEnabled = false)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860745
-    @Test
-    fun verifyTheHomePageNewPrivateTabButtonInNormalBrowsingModeTest() {
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-        }.clickNewPrivateTabButton {
-            verifySearchToolbar(isDisplayed = true)
-        }.dismissSearchBar {
-            verifyIfInPrivateOrNormalMode(privateBrowsingEnabled = true)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860751
-    @Test
-    fun verifyTheHomePageMainMenuCustomizeHomepageButtonTest() {
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.clickCustomizeHomepageButton {
             verifyHomePageView()
         }.goBackToHomeScreen {
@@ -854,28 +595,31 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860725
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080121
     @Test
-    fun verifyTheHomePageMainMenuCFRTest() {
+    fun verifyTheBrowserViewMainMenuCFRTest() {
+        val genericURL = getGenericAsset(mockWebServer, 1)
+
         composeTestRule.activityRule.applySettingsExceptions {
             it.isMenuRedesignCFREnabled = true
         }
-        homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(genericURL.url) {
+        }.openThreeDotMenu(composeTestRule) {
             verifyMainMenuCFR()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2728842
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080898
     @Test
-    fun verifyFindInPageInPDFTest() {
+    fun verifyTheFindInPageOptionInPDFsTest() {
         val testPage = getGenericAsset(mockWebServer, 3)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.url) {
             clickPageObject(MatcherHelper.itemWithText("PDF form file"))
             clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.clickFindInPageButton {
             verifyFindInPageNextButton()
             verifyFindInPagePrevButton()
@@ -888,7 +632,7 @@ class MainMenuTestCompose : TestSetup() {
             verifyFindInPageResult("1/2")
         }.closeFindInPageWithCloseButton {
             verifyFindInPageBar(false)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.clickFindInPageButton {
             enterFindInPageQuery("p")
             verifyFindInPageResult("1/1")
@@ -897,13 +641,13 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860854
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080145
     @Test
     fun verifyTheQuitFirefoxMenuItemTest() {
         val genericURL = getGenericAsset(mockWebServer, 1)
 
         homeScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.openSettings {
         }.openSettingsSubMenuDeleteBrowsingDataOnQuit {
             verifyDeleteBrowsingOnQuitEnabled(false)
@@ -915,7 +659,7 @@ class MainMenuTestCompose : TestSetup() {
         }
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
             clickQuitFirefoxButton()
             restartApp(composeTestRule.activityRule)
         }
@@ -924,37 +668,9 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860806
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080103
     @Test
-    fun verifyTheDismissalWhenTappingOutsideTheToolsSubMenuTest() {
-        val genericURL = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            openToolsMenu()
-        }.clickOutsideTheMainMenu {
-            verifyToolsMenuDoesNotExist()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860819
-    @Test
-    fun verifyTheDismissalWhenTappingOutsideTheSaveSubMenuTest() {
-        val genericURL = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            clickSaveButton()
-        }.clickOutsideTheMainMenu {
-            verifySaveMenuDoesNotExist()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860759
-    @Test
-    fun verifyEnabledDesktopSiteToggleInCustomTabTest() {
+    fun verifyTheDesktopSiteMenuItemInACustomTabTest() {
         val customTabPage = getGenericAsset(mockWebServer, 1)
 
         intentReceiverActivityTestRule.launchActivity(
@@ -966,18 +682,20 @@ class MainMenuTestCompose : TestSetup() {
         customTabScreen {
         }.openMainMenuFromRedesignedToolbar {
             verifySwitchToDesktopSiteButton(composeTestRule)
+            verifyDesktopSiteButtonState(composeTestRule, isEnabled = false)
             clickSwitchToDesktopSiteButton(composeTestRule)
         }.openMainMenuFromRedesignedToolbar {
-            verifySwitchToMobileSiteButton(composeTestRule)
-            clickSwitchToMobileSiteButton(composeTestRule)
+            verifyDesktopSiteButtonState(composeTestRule, isEnabled = true)
+            clickSwitchToDesktopSiteButton(composeTestRule)
         }.openMainMenuFromRedesignedToolbar {
-            verifySwitchToDesktopSiteButton(composeTestRule)
+            verifyDesktopSiteButtonState(composeTestRule, isEnabled = false)
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860760
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080101
+    @SmokeTest
     @Test
-    fun customTabsFindInPageTest() {
+    fun verifyTheFindInPageMenuItemInACustomTabTest() {
         val customTabPage = getGenericAsset(mockWebServer, 3)
 
         intentReceiverActivityTestRule.launchActivity(
@@ -1004,7 +722,7 @@ class MainMenuTestCompose : TestSetup() {
             verifyFindInPageResult("1/3")
         }.closeFindInPageWithCloseButton {
             verifyFindInPageBar(false)
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
+        }.openThreeDotMenu(composeTestRule) {
         }.clickFindInPageButton {
             enterFindInPageQuery("3")
             verifyFindInPageResult("1/1")
@@ -1013,9 +731,9 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860765
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080107
     @Test
-    fun verifyTheDismissalWhenTappingOutsideTheCustomTabMainMenuTest() {
+    fun verifyTheClosingBehaviourWhenTappingOutsideTheCustomTabMainMenuTest() {
         val customMenuItem = "TestMenuItem"
         val customTabPage = getGenericAsset(mockWebServer, 1)
 
@@ -1034,347 +752,230 @@ class MainMenuTestCompose : TestSetup() {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860770
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080162
+    @SmokeTest
     @Test
-    fun noAddonsInstalledExtensionPromotionBannerTest() {
-        val genericURL = getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-            verifyNoInstalledExtensionsPromotionBanner(composeTestRule)
-        }.clickExtensionsPromotionBannerLearnMoreLink(composeTestRule) {
-            verifyExtensionsPromotionBannerLearnMoreLinkURL()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860781
-    @Test
-    fun disabledAddonsExtensionPromotionBannerTest() {
+    fun verifyTheExtensionMenuListWhileExtensionsAreDisabledTest() {
         var recommendedExtensionTitle = ""
         val genericURL = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openExtensionsFromMainMenu {
             recommendedExtensionTitle = getRecommendedExtensionTitle(composeTestRule)
             installRecommendedAddon(recommendedExtensionTitle, composeTestRule)
             acceptPermissionToInstallAddon()
             verifyAddonInstallCompletedPrompt(recommendedExtensionTitle, composeTestRule.activityRule)
             closeAddonInstallCompletePrompt()
+        }
+        browserScreen {
+        }.openThreeDotMenu(composeTestRule) {
+        }.openExtensionsFromMainMenu {
             clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
         }.openDetailedMenuForAddon(recommendedExtensionTitle) {
             disableExtension()
             waitUntilSnackbarGone()
         }.goBack {
         }.goBackToBrowser {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-            verifyDisabledExtensionsPromotionBanner(composeTestRule)
+        }.openThreeDotMenu(composeTestRule) {
+            verifyNoExtensionsEnabledButton()
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860785
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080153
     @Test
-    fun verifyTheDiscoverMoreExtensionSubMenuItemTest() {
+    fun verifyTheDiscoverMoreExtensionsSubMenuItemTest() {
         val genericURL = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
+        }.openThreeDotMenu(composeTestRule) {
         }.openExtensionsFromMainMenu {
         }.clickDiscoverMoreExtensionsButton(composeTestRule) {
             verifyUrl("addons.mozilla.org/en-US/android")
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860790
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080112
+    @SmokeTest
     @Test
-    fun verifyTheClosingBehaviourWhenTappingOutsideTheExtensionsSubMenuTest() {
-        var recommendedExtensionTitle = ""
-        val genericURL = getGenericAsset(mockWebServer, 1)
+    fun verifyTheReportBrokenSiteSubMenuOptionTest() {
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
         navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-        }
-        mainMenuScreen(composeTestRule) {
-        }.clickOutsideTheMainMenu {
-            verifyExtensionsMenuDoesNotExist()
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-            recommendedExtensionTitle = getRecommendedExtensionTitle(composeTestRule)
-            installRecommendedAddon(recommendedExtensionTitle, composeTestRule)
-            acceptPermissionToInstallAddon()
-            verifyAddonInstallCompletedPrompt(recommendedExtensionTitle, composeTestRule.activityRule)
-            closeAddonInstallCompletePrompt()
-        }
-        mainMenuScreen(composeTestRule) {
-        }.clickOutsideTheMainMenu {
-            verifyExtensionsMenuDoesNotExist()
-        }
-        browserScreen {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-            clickManageExtensionsButtonFromRedesignedMainMenu(composeTestRule)
-        }.openDetailedMenuForAddon(recommendedExtensionTitle) {
-            disableExtension()
-            waitUntilSnackbarGone()
-        }.goBack {
-        }.goBackToBrowser {
-        }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            expandMainMenu()
-        }.openExtensionsFromMainMenu {
-        }
-        mainMenuScreen(composeTestRule) {
-        }.clickOutsideTheMainMenu {
-            verifyExtensionsMenuDoesNotExist()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2860800
-    @Test
-    fun verifyTheReportBrokenSiteOptionTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
-
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.clickReportBrokenSiteButton {
-                verifyWebCompatReporterViewItems(composeTestRule, websiteURL = defaultWebPage.url.toString())
-            }.closeWebCompatReporter {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            }.openSettings {
-            }.openSettingsSubMenuDataCollection {
-                clickUsageAndTechnicalDataToggle()
-                verifyUsageAndTechnicalDataToggle(enabled = false)
-            }
-
-            exitMenu()
-
-            browserScreen {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.clickReportBrokenSiteButton {
-                verifyUrl("webcompat.com/issues/new")
-            }
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.clickReportBrokenSiteButton {
+            verifyWebCompatReporterViewItems(composeTestRule, websiteURL = defaultWebPage.url.toString())
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939173
     @Test
     fun verifyTheWhatIsBrokenErrorMessageTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
-                verifyWhatIsBrokenField(composeTestRule)
-                verifySendButtonIsEnabled(composeTestRule, isEnabled = false)
-                clickChooseReasonField(composeTestRule)
-                clickSiteDoesNotLoadReason(composeTestRule)
-                verifyChooseReasonErrorMessageIsNotDisplayed(composeTestRule)
-                verifySendButtonIsEnabled(composeTestRule, isEnabled = true)
-            }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
+            verifyWhatIsBrokenField(composeTestRule)
+            verifySendButtonIsEnabled(composeTestRule, isEnabled = false)
+            clickChooseReasonField(composeTestRule)
+            clickSiteDoesNotLoadReason(composeTestRule)
+            verifyChooseReasonErrorMessageIsNotDisplayed(composeTestRule)
+            verifySendButtonIsEnabled(composeTestRule, isEnabled = true)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939175
     @Test
-    fun verifyThatTheBrokenSiteFormCanBeCanceledTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
+    fun verifyThatTheBrokenSiteFormSubmissionCanBeCanceledTest() {
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
-                clickChooseReasonField(composeTestRule)
-                clickSiteDoesNotLoadReason(composeTestRule)
-                clickBrokenSiteFormCancelButton(composeTestRule)
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWhatIsBrokenField(composeTestRule)
-            }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
+            clickChooseReasonField(composeTestRule)
+            clickSiteDoesNotLoadReason(composeTestRule)
+            clickBrokenSiteFormCancelButton(composeTestRule)
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWhatIsBrokenField(composeTestRule)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939176
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1968653")
     @Test
-    fun verifyTheBrokenSiteFormSubmissionTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
+    fun verifyTheBrokenSiteFormSubmissionWithOptionalFieldsTest() {
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
-                clickChooseReasonField(composeTestRule)
-                clickSiteDoesNotLoadReason(composeTestRule)
-                describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
-                clickBrokenSiteFormSendButton(composeTestRule)
-            }
-            browserScreen {
-                verifySnackBarText("Your report was sent")
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWhatIsBrokenField(composeTestRule)
-                verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = false)
-            }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openToolsMenu()
+        }.openReportBrokenSite {
+            verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
+            clickChooseReasonField(composeTestRule)
+            clickSiteDoesNotLoadReason(composeTestRule)
+            describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
+            clickBrokenSiteFormSendButton(composeTestRule)
+        }
+        browserScreen {
+            verifySnackBarText("Your report was sent")
+        }.openThreeDotMenu(composeTestRule) {
+            openToolsMenu()
+        }.openReportBrokenSite {
+            verifyWhatIsBrokenField(composeTestRule)
+            verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = false)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939179
     @Test
     fun verifyThatTheBrokenSiteFormInfoPersistsTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
-                clickChooseReasonField(composeTestRule)
-                clickSiteDoesNotLoadReason(composeTestRule)
-                describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
-            }.closeWebCompatReporter {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = true)
-            }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
+            clickChooseReasonField(composeTestRule)
+            clickSiteDoesNotLoadReason(composeTestRule)
+            describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
+        }.closeWebCompatReporter {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = true)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939180
     @Test
     fun verifyTheBrokenSiteFormIsEmptyWithoutSubmittingThePreviousOneTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val firstWebPage = getGenericAsset(mockWebServer, 1)
-            val secondWebPage = getGenericAsset(mockWebServer, 2)
+        val firstWebPage = getGenericAsset(mockWebServer, 1)
+        val secondWebPage = getGenericAsset(mockWebServer, 2)
 
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(firstWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWebCompatReporterViewItems(composeTestRule, firstWebPage.url.toString())
-                clickChooseReasonField(composeTestRule)
-                clickSiteDoesNotLoadReason(composeTestRule)
-                describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
-            }.closeWebCompatReporter {
-            }.openTabDrawer(composeTestRule) {
-            }.openNewTab {
-            }.submitQuery(secondWebPage.url.toString()) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWhatIsBrokenField(composeTestRule)
-                verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = false)
-            }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(firstWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWebCompatReporterViewItems(composeTestRule, firstWebPage.url.toString())
+            clickChooseReasonField(composeTestRule)
+            clickSiteDoesNotLoadReason(composeTestRule)
+            describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
+        }.closeWebCompatReporter {
+        }.openTabDrawer(composeTestRule) {
+        }.openNewTab {
+        }.submitQuery(secondWebPage.url.toString()) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWhatIsBrokenField(composeTestRule)
+            verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = false)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939181
     @Test
     fun verifyThatTheBrokenSiteFormInfoIsErasedWhenKillingTheAppTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
-                clickChooseReasonField(composeTestRule)
-                clickSiteDoesNotLoadReason(composeTestRule)
-                describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
-            }
-            closeApp(composeTestRule.activityRule)
-            restartApp(composeTestRule.activityRule)
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWebCompatReporterViewItems(composeTestRule, defaultWebPage.url.toString())
+            clickChooseReasonField(composeTestRule)
+            clickSiteDoesNotLoadReason(composeTestRule)
+            describeBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time")
+        }
+        closeApp(composeTestRule.activityRule)
+        restartApp(composeTestRule.activityRule)
 
-            browserScreen {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyWhatIsBrokenField(composeTestRule)
-                verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = false)
-            }
+        browserScreen {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyWhatIsBrokenField(composeTestRule)
+            verifyBrokenSiteProblem(composeTestRule, problemDescription = "Prolonged page loading time", isDisplayed = false)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939182
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1974939")
     @Test
     fun verifyReportBrokenSiteFormNotDisplayedWhenTelemetryIsDisabledTest() {
-        runWithCondition(
-            // This test will not run on RC builds because the "Report site issue button" is not available.
-            composeTestRule.activity.components.core.engine.version.releaseChannel !== EngineReleaseChannel.RELEASE,
-        ) {
-            val defaultWebPage = getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
 
-            homeScreen {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-            }.openSettings {
-            }.openSettingsSubMenuDataCollection {
-                clickUsageAndTechnicalDataToggle()
-                verifyUsageAndTechnicalDataToggle(enabled = false)
-            }
-
-            exitMenu()
-
-            navigationToolbar {
-            }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            }.openThreeDotMenuFromRedesignedToolbar(composeTestRule) {
-                openToolsMenu()
-            }.openReportBrokenSite {
-                verifyUrl("webcompat.com/issues/new")
-            }
+        homeScreen {
+        }.openThreeDotMenu(composeTestRule) {
+        }.openSettings {
+        }.openSettingsSubMenuDataCollection {
+            clickUsageAndTechnicalDataToggle()
+            verifyUsageAndTechnicalDataToggle(composeTestRule, isChecked = false)
+        }
+        exitMenu()
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu(composeTestRule) {
+            openMoreMenu()
+        }.openReportBrokenSite {
+            verifyUrl("webcompat.com/issues/new")
         }
     }
 }

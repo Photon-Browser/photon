@@ -126,6 +126,7 @@ internal class BookmarksTelemetryMiddleware : Middleware<BookmarksState, Bookmar
             BookmarksListMenuAction.MultiSelect.MoveClicked,
             BookmarksListMenuAction.SelectAll,
             is BookmarksLoaded,
+            is SearchDismissed,
             EditBookmarkAction.DeleteClicked,
             is EditBookmarkClicked,
             is FolderClicked,
@@ -156,6 +157,7 @@ internal class BookmarksTelemetryMiddleware : Middleware<BookmarksState, Bookmar
             is ReceivedSyncSignInUpdate,
             FirstSyncCompleted,
             ViewDisposed,
+            PrivateBrowsingAuthorized,
             -> Unit
         }
     }

@@ -14,11 +14,12 @@
 #include "DepthOrderedFrameList.h"
 #include "FrameMetrics.h"
 #include "LayoutConstants.h"
+#include "TouchManager.h"
+#include "Units.h"
+#include "Visibility.h"
 #include "mozilla/ArenaObjectID.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/FlushType.h"
-#include "mozilla/layers/FocusTarget.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PresShellForwards.h"
@@ -26,10 +27,12 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
-#include "nsColor.h"
+#include "mozilla/dom/DocumentBinding.h"
+#include "mozilla/layers/FocusTarget.h"
 #include "nsCOMArray.h"
-#include "nsCoord.h"
 #include "nsCSSFrameConstructor.h"
+#include "nsColor.h"
+#include "nsCoord.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsFrameState.h"
 #include "nsIContent.h"
@@ -45,9 +48,6 @@
 #include "nsTHashSet.h"
 #include "nsThreadUtils.h"
 #include "nsWeakReference.h"
-#include "TouchManager.h"
-#include "Units.h"
-#include "Visibility.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -98,6 +98,9 @@ class OverflowChangedTracker;
 class ProfileChunkedBuffer;
 class ScrollContainerFrame;
 class StyleSheet;
+
+struct AutoConnectedAncestorTracker;
+struct PointerInfo;
 
 #ifdef ACCESSIBILITY
 namespace a11y {
@@ -253,6 +256,13 @@ class PresShell final : public nsStubDocumentObserver,
   void Destroy();
 
   bool IsDestroying() { return mIsDestroying; }
+
+  /**
+   * Return true if this is for the root nsPresContext.
+   */
+  [[nodiscard]] bool IsRoot() const {
+    return mPresContext && mPresContext->IsRoot();
+  }
 
   /**
    * All frames owned by the shell are allocated from an arena.  They
@@ -739,7 +749,8 @@ class PresShell final : public nsStubDocumentObserver,
   nsIFrame* GetAbsoluteContainingBlock(nsIFrame* aFrame);
 
   // https://drafts.csswg.org/css-anchor-position-1/#target
-  nsIFrame* GetAnchorPosAnchor(const nsAtom* aName) const;
+  nsIFrame* GetAnchorPosAnchor(const nsAtom* aName,
+                               const nsIFrame* aPositionedFrame) const;
   void AddAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame);
   void RemoveAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame);
 
@@ -869,9 +880,12 @@ class PresShell final : public nsStubDocumentObserver,
 
   void AddAutoWeakFrame(AutoWeakFrame* aWeakFrame);
   void AddWeakFrame(WeakFrame* aWeakFrame);
+  void AddConnectedAncestorTracker(AutoConnectedAncestorTracker& aTracker);
 
   void RemoveAutoWeakFrame(AutoWeakFrame* aWeakFrame);
   void RemoveWeakFrame(WeakFrame* aWeakFrame);
+  void RemoveConnectedAncestorTracker(
+      const AutoConnectedAncestorTracker& aTracker);
 
   /**
    * Stop or restart non synthetic test mouse event handling on *all*
@@ -889,11 +903,11 @@ class PresShell final : public nsStubDocumentObserver,
    * PresShell::PaintDefaultBackground, and nsDocShell::SetupNewViewer;
    * bug 488242, bug 476557 and other bugs mentioned there.
    */
-  void SetCanvasBackground(nscolor aColor) {
-    mCanvasBackground.mViewport.mColor = aColor;
+  void SetViewportCanvasBackground(const SingleCanvasBackground& aBg) {
+    mCanvasBackground.mViewport = aBg;
   }
-  nscolor GetCanvasBackground() const {
-    return mCanvasBackground.mViewport.mColor;
+  const SingleCanvasBackground& GetViewportCanvasBackground() const {
+    return mCanvasBackground.mViewport;
   }
 
   const SingleCanvasBackground& GetCanvasBackground(bool aForPage) const {
@@ -1045,8 +1059,8 @@ class PresShell final : public nsStubDocumentObserver,
     mUnderHiddenEmbedderElement = aUnderHiddenEmbedderElement;
   }
 
-  MOZ_CAN_RUN_SCRIPT
-  void DispatchSynthMouseMove(WidgetGUIEvent* aEvent);
+  MOZ_CAN_RUN_SCRIPT void DispatchSynthMouseOrPointerMove(
+      WidgetMouseEvent* aMouseOrPointerMoveEvent);
 
   /* Temporarily ignore the Displayport for better paint performance. We
    * trigger a repaint once suppression is disabled. Without that
@@ -1063,6 +1077,8 @@ class PresShell final : public nsStubDocumentObserver,
 
   /* Whether or not the displayport is currently suppressed. */
   bool IsDisplayportSuppressed();
+
+  bool IsDocumentLoading() const { return mDocumentLoading; }
 
   void AddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const;
 
@@ -1779,6 +1795,19 @@ class PresShell final : public nsStubDocumentObserver,
   // on resize.
   void AddOrthogonalFlow(nsIFrame* aFrame) { mOrthogonalFlows.Insert(aFrame); }
 
+  /**
+   * Return the nsPoint represents the location of the mouse event relative to
+   * the root document in visual coordinates
+   */
+  nsPoint GetEventLocation(const WidgetMouseEvent& aEvent) const;
+
+  /**
+   * Returns current modifier state which was set when PresShell started
+   * handling an event which has modifier state.  So, the result is "current"
+   * modifier state from the web apps point of view.
+   */
+  static Modifiers GetCurrentModifiers() { return sCurrentModifiers; }
+
  private:
   ~PresShell();
 
@@ -2046,15 +2075,17 @@ class PresShell final : public nsStubDocumentObserver,
   };
 
   /**
-   * return the nsPoint represents the location of the mouse event relative to
-   * the root document in visual coordinates
+   * Called when starting to handle aEvent, and this stores or clears the last
+   * mouse/pointer location to synthesize or to cancel synthesizing eMouseMove
+   * and/or ePointerMove.
    */
-  nsPoint GetEventLocation(const WidgetMouseEvent& aEvent) const;
-
-  // Check if aEvent is a mouse event and record the mouse location for later
-  // synth mouse moves.
   void RecordPointerLocation(WidgetGUIEvent* aEvent);
-  inline bool MouseLocationWasSetBySynthesizedMouseEventForTests() const;
+
+  /**
+   * Called when starting to handle aEvent and stores the last modifier state.
+   */
+  static void RecordModifiers(WidgetGUIEvent* aEvent);
+
   class nsSynthMouseMoveEvent final : public nsARefreshObserver {
    public:
     nsSynthMouseMoveEvent(PresShell* aPresShell, bool aFromScroll)
@@ -2086,6 +2117,9 @@ class PresShell final : public nsStubDocumentObserver,
     bool mFromScroll;
   };
   MOZ_CAN_RUN_SCRIPT void ProcessSynthMouseMoveEvent(bool aFromScroll);
+  MOZ_CAN_RUN_SCRIPT void ProcessSynthMouseOrPointerMoveEvent(
+      EventMessage aMoveMessage, uint32_t aPointerId,
+      const PointerInfo& aPointerInfo);
 
   void UpdateImageLockingState();
 
@@ -3083,6 +3117,7 @@ class PresShell final : public nsStubDocumentObserver,
   static void MarkFramesInListApproximatelyVisible(const nsDisplayList& aList);
   void MarkFramesInSubtreeApproximatelyVisible(nsIFrame* aFrame,
                                                const nsRect& aRect,
+                                               const nsRect& aPreserve3DRect,
                                                bool aRemoveOnly = false);
 
   void DecApproximateVisibleCount(
@@ -3153,7 +3188,9 @@ class PresShell final : public nsStubDocumentObserver,
 
   // A list of stack weak frames. This is a pointer to the last item in the
   // list.
-  AutoWeakFrame* mAutoWeakFrames;
+  AutoWeakFrame* mAutoWeakFrames = nullptr;
+
+  AutoConnectedAncestorTracker* mLastConnectedAncestorTracker = nullptr;
 
   // A hash table of heap allocated weak frames.
   nsTHashSet<WeakFrame*> mWeakFrames;
@@ -3183,11 +3220,6 @@ class PresShell final : public nsStubDocumentObserver,
   // or all frames are constructed, we won't paint anything but
   // our <body> background and scrollbars.
   nsCOMPtr<nsITimer> mPaintSuppressionTimer;
-
-  // Information about live content (which still stay in DOM tree).
-  // Used in case we need re-dispatch event after sending pointer event,
-  // when target of pointer event was deleted during executing user handlers.
-  nsCOMPtr<nsIContent> mPointerEventTarget;
 
   nsCOMPtr<nsIContent> mLastAnchorScrolledTo;
 
@@ -3234,25 +3266,19 @@ class PresShell final : public nsStubDocumentObserver,
   nsCallbackEventRequest* mFirstCallbackEventRequest = nullptr;
   nsCallbackEventRequest* mLastCallbackEventRequest = nullptr;
 
-  // This is used for synthetic mouse events that are sent when what is under
-  // the mouse pointer may have changed without the mouse moving (eg scrolling,
-  // change to the document contents).
-  // It is set only on a presshell for a root document, this value represents
-  // the last observed location of the mouse relative to that root document,
-  // in visual coordinates. It is set to (NS_UNCONSTRAINEDSIZE,
-  // NS_UNCONSTRAINEDSIZE) if the mouse isn't over our window or there is no
-  // last observed mouse location for some reason.
-  nsPoint mMouseLocation;
-  // This is used for the synthetic mouse events too.  This is set when a mouse
-  // event is dispatched into the DOM.
-  static int16_t sMouseButtons;
+  // This is used only by PresShell for a root document to synthesize
+  // ePointerMove at a layout change or a scroll to dispatch pointer boundary
+  // events. This stores all pointerIds which over the root window.
+  CopyableTArray<uint32_t> mPointerIds;
+
+  // This is set only by PresShell for a root document to synthesize eMouseMove
+  // at a layout change or a scroll to dispatch mouse boundary events.  The
+  // details of the mouse event is stored by PointerEventHandler.
+  Maybe<uint32_t> mLastMousePointerId;
+
   // The last observed pointer location relative to that root document in visual
   // coordinates.
   nsPoint mLastOverWindowPointerLocation;
-  // This is an APZ state variable that tracks the target guid for the last
-  // mouse event that was processed (corresponding to mMouseLocation). This is
-  // needed for the synthetic mouse events.
-  layers::ScrollableLayerGuid mMouseEventTargetGuid;
 
   // Only populated on root content documents.
   nsSize mVisualViewportSize;
@@ -3304,12 +3330,6 @@ class PresShell final : public nsStubDocumentObserver,
   // middle of frame construction and the like... it really shouldn't be
   // needed, one hopes, but it is for now.
   uint16_t mChangeNestCount;
-
-  // This is the input source which set mMouseLocation.
-  uint16_t mMouseLocationInputSource = 0;  // MOZ_SOURCE_UNKNOWN by default
-
-  // This is the pointerId which set mMouseLocation.
-  uint32_t mMouseLocationPointerId = 0;
 
   // Flags controlling how our document is rendered.  These persist
   // between paints and so are tied with retained layer pixels.
@@ -3391,6 +3411,7 @@ class PresShell final : public nsStubDocumentObserver,
   bool mDocumentLoading : 1;
   bool mNoDelayedMouseEvents : 1;
   bool mNoDelayedKeyEvents : 1;
+  bool mNoDelayedSingleTap : 1;
 
   bool mApproximateFrameVisibilityVisited : 1;
 
@@ -3416,10 +3437,6 @@ class PresShell final : public nsStubDocumentObserver,
   // Whether mForceDispatchKeyPressEventsForNonPrintableKeys and
   // mForceUseLegacyKeyCodeAndCharCodeValues are initialized.
   bool mInitializedWithKeyPressEventDispatchingBlacklist : 1;
-
-  // Set to true if mMouseLocation is set by a mouse event which is synthesized
-  // for tests.
-  bool mMouseLocationWasSetBySynthesizedMouseEventForTests : 1;
 
   bool mHasTriedFastUnsuppress : 1;
 
@@ -3458,6 +3475,10 @@ class PresShell final : public nsStubDocumentObserver,
   static bool sDisableNonTestMouseEvents;
 
   static bool sProcessInteractable;
+
+  // Store the modifiers which are notified by the last event handling.  So,
+  // this is "current" modifier state from the web apps point of view.
+  static Modifiers sCurrentModifiers;
 };
 
 }  // namespace mozilla

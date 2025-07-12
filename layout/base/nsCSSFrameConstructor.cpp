@@ -13,9 +13,32 @@
 
 #include "ActiveLayerTracker.h"
 #include "ChildIterator.h"
+#include "RetainedDisplayListBuilder.h"
+#include "RubyUtils.h"
+#include "StickyScrollContainer.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Likely.h"
+#include "mozilla/LinkedList.h"
+#include "mozilla/ManualNAC.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
+#include "mozilla/PrintedSheetFrame.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/RestyleManager.h"
+#include "mozilla/SVGGradientFrame.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoStyleSetInlines.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_mathml.h"
+#include "mozilla/Unused.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CharacterData.h"
@@ -28,39 +51,19 @@
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/HTMLSharedListElement.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/Likely.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/ManualNAC.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/PresShellInlines.h"
-#include "mozilla/PrintedSheetFrame.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/RestyleManager.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/ServoBindings.h"
-#include "mozilla/ServoStyleSetInlines.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/StaticPrefs_mathml.h"
-#include "mozilla/SVGGradientFrame.h"
-#include "mozilla/Unused.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsAtom.h"
 #include "nsAutoLayoutPhase.h"
 #include "nsBackdropFrame.h"
 #include "nsBlockFrame.h"
+#include "nsCRT.h"
+#include "nsCSSAnonBoxes.h"
+#include "nsCSSPseudoElements.h"
 #include "nsCanvasFrame.h"
 #include "nsCheckboxRadioFrame.h"
 #include "nsComboboxControlFrame.h"
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
-#include "nsCRT.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsCSSPseudoElements.h"
 #include "nsError.h"
 #include "nsFieldSetFrame.h"
 #include "nsFirstLetterFrame.h"
@@ -71,11 +74,11 @@
 #include "nsIAnonymousContentCreator.h"
 #include "nsIFormControl.h"
 #include "nsIFrameInlines.h"
-#include "nsImageFrame.h"
-#include "nsInlineFrame.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsIPopupContainer.h"
 #include "nsIScriptError.h"
+#include "nsImageFrame.h"
+#include "nsInlineFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsListControlFrame.h"
 #include "nsMathMLParts.h"
@@ -93,22 +96,19 @@
 #include "nsRubyTextFrame.h"
 #include "nsStyleConsts.h"
 #include "nsStyleStructInlines.h"
+#include "nsTArray.h"
 #include "nsTableCellFrame.h"
 #include "nsTableColFrame.h"
 #include "nsTableFrame.h"
 #include "nsTableRowFrame.h"
 #include "nsTableRowGroupFrame.h"
 #include "nsTableWrapperFrame.h"
-#include "nsTArray.h"
 #include "nsTextFragment.h"
 #include "nsTextNode.h"
 #include "nsTransitionManager.h"
 #include "nsUnicharUtils.h"
 #include "nsViewManager.h"
 #include "nsXULElement.h"
-#include "RetainedDisplayListBuilder.h"
-#include "RubyUtils.h"
-#include "StickyScrollContainer.h"
 
 #ifdef XP_MACOSX
 #  include "nsIDocShell.h"
@@ -171,9 +171,9 @@ nsIFrame* NS_NewComboboxLabelFrame(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewMiddleCroppingLabelFrame(PresShell*, ComputedStyle*);
 
 #include "mozilla/dom/NodeInfo.h"
-#include "prenv.h"
-#include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
+#include "nsNodeInfoManager.h"
+#include "prenv.h"
 
 #ifdef DEBUG
 // Set the environment variable GECKO_FRAMECTOR_DEBUG_FLAGS to one or
@@ -1980,8 +1980,8 @@ static bool IsTablePseudo(nsIFrame* aFrame) {
           aFrame->GetParent()->Style()->GetPseudoType() ==
               PseudoStyleType::tableCell) ||
          (pseudoType == PseudoStyleType::tableWrapper &&
-          aFrame->PrincipalChildList()
-              .FirstChild()
+          static_cast<nsTableWrapperFrame*>(aFrame)
+              ->InnerTableFrame()
               ->Style()
               ->IsPseudoOrAnonBox());
 }
@@ -3600,7 +3600,11 @@ nsCSSFrameConstructor::FindImgControlData(const Element& aElement,
 const nsCSSFrameConstructor::FrameConstructionData*
 nsCSSFrameConstructor::FindSearchControlData(const Element& aElement,
                                              ComputedStyle& aStyle) {
-  if (StaticPrefs::layout_forms_input_type_search_enabled()) {
+  // Bug 1936648: Until we're absolutely sure we've solved the
+  // accessibility issues around the clear search button, we're only
+  // enabling the clear button in chrome contexts. See also Bug 1655503
+  if (StaticPrefs::layout_forms_input_type_search_enabled() ||
+      aElement.OwnerDoc()->ChromeRulesEnabled()) {
     static constexpr FrameConstructionData sSearchControlData(
         NS_NewSearchControlFrame);
     return &sSearchControlData;
@@ -7173,7 +7177,8 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
     // point is now invalid (bug 341382). Insert right after the table frame
     // instead.
     if (!captionPrevSibling || captionPrevSibling->GetParent() != outerTable) {
-      captionPrevSibling = outerTable->PrincipalChildList().FirstChild();
+      captionPrevSibling =
+          static_cast<nsTableWrapperFrame*>(outerTable)->InnerTableFrame();
     }
 
     captionList.ApplySetParent(outerTable);
@@ -7315,15 +7320,13 @@ static bool IsOnlyMeaningfulChildOfWrapperPseudo(nsIFrame* aFrame,
   }
   if (aFrame->IsTableCaption()) {
     MOZ_ASSERT(aParent->IsTableWrapperFrame());
-    auto* table = aParent->PrincipalChildList().FirstChild();
+    auto* table = static_cast<nsTableWrapperFrame*>(aParent)->InnerTableFrame();
     MOZ_ASSERT(table);
-    MOZ_ASSERT(table->IsTableFrame());
     return IsOnlyNonWhitespaceFrameInList(aParent->PrincipalChildList(), aFrame,
                                           /* aIgnoreFrame = */ table) &&
            // This checks for both colgroups and the principal list of the table
            // frame.
-           AllChildListsAreEffectivelyEmpty(
-               aParent->PrincipalChildList().FirstChild());
+           AllChildListsAreEffectivelyEmpty(table);
   }
   MOZ_ASSERT(!aFrame->IsTableColGroupFrame());
   return IsOnlyNonWhitespaceFrameInList(aParent->PrincipalChildList(), aFrame);
@@ -7883,8 +7886,9 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingOuterTableFrame(
   // never worked and was removed in bug 309322.
   nsFrameList newChildFrames;
 
-  if (nsIFrame* childFrame = aFrame->PrincipalChildList().FirstChild()) {
-    MOZ_ASSERT(childFrame->IsTableFrame());
+  MOZ_ASSERT(aFrame->IsTableWrapperFrame());
+  if (nsTableFrame* childFrame =
+          static_cast<nsTableWrapperFrame*>(aFrame)->InnerTableFrame()) {
     nsIFrame* continuingTableFrame =
         CreateContinuingFrame(childFrame, newFrame);
     newChildFrames.AppendFrame(nullptr, continuingTableFrame);

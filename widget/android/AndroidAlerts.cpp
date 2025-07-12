@@ -6,6 +6,7 @@
 #include "AndroidAlerts.h"
 #include "mozilla/java/GeckoRuntimeWrappers.h"
 #include "mozilla/java/WebNotificationWrappers.h"
+#include "mozilla/java/WebNotificationActionWrappers.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
 
@@ -102,6 +103,24 @@ AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
   rv = aAlert->GetVibrate(vibrate);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
+  nsTArray<RefPtr<nsIAlertAction>> nsActions;
+  MOZ_TRY(aAlert->GetActions(nsActions));
+  jni::ObjectArray::LocalRef actions =
+      jni::ObjectArray::New(nsActions.Length());
+  size_t index = 0;
+  for (auto& nsAction : nsActions) {
+    nsAutoString name;
+    MOZ_TRY(nsAction->GetAction(name));
+
+    nsAutoString title;
+    MOZ_TRY(nsAction->GetTitle(title));
+
+    java::WebNotificationAction::LocalRef action =
+        java::WebNotificationAction::New(name, title);
+    actions->SetElement(index, action);
+    ++index;
+  }
+
   if (!sNotificationMap) {
     sNotificationMap = new NotificationMap();
   } else if (Maybe<AndroidNotificationTuple> tuple =
@@ -113,7 +132,7 @@ AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
 
   java::WebNotification::LocalRef notification = notification->New(
       title, name, cookie, text, imageUrl, dir, lang, requireInteraction, spec,
-      silent, privateBrowsing, jni::IntArray::From(vibrate));
+      silent, privateBrowsing, jni::IntArray::From(vibrate), actions);
   AndroidNotificationTuple tuple{
       .mObserver = aAlertListener,
       .mAlert = aAlert,
@@ -135,10 +154,17 @@ AndroidAlerts::CloseAlert(const nsAString& aAlertName, bool aContextClosed) {
     return NS_OK;
   }
 
-  Maybe<AndroidNotificationTuple> tuple =
-      sNotificationMap->MaybeGet(aAlertName);
+  Maybe<AndroidNotificationTuple> tuple = sNotificationMap->Extract(aAlertName);
   if (!tuple) {
     return NS_OK;
+  }
+
+  if (tuple->mObserver) {
+    // All CloseAlert implementation is expected to fire alertfinished
+    // synchronously. (See bug 1975432 to deduplicate this logic)
+    // We have to fire alertfinished here as we are closing it ourselves;
+    // GeckoView will only send it when it's closed from Android side.
+    tuple->mObserver->Observe(nullptr, "alertfinished", nullptr);
   }
 
   java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
@@ -149,6 +175,13 @@ AndroidAlerts::CloseAlert(const nsAString& aAlertName, bool aContextClosed) {
   return NS_OK;
 }
 
+NS_IMETHODIMP AndroidAlerts::GetHistory(nsTArray<nsString>& aResult) {
+  // TODO: Implement this using NotificationManager.getActiveNotifications
+  // https://developer.android.com/reference/android/app/NotificationManager#getActiveNotifications()
+  // See bug 1971394.
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 NS_IMETHODIMP AndroidAlerts::Teardown() {
   sNotificationMap = nullptr;
   return NS_OK;
@@ -157,7 +190,7 @@ NS_IMETHODIMP AndroidAlerts::Teardown() {
 NS_IMETHODIMP AndroidAlerts::PbmTeardown() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
-                                   const char16_t* aCookie) {
+                                   Maybe<nsString> aAction) {
   if (!sNotificationMap) {
     return;
   }
@@ -168,7 +201,11 @@ void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
   }
 
   if (tuple->mObserver) {
-    tuple->mObserver->Observe(nullptr, aTopic, nullptr);
+    nsCOMPtr<nsIAlertAction> action;
+    if (aAction) {
+      tuple->mAlert->GetAction(*aAction, getter_AddRefs(action));
+    }
+    tuple->mObserver->Observe(action, aTopic, nullptr);
   }
 
   if ("alertfinished"_ns.Equals(aTopic)) {

@@ -11,9 +11,9 @@
   -->
   <string name="content_description_menu">Լր. ընտրանքներ</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button">Միացնել գաղտնի դիտարկումը</string>
+  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Միացնել գաղտնի դիտարկումը</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button">Անջատել գաղտնի դիտարկումը</string>
+  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Անջատել գաղտնի դիտարկումը</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
   <string name="content_description_private_browsing">Գաղտնի դիտարկում</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
@@ -62,8 +62,10 @@
     Explanation for private browsing displayed to users on home view when they first enable private mode.
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="private_browsing_placeholder_description_2">%1$s-ը մաքրում է որոնման և դիտարկման պատմությունը, երբ փակում եք ներդիրը կամ դուրս եք գալիս հավելվածից: Չնայած դա ձեզ անանուն չի դարձնում կայքերի կամ ձեր համացանցի ծառայություններ մատուցողի համար, այն ավելի հեշտ է դարձնում ձեր առցանց ակտիվության գաղտնիությունը այն դեպքում, եթե մեկ ուրիշը ևս օգտագործում է տվյալ սարքը:</string>
+  <string name="private_browsing_placeholder_description_2" moz:removedIn="141" tools:ignore="UnusedResources">%1$s-ը մաքրում է որոնման և դիտարկման պատմությունը, երբ փակում եք ներդիրը կամ դուրս եք գալիս հավելվածից: Չնայած դա ձեզ անանուն չի դարձնում կայքերի կամ ձեր համացանցի ծառայություններ մատուցողի համար, այն ավելի հեշտ է դարձնում ձեր առցանց ակտիվության գաղտնիությունը այն դեպքում, եթե մեկ ուրիշը ևս օգտագործում է տվյալ սարքը:</string>
   <string name="private_browsing_common_myths">Տարածված առասպելներ գաղտնի դիտարկման վերաբերյալ</string>
+  <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
+  <string name="private_browsing_a11y_session_announcement">Գաղտնի դիտարկման աշխատաշրջան</string>
   <!--
     True Private Browsing Mode
 
@@ -98,7 +100,7 @@
 
     Text for the message displayed in the contextual feature recommendation popup promoting the erase private browsing feature.
   -->
-  <string name="erase_action_cfr_message">Հպեք այստեղ՝ նոր գաղտնի աշխատաշրջան սկսելու համար: Ջնջեք ձեր պատմությունը, թխուկները՝ ամեն ինչ:</string>
+  <string name="erase_action_cfr_message" moz:removedIn="141" tools:ignore="UnusedResources">Հպեք այստեղ՝ նոր գաղտնի աշխատաշրջան սկսելու համար: Ջնջեք ձեր պատմությունը, թխուկները՝ ամեն ինչ:</string>
   <!--
     Toolbar "contextual feature recommendation" (CFR)
 
@@ -112,12 +114,8 @@
   <!--
     Address bar swipe "contextual feature recommendation" (CFR)
 
-    Text for the title displayed in the contextual feature recommendation popup promoting swipe of address bar.
+    Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar.
   -->
-  <string name="address_bar_swipe_cfr_title" tools:ignore="UnusedResources" moz:removedIn="139">Ներդիրները փոխելու համար սահեցրեք գործիքագոտին</string>
-  <!-- Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar. -->
-  <string name="address_bar_swipe_cfr_message" tools:ignore="UnusedResources" moz:removedIn="139">Փոխարկելու համար սահեցրեք ձախ կամ աջ: Ձեր վերջին ներդիրի վրա սահեցրեք ձախ՝ նոր ներդիր բացելու համար:</string>
-  <!-- Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar. -->
   <string name="address_bar_swipe_cfr_message_2">Սահեցրեք գործիքագոտին դեպի ձախ կամ աջ՝ ներդիրները փոխարկելու համար:</string>
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Անհրաժեշտ է հասանելիություն տեսախցիկին: Անցեք Android-ի կարգավորումներ, հպեք՝ Թույլտվություններ, այնուհետև՝ Թույլատրել:</string>
@@ -209,25 +207,29 @@
     Browser menu banner header text for extensions onboarding.
     %s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_extensions_banner_onboarding_header">Դարձրե՛ք %s-ը Ձերը</string>
+  <string name="browser_menu_extensions_banner_onboarding_header" moz:removedIn="141" tools:ignore="UnusedResources">Դարձրե՛ք %s-ը Ձերը</string>
   <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
   <string name="browser_menu_disabled_extensions_banner_onboarding_header">Դուք ունեք ընդլայնումներ տեղադրված, բայց չմիացված</string>
   <!--
     Browser menu banner body text for extensions onboarding.
     %s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_extensions_banner_onboarding_body">Ընդլայնումները բարձրացնում են ձեր զննարկումը՝ սկսած %s-ի տեսքի և կատարողականի փոփոխությունից մինչև գաղտնիության և անվտանգության բարձրացում:</string>
+  <string name="browser_menu_extensions_banner_onboarding_body" moz:removedIn="141" tools:ignore="UnusedResources">Ընդլայնումները բարձրացնում են ձեր զննարկումը՝ սկսած %s-ի տեսքի և կատարողականի փոփոխությունից մինչև գաղտնիության և անվտանգության բարձրացում:</string>
   <!--
     Browser menu banner body text for extensions onboarding when all installed extensions have been disabled.
     %s is the label of the button that opens the extension manager (for example "Manage extensions").
   -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_body">Ընդլայնումներն օգտագործելու համար միացրեք դրանք կարգավորումներում կամ ստորև ընտրելով «%s»:</string>
+  <string name="browser_menu_disabled_extensions_banner_onboarding_body" moz:removedIn="141" tools:ignore="UnusedResources">Ընդլայնումներն օգտագործելու համար միացրեք դրանք կարգավորումներում կամ ստորև ընտրելով «%s»:</string>
   <!-- Browser menu banner link text for learning more about extensions -->
-  <string name="browser_menu_extensions_banner_learn_more">Իմանալ ավելին</string>
+  <string name="browser_menu_extensions_banner_learn_more" moz:removedIn="141" tools:ignore="UnusedResources">Իմանալ ավելին</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">Կառավարել ընդլայնումները</string>
+  <!-- Browser menu group that contains additional settings in collapsed state -->
+  <string name="browser_menu_more_settings">Ավելին</string>
+  <!-- Browser menu group that contains additional settings in expanded state -->
+  <string name="browser_menu_less_settings">Քիչ</string>
   <!-- Content description (not visible, for screen readers etc.): Section heading for recommended extensions. -->
-  <string name="browser_menu_recommended_section_content_description">Առաջարկվող ընդլայնումներ</string>
+  <string name="browser_menu_recommended_section_content_description" moz:removedIn="141" tools:ignore="UnusedResources">Առաջարկվող ընդլայնումներ</string>
   <!--
     Content description (not visible, for screen readers etc.): Label for plus icon used to add extension.
     %1$s is the name of the extension (for example: ClearURLs).
@@ -260,9 +262,9 @@
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
   <string name="browser_menu_add_app_to_homescreen">Հավելել հավելվածը տնային էկրանին</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
-  <string name="browser_menu_add_to_homescreen_2">Ավելացնել տնային էկրանին…</string>
+  <string name="browser_menu_add_to_homescreen_2" moz:removedIn="141" tools:ignore="UnusedResources">Ավելացնել տնային էկրանին…</string>
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
-  <string name="browser_menu_add_app_to_homescreen_2">Հավելել հավելվածը տնային էկրանին…</string>
+  <string name="browser_menu_add_app_to_homescreen_2" moz:removedIn="141" tools:ignore="UnusedResources">Հավելել հավելվածը տնային էկրանին…</string>
   <!-- Text for notifying users that Xiaomi devices require additional permissions to add to home screen -->
   <string name="browser_menu_add_to_homescreen_xiaomi">Xiaomi սարքերին կարող են անհրաժեշտ լինել լրացուցիչ թույլտվություններ՝ հիմնական էկրանին դյուրանցումներ ավելացնելու համար: Խնդրում ենք ստուգել ձեր կարգավորումները:</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
@@ -270,17 +272,17 @@
   <!-- Browser menu button that opens the find in page menu -->
   <string name="browser_menu_find_in_page">Գտնել էջում</string>
   <!-- Browser menu button that opens the find in page menu -->
-  <string name="browser_menu_find_in_page_2">Գտնել էջում…</string>
+  <string name="browser_menu_find_in_page_2" moz:removedIn="141" tools:ignore="UnusedResources">Գտնել էջում…</string>
   <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
   <string name="browser_menu_translations">Թարգմանել էջը</string>
   <!-- Browser menu button that saves the current tab to a collection -->
-  <string name="browser_menu_save_to_collection">Պահել հավաքածույում…</string>
+  <string name="browser_menu_save_to_collection" moz:removedIn="141" tools:ignore="UnusedResources">Պահել հավաքածույում…</string>
   <!-- Browser menu button that saves the current tab to a collection -->
   <string name="browser_menu_save_to_collection_2">Պահպանել հավաքածուում</string>
   <!-- Browser menu button that open a share menu to share the current site -->
   <string name="browser_menu_share">Տարածել</string>
   <!-- Browser menu button that open a share menu to share the current site -->
-  <string name="browser_menu_share_2">Համօգտագործել…</string>
+  <string name="browser_menu_share_2" moz:removedIn="141" tools:ignore="UnusedResources">Համօգտագործել…</string>
   <!--
     Browser menu button shown in custom tabs that opens the current tab in Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -315,7 +317,11 @@
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Մուտք գործել</string>
   <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
-  <string name="browser_menu_sign_in_caption">Համաժամացրեք գաղտնաբառերը, ներդիրները և ավելին</string>
+  <string name="browser_menu_sign_in_caption" moz:removedIn="141" tools:ignore="UnusedResources">Համաժամացրեք գաղտնաբառերը, ներդիրները և ավելին</string>
+  <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
+  <string name="browser_menu_sign_in_caption_2" moz:removedIn="141" tools:ignore="UnusedResources">Համաժամացրեք էջանիշերը, գաղտնաբառերը, ներդիրները և ավելին</string>
+  <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
+  <string name="browser_menu_sign_in_caption_3">Համաժամեցնել գաղտնաբառերը, էջանիշերը և ավելին</string>
   <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
   <string name="browser_menu_sign_back_in_to_sync">Մուտք գործեք կրկին՝ համաժամեցնելու համար</string>
   <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
@@ -328,17 +334,21 @@
     Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_new_in_firefox">Նորույթները %1$s-ում</string>
+  <string name="browser_menu_new_in_firefox" moz:removedIn="141" tools:ignore="UnusedResources">Նորույթները %1$s-ում</string>
   <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
-  <string name="browser_menu_switch_to_desktop_site">Փոխարկել ամբողջական կայքին</string>
+  <string name="browser_menu_switch_to_desktop_site" moz:removedIn="141" tools:ignore="UnusedResources">Փոխարկել ամբողջական կայքին</string>
   <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
   <string name="browser_menu_switch_to_mobile_site">Անցում բջջային կայք</string>
   <!-- Browser menu label that navigates to the page tools sub-menu -->
-  <string name="browser_menu_tools">Գործիքներ</string>
+  <string name="browser_menu_tools" moz:removedIn="141" tools:ignore="UnusedResources">Գործիքներ</string>
   <!-- Content description (not visible, for screen readers etc.): Back button for all menu redesign sub-menu -->
-  <string name="browser_menu_back_button_content_description">Վերադառնալ հիմնական ցանկ</string>
+  <string name="browser_menu_back_button_content_description" moz:removedIn="141" tools:ignore="UnusedResources">Վերադառնալ հիմնական ցանկ</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar main menu. -->
-  <string name="browser_main_menu_handlebar_content_description">Փակել հիմնական ցանկի էջը</string>
+  <string name="browser_main_menu_handlebar_content_description" moz:removedIn="142" tools:ignore="UnusedResources">Փակել հիմնական ցանկի էջը</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the main menu at the bottom of the screen. -->
+  <string name="browser_close_main_menu_handlebar_content_description">Փակել ցանկը</string>
+  <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
+  <string name="browser_main_menu_content_description_navigation_header">Նավարկում</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu help button. -->
   <string name="browser_main_menu_content_description_help_button">Օգնություն</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu settings button. -->
@@ -352,20 +362,20 @@
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">Փակել հարմարեցված ներդիրի ցանկի էջը</string>
   <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu when the "Report broken site" feature is available -->
-  <string name="browser_menu_tools_description_with_translate_with_report_site_2">Ընթերցելու տեսք, թարգմանել, հայտնել խոտանված կայքի մասին, տպել, համօգտագործել, բացել հավելված</string>
+  <string name="browser_menu_tools_description_with_translate_with_report_site_2" moz:removedIn="141" tools:ignore="UnusedResources">Ընթերցելու տեսք, թարգմանել, հայտնել խոտանված կայքի մասին, տպել, համօգտագործել, բացել հավելված</string>
   <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
-  <string name="browser_menu_tools_description_with_translate_without_report_site">Ընթերցելու տեսք, թարգմանել, տպել, համօգտագործել, բացել հավելված</string>
+  <string name="browser_menu_tools_description_with_translate_without_report_site" moz:removedIn="141" tools:ignore="UnusedResources">Ընթերցելու տեսք, թարգմանել, տպել, համօգտագործել, բացել հավելված</string>
   <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu when the "Report broken site" feature is available -->
-  <string name="browser_menu_tools_description_with_report_site_2">Ընթերցելու տեսք, հայտնել խոտանված կայքի մասին, տպել, համօգտագործել, բացել հավելված</string>
+  <string name="browser_menu_tools_description_with_report_site_2" moz:removedIn="141" tools:ignore="UnusedResources">Ընթերցելու տեսք, հայտնել խոտանված կայքի մասին, տպել, համօգտագործել, բացել հավելված</string>
   <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
-  <string name="browser_menu_tools_description_without_report_site">Ընթերցելու տեսք, տպել, համօգտագործել, բացել հավելված</string>
+  <string name="browser_menu_tools_description_without_report_site" moz:removedIn="141" tools:ignore="UnusedResources">Ընթերցելու տեսք, տպել, համօգտագործել, բացել հավելված</string>
   <!--
     Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
     bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen
   -->
-  <string name="browser_menu_save">Պահպանել</string>
+  <string name="browser_menu_save" moz:removedIn="141" tools:ignore="UnusedResources">Պահպանել</string>
   <!-- Browser menu description that describes the various save related menu items inside of the save sub-menu -->
-  <string name="browser_menu_save_description">Հավելել էջանիշ, դյուրանցում, տուն, հավաքածու, PDF</string>
+  <string name="browser_menu_save_description" moz:removedIn="141" tools:ignore="UnusedResources">Հավելել էջանիշ, դյուրանցում, տուն, հավաքածու, PDF</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
   <string name="browser_menu_bookmark_this_page" moz:removedIn="141" tools:ignore="UnusedResources">Էջանշել այս էջը</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
@@ -373,29 +383,52 @@
   <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
   <string name="browser_menu_edit_bookmark">Խմբագրել Էջանիշը</string>
   <!-- Browser menu label that the saves the currently visited page as a PDF -->
-  <string name="browser_menu_save_as_pdf">Պահել որպես PDF…</string>
+  <string name="browser_menu_save_as_pdf" moz:removedIn="141" tools:ignore="UnusedResources">Պահել որպես PDF…</string>
+  <!-- Browser menu label that the saves the currently visited page as a PDF -->
+  <string name="browser_menu_save_as_pdf_2">Պահել որպես PDF</string>
   <!-- Browser menu label for turning ON reader view of the current visited page -->
-  <string name="browser_menu_turn_on_reader_view">Միացնել Ընթերցելու տեսքը</string>
+  <string name="browser_menu_turn_on_reader_view" moz:removedIn="141" tools:ignore="UnusedResources">Միացնել Ընթերցելու տեսքը</string>
   <!-- Browser menu label for turning OFF reader view of the current visited page -->
-  <string name="browser_menu_turn_off_reader_view">Անջատել Ընթերցելու տեսքը</string>
+  <string name="browser_menu_turn_off_reader_view" moz:removedIn="141" tools:ignore="UnusedResources">Անջատել Ընթերցելու տեսքը</string>
   <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_normal_tab">Տեղափոխել ոչ գաղտնի ներդիր</string>
+  <string name="browser_menu_open_in_normal_tab" moz:removedIn="141" tools:ignore="UnusedResources">Տեղափոխել ոչ գաղտնի ներդիր</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
-  <string name="browser_menu_translate_page">Թարգմանել էջը…</string>
+  <string name="browser_menu_translate_page" moz:removedIn="141" tools:ignore="UnusedResources">Թարգմանել էջը…</string>
+  <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+  <string name="browser_menu_translate_page_2">Թարգմանել էջը</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
   <string name="browser_menu_webcompat_reporter">Զեկուցել կայքի խոտանումը…</string>
+  <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
+  <string name="browser_menu_webcompat_reporter_2">Զեկուցել խոտանված կայքի մասին</string>
   <!--
     Browser menu label that is displayed when the current page has been translated by the translation feature.
     %1$s is the name of the language that page was translated to (e.g. English).
   -->
-  <string name="browser_menu_translated_to">Թարգմանված է %1$s</string>
+  <string name="browser_menu_translated_to" moz:removedIn="141" tools:ignore="UnusedResources">Թարգմանված է %1$s</string>
+  <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
+  <string name="browser_menu_translated">Թարգմանված</string>
   <!-- Browser menu label for the print feature -->
-  <string name="browser_menu_print">Տպել…</string>
+  <string name="browser_menu_print" moz:removedIn="141" tools:ignore="UnusedResources">Տպել…</string>
+  <!-- Browser menu label for the print feature -->
+  <string name="browser_menu_print_2">Տպել</string>
   <!--
     Browser menu label for the Delete browsing data on quit feature.
     %1$s is the name of the app (for example "Firefox").
   -->
   <string name="browser_menu_delete_browsing_data_on_quit">Փակել %1$s-ը</string>
+  <!--
+    Content description for a banner within the menu which prompt the user to make this app their default browser.
+    %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="browser_menu_default_banner_title">Դարձրեք %1$s-ը ձեր սկզբնադիրը</string>
+  <!-- Label text within the set as default banner -->
+  <string name="browser_menu_default_banner_subtitle">Վայրկյաններ է տևում։ Կարող եք փոխել ցանկացած պահի։</string>
+  <!-- Content description for the button that dismisses the set as default banner in the menu -->
+  <string name="browser_menu_default_banner_dismiss" moz:removedIn="142" tools:ignore="UnusedResources">Բաց թողնել</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button that dismisses the set as default banner in the menu -->
+  <string name="browser_menu_default_banner_dismiss_promotion">Փակել առաջխաղացումը</string>
+  <!-- Content description (not visible, for screen readers etc.) for recommended extensions in main menu -->
+  <string name="browser_menu_recommended_extensions_content_description">Հավելյալ տեղեկություն</string>
   <!--
     Menu "contextual feature recommendation" (CFR)
 
@@ -420,7 +453,7 @@
     Content description (not visible, for screen readers etc.): Erase button: Erase the browsing
     history and go back to the home screen.
   -->
-  <string name="browser_toolbar_erase">Վերացնել դիտարկման պատմությունը</string>
+  <string name="browser_toolbar_erase" moz:removedIn="141" tools:ignore="UnusedResources">Վերացնել դիտարկման պատմությունը</string>
   <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">Թարգմանել էջը</string>
   <!--
@@ -481,21 +514,21 @@
 
     Home onboarding dialog welcome screen title text.
   -->
-  <string name="onboarding_home_welcome_title_2">Բարի գալուստ ավելի անձնական համացանց</string>
+  <string name="onboarding_home_welcome_title_2" moz:removedIn="141" tools:ignore="UnusedResources">Բարի գալուստ ավելի անձնական համացանց</string>
   <!-- Home onboarding dialog welcome screen description text. -->
-  <string name="onboarding_home_welcome_description">Ավելի շատ գույներ: Ավելի լավ գաղտնիություն: Նույն հանձնառությունը մարդկանց նկատմամբ շահույթի նկատմամբ:</string>
+  <string name="onboarding_home_welcome_description" moz:removedIn="141" tools:ignore="UnusedResources">Ավելի շատ գույներ: Ավելի լավ գաղտնիություն: Նույն հանձնառությունը մարդկանց նկատմամբ շահույթի նկատմամբ:</string>
   <!-- Home onboarding dialog sign into sync screen title text. -->
-  <string name="onboarding_home_sync_title_3">Էկրանների փոխարկումն ավելի հեշտ է, քան երբևէ</string>
+  <string name="onboarding_home_sync_title_3" moz:removedIn="141" tools:ignore="UnusedResources">Էկրանների փոխարկումն ավելի հեշտ է, քան երբևէ</string>
   <!-- Home onboarding dialog sign into sync screen description text. -->
-  <string name="onboarding_home_sync_description">Շարունակեք այնտեղ, որտեղ դադարեցիք, այլ սարքերի ներդիրներով՝ այժմ ձեր գլխավոր էջում:</string>
+  <string name="onboarding_home_sync_description" moz:removedIn="141" tools:ignore="UnusedResources">Շարունակեք այնտեղ, որտեղ դադարեցիք, այլ սարքերի ներդիրներով՝ այժմ ձեր գլխավոր էջում:</string>
   <!-- Text for the button to continue the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_get_started_button">Սկսեք</string>
+  <string name="onboarding_home_get_started_button" moz:removedIn="141" tools:ignore="UnusedResources">Սկսեք</string>
   <!-- Text for the button to navigate to the sync sign in screen on the home onboarding dialog. -->
-  <string name="onboarding_home_sign_in_button">Մուտք գործել</string>
+  <string name="onboarding_home_sign_in_button" moz:removedIn="141" tools:ignore="UnusedResources">Մուտք գործել</string>
   <!-- Text for the button to skip the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_skip_button">Բաց թողնել</string>
+  <string name="onboarding_home_skip_button" moz:removedIn="141" tools:ignore="UnusedResources">Բաց թողնել</string>
   <!-- Onboarding home screen sync popup dialog message, shown on top of Recent Synced Tabs in the Jump back in section. -->
-  <string name="sync_cfr_message">Ձեր ներդիրները համաժամացվում են: Շարունակեք այնտեղից, որտեղ դադարեցրել եք ձեր մյուս սարքում:</string>
+  <string name="sync_cfr_message" moz:removedIn="142" tools:ignore="UnusedResources">Ձեր ներդիրները համաժամացվում են: Շարունակեք այնտեղից, որտեղ դադարեցրել եք ձեր մյուս սարքում:</string>
   <!-- Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog -->
   <string name="onboarding_home_content_description_close_button">Փակել</string>
   <!--
@@ -836,10 +869,14 @@
   <string name="preferences_category_account">Հաշիվ</string>
   <!-- Preference for changing where the AddressBar is positioned -->
   <string name="preferences_toolbar_2">Հասցեագոտու տեղադրություն</string>
+  <!-- Preference for changing toolbar layout -->
+  <string name="preferences_toolbar_layout">Գործիքագոտու դասավորություն</string>
   <!-- Preference for changing default theme to dark or light mode -->
   <string name="preferences_theme">Ոճ</string>
   <!-- Preference for customizing the home screen -->
   <string name="preferences_home_2">Տնէջ</string>
+  <!-- Preference for customizing the app icon -->
+  <string name="preferences_app_icon">Հավելվածի պատկերակ</string>
   <!-- Preference for gestures based actions -->
   <string name="preferences_gestures">Ժեստեր</string>
   <!-- Preference for settings related to visual options -->
@@ -855,7 +892,7 @@
   <!-- Preference for translations -->
   <string name="preferences_translations">Թարգմանություններ</string>
   <!-- Preference for data choices -->
-  <string name="preferences_data_choices">Տվյալների ընտրություն</string>
+  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">Տվյալների ընտրություն</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">Տվյալների հավաքագրում</string>
   <!-- Preference for developers -->
@@ -917,7 +954,15 @@
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">Երբեք</string>
   <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager">Արտաքին ներբեռնիչ</string>
+  <string name="preferences_external_download_manager" tools:ignore="UnusedResources" moz:removedIn="141">Արտաքին ներբեռնիչ</string>
+  <!-- Preference title for choosing an app to handle downloads -->
+  <string name="preferences_choose_app_for_downloads">Կառավարեք ներբեռնումները մեկ այլ հավելվածով</string>
+  <!-- Title for the setting to automatically clean up downloaded files. %s is the name of the app (for example "Firefox"). -->
+  <string name="preferences_downloads_settings_clean_up_files_title">Ջնջել %s-ից և սարքից</string>
+  <!-- Summary for the setting to automatically clean up downloaded files -->
+  <string name="preferences_downloads_settings_clean_up_files_summary">Ձեր ներբեռնման կառավարիչից ֆայլերը հեռացնելը կհեռացնի դրանք նաև ձեր սարքից</string>
+  <!-- Preference for downloads -->
+  <string name="preferences_downloads">Ներբեռնումներ</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Միացնել Gecko մատյանները</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -937,15 +982,29 @@
 
     The title of the required permissions section from addon's permissions screen
   -->
-  <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">Պահանջված</string>
+  <string name="addons_permissions_heading_required" tools:ignore="UnusedResources" moz:removedIn="141">Պահանջված</string>
   <!-- The title of the optional permissions section from addon's permissions screen -->
-  <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">Կամընտրական</string>
+  <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources" moz:removedIn="141">Կամընտրական</string>
   <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
-  <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">Թույլատրել բոլոր կայքերի համար</string>
+  <string name="addons_permissions_allow_for_all_sites">Թույլատրել բոլոր կայքերի համար</string>
   <!-- The subtitle for the allow for all sites preference toggle -->
-  <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">Եթե վստահում եք այս ընդլայնմանը, կարող եք թույլտվություն տալ դրան յուրաքանչյուր վեբկայքում:</string>
+  <string name="addons_permissions_allow_for_all_sites_subtitle">Եթե վստահում եք այս ընդլայնմանը, կարող եք թույլտվություն տալ դրան յուրաքանչյուր վեբկայքում:</string>
   <!-- The text shown when an extension does not require permissions -->
   <string name="addons_does_not_require_permissions">Այս ընդլայնումը որևէ թույլտվություն չի պահանջում:</string>
+  <!-- The description of data collection permissions listed in the addon's permissions screen.  %1$s is a formatted list of permissions. -->
+  <string name="addons_permissions_required_data_collection_description" moz:removedIn="141" tools:ignore="UnusedResources">Մշակողը նշում է, որ այս ընդլայնումը հավաքում է՝ %1$s:</string>
+  <!-- The description of data collection permissions listed in the addon's permissions screen.  %1$s is a formatted list of permissions. -->
+  <string name="addons_permissions_required_data_collection_description_2">Մշակողը նշում է, որ այս ընդլայնումը հավաքում է՝ %1$s</string>
+  <!-- The description of the "none" data collection permission, when the extension doesn't collect anything according to the developer. -->
+  <string name="addons_permissions_none_required_data_collection_description">Մշակողը նշում է, որ այս ընդլայնումը տվյալների հավաքագրում չի պահանջում։</string>
+  <!-- The title of the required permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_required_permissions">Պահանջվող թույլտվություններ՝</string>
+  <!-- The title of the optional permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_optional_permissions">Լրացուցիչ թույլտվություններ՝</string>
+  <!-- The title of the required data collection permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_required_data_collection">Պահանջվող տվյալների հավաքում՝</string>
+  <!-- The title of the optional data collection permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_optional_data_collection">Լրացուցիչ տվյալների հավաքում՝</string>
   <!--
     Add-on Preferences
 
@@ -1069,6 +1128,12 @@
   <string name="alternative_app_icon_option_momo">Մոմո</string>
   <!-- Subtitle for the "Momo" themed alternative app icon variant in the icon picker screen. The app icon was created by artist @heyheymomodraws and features a unique hand-drawn style with a friendly fox. -->
   <string name="alternative_app_icon_option_momo_subtitle">Ստեղծվել է @heyheymomodraws-ի կողմից</string>
+  <!-- Title for the "Solid colors" group of alternative app icon variants in the icon picker screen. This group contains icons with flat, uniform color backgrounds. -->
+  <string name="alternative_app_icon_group_solid_colors">Միագույն</string>
+  <!-- Title for the "Gradients" group of alternative app icon variants in the icon picker screen. This group contains icons with gradient backgrounds inspired by natural light conditions. -->
+  <string name="alternative_app_icon_group_gradients">Սահանցումներ</string>
+  <!-- Title for the "Other" group of alternative app icon variants in the icon picker screen. This group includes retro, pixel art, themed, and artist-created icons. -->
+  <string name="alternative_app_icon_group_other">Այլ</string>
   <!--
     Add-ons general availability nimbus message
 
@@ -1177,10 +1242,30 @@
   <string name="exceptions_empty_message_learn_more_link">Իմանալ ավելին</string>
   <!-- Preference switch for usage and technical data collection -->
   <string name="preference_usage_data_2">Ուղարկել տեխնիկական և փոխազդեցության տվյալներ</string>
+  <!-- Preference switch for usage and technical learn more link in new compose -->
+  <string name="preference_usage_data_learn_more_2">Իմացեք ավելին տեխնիկական տվյալների մասին</string>
   <!-- Preference switch for usage and technical learn more link -->
-  <string name="preference_usage_data_learn_more">Իմանալ ավելին</string>
+  <string name="preference_usage_data_learn_more" tools:ignore="UnusedResources" moz:removedIn="141">Իմանալ ավելին</string>
   <!-- Preference description for marketing data collection. Note: The words "Firefox" should NOT be translated -->
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Ձեր սարքի, սարքաշարի կազմաձևման և օգտագործման տվյալներն օգնում են բարելավելու Firefox-ի հնարավորությունները, արտադրողականությունը և կայունությունը:</string>
+  <!-- Preference switch for daily usage ping data collection -->
+  <string name="preferences_daily_usage_ping_title">Ամենօրյա օգտագործման պինգ</string>
+  <string name="preferences_daily_usage_ping_description">Սա օգնում է Mozilla-ին գնահատել ակտիվ օգտվողներին:</string>
+  <string name="preferences_daily_usage_ping_learn_more">Իմանալ ավելին ամենօրյա օգտագործման պինգի մասին</string>
+  <!-- Preference switch title for automatically submitting crash reports -->
+  <string name="preferences_automatically_send_crashes_title" tools:ignore="UnusedResources" moz:removedIn="142">Ինքնաբար ուղարկել խափանումների մասին զեկույց</string>
+  <!-- Preference switch description for automatically submitting crash reports -->
+  <string name="preferences_automatically_send_crashes_description" tools:ignore="UnusedResources" moz:removedIn="142">Խափանումների զեկույցները մեզ օգնում են ախտորոշել և շտկել դիտարկիչի հետ կապված խնդիրները: Զեկույցները կարող են ներառել անձնական կամ զգայուն տվյալներ:</string>
+  <!-- Text for sumo link to learn more about crash reports in data collection screen -->
+  <string name="preferences_crashes_learn_more">Իմանալ ավելին վթարի զեկույցների մասին</string>
+  <!-- Title Headers for data collection settings screen -->
+  <string name="crash_reports_data_category">Վթարի զեկույցներ</string>
+  <string name="usage_data_category">Օգտագործման տվյալներ</string>
+  <string name="studies_data_category">Ուսումնասիրություններ</string>
+  <string name="technical_data_category">Տեխնիկական տվյալներ</string>
+  <string name="crash_reporting_description">Վթարների զեկույցները մեզ թույլ են տալիս ախտորոշել և շտկել դիտարկիչի հետ կապված խնդիրները: Զեկույցները կարող են ներառել անձնական կամ զգայուն տվյալներ:</string>
+  <!-- Section title for campaign measurement in data collections screen -->
+  <string name="preferences_marketing_data_title">Արշավի չափում</string>
   <!-- Preference switch for campaign measurement data (marketing data) collection -->
   <string name="preferences_marketing_data_2">Քարոզարշավի չափման տվյալներ</string>
   <!--
@@ -1190,16 +1275,8 @@
   <string name="preferences_marketing_data_description_4" tools:ignore="BrandUsage">Կիսվեք, թե ինչպես եք հայտնաբերել Firefox-ը և որ այն օգտագործում եք Mozilla-ի մարքեթինգային տեխնոլոգիաների գործընկերների հետ:</string>
   <!-- Learn more link for marketing data preference -->
   <string name="preferences_marketing_data_learn_more">Իմացեք ավելին շուկայավարման տվյալների մասին</string>
-  <!-- Preference switch for daily usage ping data collection -->
-  <string name="preferences_daily_usage_ping_title">Ամենօրյա օգտագործման պինգ</string>
-  <string name="preferences_daily_usage_ping_description">Սա օգնում է Mozilla-ին գնահատել ակտիվ օգտվողներին:</string>
-  <string name="preferences_daily_usage_ping_learn_more">Իմանալ ավելին ամենօրյա օգտագործման պինգի մասին</string>
-  <!-- Preference switch title for automatically submitting crash reports -->
-  <string name="preferences_automatically_send_crashes_title">Ինքնաբար ուղարկել խափանումների մասին զեկույց</string>
-  <!-- Preference switch description for automatically submitting crash reports -->
-  <string name="preferences_automatically_send_crashes_description">Խափանումների զեկույցները մեզ օգնում են ախտորոշել և շտկել դիտարկիչի հետ կապված խնդիրները: Զեկույցները կարող են ներառել անձնական կամ զգայուն տվյալներ:</string>
   <!-- Learn more link for crash reporting preference -->
-  <string name="onboarding_preferences_dialog_crash_reporting_learn_more">Իմանալ ավելին խափանումների զեկույցի մասին</string>
+  <string name="onboarding_preferences_dialog_crash_reporting_learn_more" tools:ignore="UnusedResources" moz:removedIn="142">Իմանալ ավելին խափանումների զեկույցի մասին</string>
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Ուսումնասիրություններ</string>
   <!-- Summary for studies preferences -->
@@ -1228,6 +1305,16 @@
   <string name="preference_top_toolbar">Վերևում</string>
   <!-- Preference for using bottom toolbar -->
   <string name="preference_bottom_toolbar">Ներքևում</string>
+  <!-- Preference for using simple toolbar -->
+  <string name="preference_simple_toolbar">Պարզ</string>
+  <!-- Preference for using expanded toolbar -->
+  <string name="preference_expanded_toolbar">Ընդարձակված</string>
+  <!--
+    App icon Preferences
+
+    Title for the preference that lets the user pick a new app icon
+  -->
+  <string name="preference_select_app_icon_title">Ընտրեք հավելվածի պատկերակը</string>
   <!--
     Theme Preferences
 
@@ -1391,8 +1478,6 @@
   <!-- Learn more link for studies, links to an article for more information about studies. -->
   <string name="studies_learn_more">Իմանալ ավելին</string>
   <!--
-    Sessions
-
     Title for the list of tabs in the current private session used by a11y services
     The %1$s will be replaced by the number of opened private tabs
   -->
@@ -1496,6 +1581,8 @@
     %1$d is the number of items deleted.
   -->
   <string name="download_delete_multiple_items_snackbar_2">Միույթներըը ջնջվել են՝ %1$d</string>
+  <!-- Title for the dialog that prompts the user to choose an app for downloading a file. -->
+  <string name="download_app_dialog_title">Ներբեռնեք ֆայլը հետևյալով՝</string>
   <!-- Text for the snackbar to confirm that a single download item has been removed. %1$s is the name of the download item. -->
   <string name="download_delete_single_item_snackbar_2">«%1$s»-ը ջնջվեց</string>
   <!-- Text for the snackbar to confirm that downloads are in progress. -->
@@ -1538,11 +1625,18 @@
   <string name="download_delete_item">Ջնջել</string>
   <!-- Content description for the toolbar "Navigate back" button -->
   <string name="download_navigate_back_description">Նավարկել ետ</string>
-  <!-- Content description for the toolbar "Navigate up" button -->
-  <string name="download_navigate_up_description" moz:removedIn="139" tools:ignore="UnusedResources">Նավարկել վերև</string>
   <!-- Content description for the toolbar back button while searching the downloads -->
   <string name="download_close_search_description">Վերադառնալ և փակել որոնումը</string>
-  <!-- Content description for the search bar clear text button on the downloads screen -->
+  <!--
+    Content description for the search bar clear text button on the downloads screen
+
+    Content description for pause action button on the downloads screen
+  -->
+  <string name="download_pause_action">Ընդմիջել</string>
+  <!-- Content description for resume action button on the downloads screen -->
+  <string name="download_resume_action">Շարունակել</string>
+  <!-- Content description for retry download action button on the downloads screen -->
+  <string name="download_retry_action">Կրկնել</string>
   <string name="download_clear_search_description">Մաքրել</string>
   <!-- Text for the button to share the download URL -->
   <string name="download_share_url">Համօգտագործել URL-ը</string>
@@ -1555,7 +1649,7 @@
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">Չեղարկել</string>
   <!-- Text for the header of in progress downloads -->
-  <string name="download_header_in_progress" tools:ignore="UnusedResources">Ընթացքում</string>
+  <string name="download_header_in_progress">Ընթացքում</string>
   <!--
     Time period headers for downloads
 
@@ -1570,17 +1664,48 @@
   <string name="download_time_period_last_30_days">Վերջին 30 օրում</string>
   <!-- Text for the header that groups the downloads older than other groups -->
   <string name="download_time_period_older">Ավելի հին</string>
+  <!-- Description of an in progress download item, displayed in the downloads list when the download has just started. -->
+  <string name="download_item_in_progress_description_preparing">Ներբեռնման նախապատրաստում…</string>
   <!--
     Description of an in progress download item, displayed in the downloads list.
     %1$s is the current file size that has been downloaded.
     %2$s is the total size of the downloaded file.
     %3$s is the amount of time remaining to complete the download.
   -->
-  <string name="download_item_in_progress_description" tools:ignore="UnusedResources">%1$s / %2$s • մնացել է՝ %3$s</string>
+  <string name="download_item_in_progress_description" moz:removedIn="141" tools:ignore="UnusedResources">%1$s / %2$s • մնացել է՝ %3$s</string>
+  <!--
+    Description of an in progress download item, displayed in the downloads list when the download time remaining is known.
+    %1$s is the current file size that has been downloaded.
+    %2$s is the total size of the downloaded file.
+    %3$s is the amount of time remaining to complete the download.
+  -->
+  <string name="download_item_in_progress_description_2">%1$s / %2$s-ից • մնացել է՝ %3$s:</string>
+  <!--
+    Description of an in progress download item, displayed in the downloads list when the estimated download time remaining is still being calculated.
+    %1$s is the current file size that has been downloaded.
+    %2$s is the total size of the downloaded file.
+  -->
+  <string name="download_item_in_progress_description_pending">%1$s / %2$s-ից • սպասում</string>
+  <!--
+    Description of an in progress download item, displayed in the downloads list when the total download size is unknown. This results in the estimated download time remaining to be unknown also.
+    %1$s is the current file size that has been downloaded.
+  -->
+  <string name="download_item_in_progress_description_unknown_total_size">%1$s • անհայտ ժամանակ</string>
+  <!--
+    Description of a paused download item, displayed in the downloads list.
+    %1$s is the current file size that has been downloaded.
+    %2$s is the total size of the downloaded file.
+  -->
+  <string name="download_item_paused_description">%1$s / %2$s-ից • դադար</string>
+  <!--
+    Description of a paused download item, displayed in the downloads list when the total download size is unknown.
+    %1$s is the current file size that has been downloaded.
+  -->
+  <string name="download_item_paused_description_unknown_total_size">%1$s • դադարեցված է</string>
   <!-- Text to indicate that an in progress download is paused. -->
-  <string name="download_item_status_paused" tools:ignore="UnusedResources">դադարի մեջ</string>
+  <string name="download_item_status_paused" moz:removedIn="141" tools:ignore="UnusedResources">դադարի մեջ</string>
   <!-- Text to indicate that the download speed of an in progress download is being calculated. -->
-  <string name="download_item_download_speed_pending" tools:ignore="UnusedResources">սպասում</string>
+  <string name="download_item_download_speed_pending" moz:removedIn="141" tools:ignore="UnusedResources">սպասում</string>
   <!-- Text to indicate that a download has failed to download. -->
   <string name="download_item_status_failed">Ներբեռնումը ձախողվեց</string>
   <!-- Text for the snackbar action button to view failed download details. -->
@@ -1612,7 +1737,11 @@
   -->
   <string name="webcompat_reporter_screen_title">Զեկուցել կայքի խոտանումը</string>
   <!-- The description of the Web Compat Reporter feature. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="webcompat_reporter_description">Օգնեք %1$s-ն ավելի լավը դարձնել բոլորի համար: Mozilla-ի աշխատակիցներն օգտագործում են ձեր ուղարկած տեղեկությունները կայքի խնդիրները շտկելու համար:</string>
+  <string name="webcompat_reporter_description" moz:removedIn="142" tools:ignore="UnusedResources">Օգնեք %1$s-ն ավելի լավը դարձնել բոլորի համար: Mozilla-ի աշխատակիցներն օգտագործում են ձեր ուղարկած տեղեկությունները կայքի խնդիրները շտկելու համար:</string>
+  <!-- The description of the Web Compat Reporter feature, which has a "learn more" button text for navigating to a SUMO link to learn more about reporting a broken site. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="webcompat_reporter_description_2">Ձեր զեկույցը մեզ օգնում է հասկանալ և շտկել %1$s-ի խնդիրները՝ այն բոլորի համար ավելի լավը դարձնելու համար։ Իմանալ ավելին</string>
+  <!-- The button text for navigating to the SUMO link to learn more about reporting a broken site. -->
+  <string name="webcompat_reporter_learn_more">Իմանալ ավելին</string>
   <!-- The text field label of the URL text field. This is displayed above the user-inputted URL. -->
   <string name="webcompat_reporter_label_url">URL</string>
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
@@ -1620,7 +1749,9 @@
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Ի՞նչն է խոտանվել:</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
-  <string name="webcompat_reporter_choose_reason">Ընտրեք պատճառը</string>
+  <string name="webcompat_reporter_choose_reason" moz:removedIn="142" tools:ignore="UnusedResources">Ընտրեք պատճառը</string>
+  <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_choose_reason_2">Ընտրեք պատճառը</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Ընտրեք պատճառ</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
@@ -1635,6 +1766,8 @@
   <string name="webcompat_reporter_success_snackbar_text">Ձեր զեկույցն ուղարկվեց</string>
   <!-- Button text for closing or dismissing the snackbar shown after successfully submitting a WebCompat report. -->
   <string name="webcompat_reporter_dismiss_success_snackbar_text">Փակել</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text">Ի՞նչ պատահեց։ Ի՞նչ պետք է պատահեր։</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -1681,12 +1814,20 @@
   <string name="tab_crash_restore">Վերականգնել ներդիը</string>
   <!-- Unsubmitted crash dialog title, %s is the name of the app (for example "Firefox"). -->
   <string name="unsubmitted_crash_dialog_title">%s-ը պետք է վերամեկնարկեր</string>
+  <!-- Single unsubmitted crash matching remote settings. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="unsubmitted_crash_requested_by_devs_dialog_title">Դուք ունեք չուղարկված վթարի մասին զեկույց, որը կապված է հետաքննվող վթարների հետ։ Այն ուղարկելը կօգնի մեզ բարելավել %1$s-ը։ Այս ծանուցումը փակելը կանտեսի տվյալ զեկույցը։</string>
+  <!-- Multiple unsubmitted crashes matching remote settings. %1$d is the number of unsent crash reports, %2$s is the name of the app (for example "Firefox"). -->
+  <string name="unsubmitted_crashes_requested_by_devs_dialog_title">Դուք ունեք չուղարկված վթարի մասին զեկույցներ (%1$d), որը կապված է հետաքննվող վթարների հետ։ Դրանք ուղարկելը կօգնի մեզ բարելավել %2$s-ը։ Այս ծանուցումը փակելը կանտեսի տվյալ զեկույցը։</string>
   <!-- Unsubmitted crash dialog checkbox label for automatically sending reports in the future -->
   <string name="unsubmitted_crash_dialog_checkbox_label">Ինքնաբար ուղարկել խափանումների մասին զեկույցը</string>
   <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->
   <string name="unsubmitted_crash_dialog_negative_button">Փակել</string>
+  <!-- Unsubmitted crash dialog negative button to never be asked for the submission -->
+  <string name="unsubmitted_crash_requested_by_devs_dialog_never_button">Այլևս չցուցադրել</string>
   <!-- Unsubmitted crash dialog positive button to submit crash report -->
   <string name="unsubmitted_crash_dialog_positive_button">Ուղարկել վթարի զեկույց</string>
+  <!-- Unsubmitted crash dialog button to open a web page with more details on the feature and privacy policy -->
+  <string name="unsubmitted_crash_requested_by_devs_learn_more">Իմանալ ավելին</string>
   <!--
     Bookmarks
 
@@ -1895,6 +2036,10 @@
   <string name="studies_on">Միաց.</string>
   <!-- Summary of studies data on quit preference if it is set to off -->
   <string name="studies_off">Անջ.</string>
+  <!-- Toggle if desktop site is turned on -->
+  <string name="browser_feature_desktop_site_on">Միաց.</string>
+  <!-- Toggle if desktop site is turned off -->
+  <string name="browser_feature_desktop_site_off">Անջ.</string>
   <!-- Category header of a preference that allows a user to alter settings related to web permissions. -->
   <string name="preferences_category_permissions">Թույլտվություններ</string>
   <!-- Category header of a preference that allows a user to alter settings related to web content. -->
@@ -2085,7 +2230,7 @@
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Գաղտնի ներդիրը փակվեց</string>
   <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed">Գաղտնի ներդիրները փակվեցին</string>
+  <string name="snackbar_private_tabs_closed" moz:removedIn="141" tools:ignore="UnusedResources">Գաղտնի ներդիրները փակվեցին</string>
   <!-- Text shown in snackbar when user erases their private browsing data -->
   <string name="snackbar_private_data_deleted">Գաղտնի դիտարկման տվյալները ջնջվեցին</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
@@ -2117,6 +2262,8 @@
   <string name="preference_accessibility_text_size_summary">Դարձեք գրվածքները կայքերում ավելի մեծ կամ փոքր</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_font_size_title">Տառատեսակի չափ</string>
+  <!-- %d is the percentage of the slide bar for setting the text font size and %% will be announced as "percent". -->
+  <string name="a11y_preference_accessibility_font_size_percentage">%d %%:</string>
   <!-- Title for Accessibility Text Automatic Size Scaling Preference -->
   <string name="preference_accessibility_auto_size_2">Տառատեսակի ինքնաշխատ չափում</string>
   <!-- Summary for Accessibility Text Automatic Size Scaling Preference -->
@@ -2542,6 +2689,22 @@
   <string name="saved_login_clear_username">Մաքրել օգտանունը</string>
   <!-- Content Description (for screenreaders etc) read for the button to clear the hostname field while creating a login -->
   <string name="saved_login_clear_hostname">Մաքրել հոսթի անունը</string>
+  <!-- Content description, used by tools like screenreaders, for the 3 dots button that shows commands related to the currently displayed login (edit, delete). -->
+  <string name="login_detail_menu_button_content_description">Մուտք գործելու մանրամասների ցանկ</string>
+  <!-- Content description, used by tools like screenreaders, to go back and exit the login detail view. -->
+  <string name="login_details_navigate_back_button_content_description">Նավարկել հետ</string>
+  <!-- Edit text for the login detail menu edit button -->
+  <string name="login_detail_menu_edit_button">Խմբագրել</string>
+  <!-- Delete text for the login detail menu delete button -->
+  <string name="login_detail_menu_delete_button">Ջնջել</string>
+  <!-- Content description, used by tools like screenreaders, to go back and exit the add login view. -->
+  <string name="add_login_navigate_back_button_content_description">Նավարկել հետ</string>
+  <!-- Content description, used by tools like screenreaders, to press on the save new login button. -->
+  <string name="add_login_save_new_login_button_content_description">Պահպանել նոր մուտքը</string>
+  <!-- Content description, used by tools like screenreaders, to go back and exit the edit login view. -->
+  <string name="edit_login_navigate_back_button_content_description">Նավարկել հետ</string>
+  <!-- Content description, used by tools like screenreaders, to press on the edit login button. -->
+  <string name="edit_login_button_content_description">Խմբագրել մուտքանունը</string>
   <!-- Content Description (for screenreaders etc) read for the button to open a site in logins -->
   <string name="saved_login_open_site">Բացել կայքը դիտարկիչում</string>
   <!-- Content Description (for screenreaders etc) read for the button to reveal a password in logins -->
@@ -2838,8 +3001,10 @@
   <!--
     Top Sites
 
-    Title text displayed in the dialog when shortcuts limit is reached.
+    Title text displayed for the shortcuts home screen section.
   -->
+  <string name="homepage_shortcuts_title">Դյուրանցումներ</string>
+  <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Դյուրանցումների սահմանաչափը լրացել է</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
   <string name="shortcut_max_limit_content">Նոր դյուրանցում ավելացնելու համար հեռացրեք մեկը: Հպեք և պահեք կայքը ու ընտրեք հեռացնել:</string>
@@ -2937,9 +3102,9 @@
   <!-- Header text for a section on the home screen. -->
   <string name="pocket_stories_header_2">Պատմություններ</string>
   <!-- Header text for a section on the home screen. -->
-  <string name="pocket_stories_categories_header">Պատմություններ ըստ թեմայի</string>
+  <string name="pocket_stories_categories_header" moz:removedIn="141" tools:ignore="UnusedResources">Պատմություններ ըստ թեմայի</string>
   <!-- Text of a button allowing users to access an external url for more Pocket recommendations. -->
-  <string name="pocket_stories_placeholder_text">Բացահայտիր ավելին</string>
+  <string name="pocket_stories_placeholder_text" moz:removedIn="141" tools:ignore="UnusedResources">Բացահայտիր ավելին</string>
   <!-- Title of an app feature. Smaller than a heading. %s is "Pocket". -->
   <string name="pocket_stories_feature_title_2" moz:removedIn="140" tools:ignore="UnusedResources">Աշխատում է %s-ի կողմից:</string>
   <!-- Caption for describing a certain feature. %s is a link using pocket_stories_feature_learn_more as text, which will load an url in a new tab when clicked. -->
@@ -2977,7 +3142,7 @@
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">բացեք հղումը՝ այս հավաքածուի մասին ավելին իմանալու համար</string>
   <!-- Action label for links that point to an article. Talkback will append this to say "Double tap to read the article". -->
-  <string name="a11y_action_label_read_article">կարդալ հոդվածը</string>
+  <string name="a11y_action_label_read_article" moz:removedIn="141" tools:ignore="UnusedResources">կարդալ հոդվածը</string>
   <!-- Action label for links to the Firefox Pocket website. Talkback will append this to say "Double tap to open link to learn more". -->
   <string name="a11y_action_label_pocket_learn_more" moz:removedIn="140" tools:ignore="UnusedResources">բացեք հղումը՝ ավելին իմանալու համար</string>
   <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
@@ -3231,9 +3396,9 @@
 
     Text for the protection panel header when the site is secure.
   -->
-  <string name="protection_panel_header_secure">Անվտանգ է</string>
+  <string name="protection_panel_header_secure" moz:removedIn="142" tools:ignore="UnusedResources">Անվտանգ է</string>
   <!-- Text for the protection panel header when the site is not secure. -->
-  <string name="protection_panel_header_not_secure">Անվտանգ չէ</string>
+  <string name="protection_panel_header_not_secure" moz:removedIn="142" tools:ignore="UnusedResources">Անվտանգ չէ</string>
   <!-- Title text for the protection panel banner when the site is not secure. -->
   <string name="protection_panel_banner_not_secure_title">Զգույշ եղեք այս կայքում</string>
   <!-- Description text for the protection panel banner when the site is not secure. -->
@@ -3254,10 +3419,18 @@
   <string name="protection_panel_banner_protected_description">Դուք պաշտպանված եք: Եթե ինչ-որ բան նկատենք, ձեզ կտեղեկացնենք։</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Ուժեղացված հետագծման պաշտպանություն</string>
+  <!-- Toggle if Enhanced Tracking Protection is turned on -->
+  <string name="protection_panel_etp_toggle_on">Միաց.</string>
+  <!-- Toggle if Enhanced Tracking Protection is turned off -->
+  <string name="protection_panel_etp_toggle_off">Անջ.</string>
   <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is enabled. -->
-  <string name="protection_panel_etp_toggle_enabled_description">Եթե այս կայքում ինչ-որ բան կոտրված է, փորձեք անջատել պաշտպանությունները:</string>
+  <string name="protection_panel_etp_toggle_enabled_description" moz:removedIn="142" tools:ignore="UnusedResources">Եթե այս կայքում ինչ-որ բան կոտրված է, փորձեք անջատել պաշտպանությունները:</string>
+  <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is enabled. -->
+  <string name="protection_panel_etp_toggle_enabled_description_2">Եթե այս կայքում ինչ-որ բան վնասված է, փորձեք անջատել այն:</string>
   <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is disabled. -->
-  <string name="protection_panel_etp_toggle_disabled_description">Պաշտպանություններն անջատված են: Առաջարկում ենք նորից միացնել։</string>
+  <string name="protection_panel_etp_toggle_disabled_description" moz:removedIn="142" tools:ignore="UnusedResources">Պաշտպանություններն անջատված են: Առաջարկում ենք նորից միացնել։</string>
+  <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is disabled. -->
+  <string name="protection_panel_etp_toggle_disabled_description_2">Խորհուրդ է տրվում միացնել հետագծման պաշտպանությունը։</string>
   <!--
     Text for displaying the total number of trackers blocked in the protection panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3266,7 +3439,9 @@
   <!-- Text for when no trackers have been blocked. -->
   <string name="protection_panel_no_trackers_blocked">Հետագծողներ չեն գտնվել</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
-  <string name="protection_panel_privacy_and_security_settings">Գաղտնիության և անվտանգության հավելումներ</string>
+  <string name="protection_panel_privacy_and_security_settings" moz:removedIn="142" tools:ignore="UnusedResources">Գաղտնիության և անվտանգության հավելումներ</string>
+  <!-- Link text to navigate to privacy and security settings from the protection panel. -->
+  <string name="protection_panel_privacy_and_security_settings_2">Գաղտնիության կարգավորումներ</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Թույլտվություններ</string>
   <!--
@@ -3297,7 +3472,7 @@
   <string name="connection_security_panel_not_secure">Կապակցումն անվտանգ չէ</string>
   <!--
     Text for the connection security panel to indicate who the certificate was verified by.
-    %s is a placeholder for the name of the certificate authority that verified the ticket
+    %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Հաստատել է %s-ը</string>
   <!--
@@ -3477,6 +3652,14 @@
   <!-- The title of the button for overriding home region permanently. -->
   <string name="debug_drawer_override_home_region_permanently">Մշտապես չեղարկել տնային տարածաշրջանը</string>
   <!--
+    Add-ons debug tools
+
+    The description of the Add-ons Tools in the Debug Drawer
+  -->
+  <string name="debug_drawer_addons_tools_title">Հավելումների գործիքներ</string>
+  <!-- The title of the button used to check for add-on updates. -->
+  <string name="addons_debug_tools_check_for_updates_button">Ստուգել թարմացումները</string>
+  <!--
     Messages explaining how to exit fullscreen mode
 
     Message shown to explain how to exit fullscreen mode when gesture navigation is enabled.
@@ -3530,14 +3713,8 @@
   <string name="certificate_warning_push_notification_pnw2_message" tools:ignore="UnusedResources">Արդիացրեք մինչև մարտի 14-ը, որպեսզի շարունակեք օգտագործել հավելումներ և այլ գործառույթներ:</string>
   <!-- Push notification message about old Firefox version -->
   <string name="certificate_warning_push_notification_pnw3_message" tools:ignore="UnusedResources">Որոշ գործառույթներ կդադարեն գործել վաղը:</string>
-  <!--
-    TextField Design System Component
+  <!-- TextField Design System Component -->
 
-    The default content description for the eye trailing icon button in TextField
-  -->
-  <string name="text_field_eye_trailing_icon_default_content_description" moz:removedIn="139" tools:ignore="UnusedResources">Ցուցադրել թաքնված տեքստը</string>
-  <!-- The default content description for the cross trailing icon button in TextField -->
-  <string name="text_field_cross_trailing_icon_default_content_description" moz:removedIn="139" tools:ignore="UnusedResources">Մաքրել տեքստը</string>
   <!--
     Setup checklist feature
 
@@ -3656,4 +3833,22 @@
   <string name="private_tab_cfr_negative">Ոչ, շնորհակալ եմ</string>
   <!-- Positive button text for the contextual feature recommendation (CFR) enabling screen lock for private tabs -->
   <string name="private_tab_cfr_positive">Կողպել ներդիրները</string>
+  <!--
+    Review prompt
+
+    Title for a prompt asking the user about their experience using the app. %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="review_prompt_pre_prompt_header">Ի՞նչ եք մտածում %1$s-ի մասին:</string>
+  <!-- Label for a button negatively rating the user's experience with the app -->
+  <string name="review_prompt_negative_button">Ես խնդիրներ ունեմ</string>
+  <!-- Label for a button positively rating the user's experience with the app -->
+  <string name="review_prompt_positive_button">Հիանալի է:</string>
+  <!-- Title for a prompt asking the user to rate the app on Google Play Store. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="review_prompt_rate_header">Շնորհակալություն %1$s-ին սիրելու համար։ Ունե՞ք վայրկյան՝ Ձեր սերը գնահատելու համար։</string>
+  <!-- Label for a button proceeding to rate the app on Google Play Store. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="review_prompt_rate_button">Գնահատեք %1$s-ը Play Store-ում</string>
+  <!-- Title for a prompt asking the user send us feedback. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="review_prompt_feedback_header">Ցավում ենք, որ խնդիրներ ունեք։ Տեղեկացրեք մեզ, թե ինչպես կարող ենք բարելավել %1$s-ը։</string>
+  <!-- Label for a button opening a feedback forum -->
+  <string name="review_prompt_feedback_button">Արձագանք թողնել</string>
 </resources>

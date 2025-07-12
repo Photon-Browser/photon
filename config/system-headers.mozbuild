@@ -691,7 +691,6 @@ system_headers = [
     "prtrace.h",
     "prtypes.h",
     "prvrsion.h",
-    "prwin.h",
     "psap.h",
     "Pt.h",
     "pthread.h",
@@ -1072,13 +1071,7 @@ if CONFIG["MOZ_X11"]:
 
 if CONFIG["OS_TARGET"] == "Android":
     system_headers += [
-        "android/api-level.h",
-        "android/ashmem.h",
         "android_audio/AudioSystem.h",
-        "android/log.h",
-        "android/looper.h",
-        "android/native_window.h",
-        "android/native_window_jni.h",
         "audio_effects/effect_aec.h",
         "audio_effects/effect_ns.h",
         "AudioParameter.h",

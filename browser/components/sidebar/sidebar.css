@@ -14,6 +14,14 @@
   background-color: transparent;
   color: var(--sidebar-text-color);
   height: 100%;
+
+  &[lwt-sidebar="light"] {
+    color-scheme: light;
+  }
+
+  &[lwt-sidebar="dark"] {
+    color-scheme: dark;
+  }
 }
 
 body {
@@ -63,19 +71,9 @@ moz-card {
   box-sizing: border-box;
   border-radius: var(--border-radius-medium);
   width: 100%;
-}
 
-fxview-search-textbox {
-  &::part(input) {
-    background-color: var(--sidebar-box-background);
-    color: var(--sidebar-box-color);
-    border: var(--sidebar-box-border);
-    border-radius: var(--border-radius-medium);
-  }
-
-  &::part(container) {
-    width: 100%;
-    height: var(--size-item-large);
+  > moz-input-search {
+    display: block;
   }
 }
 

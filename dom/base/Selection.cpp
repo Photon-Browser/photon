@@ -2518,12 +2518,45 @@ already_AddRefed<StaticRange> Selection::GetComposedRange(
 }
 
 void Selection::GetComposedRanges(
+    const ShadowRootOrGetComposedRangesOptions&
+        aShadowRootOrGetComposedRangesOptions,
     const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots,
     nsTArray<RefPtr<StaticRange>>& aComposedRanges) {
   aComposedRanges.SetCapacity(mStyledRanges.mRanges.Length());
-  for (const auto& range : mStyledRanges.mRanges) {
-    aComposedRanges.AppendElement(GetComposedRange(range.mRange, aShadowRoots));
+
+  auto GetComposedRangesForAllRanges =
+      [this, &aComposedRanges](
+          const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots) {
+        for (const auto& range : this->mStyledRanges.mRanges) {
+          aComposedRanges.AppendElement(
+              GetComposedRange(range.mRange, aShadowRoots));
+        }
+      };
+
+  if (aShadowRootOrGetComposedRangesOptions.IsGetComposedRangesOptions()) {
+    // { shadowRoots: ... }
+    auto& options =
+        aShadowRootOrGetComposedRangesOptions.GetAsGetComposedRangesOptions();
+    return GetComposedRangesForAllRanges(options.mShadowRoots);
   }
+
+  Sequence<OwningNonNull<ShadowRoot>> shadowRoots(aShadowRoots);
+
+  if (aShadowRootOrGetComposedRangesOptions.IsShadowRoot()) {
+    // Single shadow root provide
+    //
+    // The order in shadowRoots doesn't matter, as we just loop
+    // through them eventually.
+    if (!shadowRoots.AppendElement(
+            aShadowRootOrGetComposedRangesOptions.GetAsShadowRoot(),
+            fallible)) {
+      // OOM
+      return;
+    }
+  }
+
+  // single + variadic
+  return GetComposedRangesForAllRanges(shadowRoots);
 }
 
 void Selection::RemoveAllRangesInternal(ErrorResult& aRv,
@@ -4424,7 +4457,8 @@ void Selection::SetStartAndEndInternal(InLimiter aInLimiter,
 
   RefPtr<nsRange> newRange = nsRange::Create(
       aStartRef, aEndRef, aRv,
-      StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
+      StaticPrefs::dom_shadowdom_selection_across_boundary_enabled() &&
+              aInLimiter == InLimiter::eNo
           ? AllowRangeCrossShadowBoundary::Yes
           : AllowRangeCrossShadowBoundary::No);
   if (aRv.Failed()) {

@@ -170,14 +170,14 @@ class ContentChild final : public PContentChild,
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
       Endpoint<PVRManagerChild>&& aVRBridge,
-      Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
+      Endpoint<PRemoteMediaManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 
   mozilla::ipc::IPCResult RecvReinitRendering(
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
       Endpoint<PVRManagerChild>&& aVRBridge,
-      Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
+      Endpoint<PRemoteMediaManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 
   mozilla::ipc::IPCResult RecvReinitRenderingForDeviceReset();
@@ -786,6 +786,7 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvDispatchBeforeUnloadToSubtree(
       const MaybeDiscarded<BrowsingContext>& aStartingAt,
+      const mozilla::Maybe<SessionHistoryInfo>& aInfo,
       DispatchBeforeUnloadToSubtreeResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvInitNextGenLocalStorageEnabled(
@@ -794,6 +795,7 @@ class ContentChild final : public PContentChild,
  public:
   static void DispatchBeforeUnloadToSubtree(
       BrowsingContext* aStartingAt,
+      const mozilla::Maybe<SessionHistoryInfo>& aInfo,
       const DispatchBeforeUnloadToSubtreeResolver& aResolver);
 
   hal::ProcessPriority GetProcessPriority() const { return mProcessPriority; }
@@ -815,7 +817,7 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvUpdateMediaCodecsSupported(
-      RemoteDecodeIn aLocation, const media::MediaCodecsSupported& aSupported);
+      RemoteMediaIn aLocation, const media::MediaCodecsSupported& aSupported);
 
 #ifdef MOZ_WMF_CDM
   mozilla::ipc::IPCResult RecvUpdateMFCDMOriginEntries(

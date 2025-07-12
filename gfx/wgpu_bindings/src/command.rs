@@ -7,13 +7,12 @@ use std::{borrow::Cow, ffi, slice};
 use wgc::{
     command::{
         ComputePassDescriptor, PassTimestampWrites, RenderPassColorAttachment,
-        RenderPassDepthStencilAttachment, RenderPassDescriptor,
+        RenderPassDepthStencilAttachment,
     },
     id::CommandEncoderId,
 };
 use wgt::{BufferAddress, BufferSize, Color, DynamicOffset, IndexFormat};
 
-use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 
 /// A stream of commands for a render pass or compute pass.
@@ -22,14 +21,14 @@ use serde::{Deserialize, Serialize};
 /// like dynamic offsets for [`SetBindGroup`] or string data for
 /// [`InsertDebugMarker`].
 ///
-/// Render passes use `BasePass<RenderCommand>`, whereas compute
-/// passes use `BasePass<ComputeCommand>`.
+/// Render passes use `Pass<RenderCommand>`, whereas compute
+/// passes use `Pass<ComputeCommand>`.
 ///
 /// [`SetBindGroup`]: RenderCommand::SetBindGroup
 /// [`InsertDebugMarker`]: RenderCommand::InsertDebugMarker
 #[doc(hidden)]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct BasePass<C> {
+pub struct Pass<C> {
     pub label: Option<String>,
 
     /// The stream of commands.
@@ -50,40 +49,46 @@ pub struct BasePass<C> {
 
 #[derive(Deserialize, Serialize)]
 pub struct RecordedRenderPass {
-    base: BasePass<RenderCommand>,
-    color_attachments: ArrayVec<Option<RenderPassColorAttachment>, { wgh::MAX_COLOR_ATTACHMENTS }>,
+    base: Pass<RenderCommand>,
+    color_attachments: Vec<Option<RenderPassColorAttachment>>,
     depth_stencil_attachment: Option<RenderPassDepthStencilAttachment>,
     timestamp_writes: Option<PassTimestampWrites>,
     occlusion_query_set_id: Option<id::QuerySetId>,
 }
 
 impl RecordedRenderPass {
-    pub fn new(desc: &RenderPassDescriptor) -> Self {
+    pub fn new(
+        label: Option<String>,
+        color_attachments: Vec<Option<RenderPassColorAttachment>>,
+        depth_stencil_attachment: Option<RenderPassDepthStencilAttachment>,
+        timestamp_writes: Option<PassTimestampWrites>,
+        occlusion_query_set_id: Option<id::QuerySetId>,
+    ) -> Self {
         Self {
-            base: BasePass {
-                label: desc.label.as_ref().map(|cow| cow.to_string()),
+            base: Pass {
+                label,
                 commands: Vec::new(),
                 dynamic_offsets: Vec::new(),
                 string_data: Vec::new(),
             },
-            color_attachments: desc.color_attachments.iter().cloned().collect(),
-            depth_stencil_attachment: desc.depth_stencil_attachment.cloned(),
-            timestamp_writes: desc.timestamp_writes.cloned(),
-            occlusion_query_set_id: desc.occlusion_query_set,
+            color_attachments,
+            depth_stencil_attachment,
+            timestamp_writes,
+            occlusion_query_set_id,
         }
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct RecordedComputePass {
-    base: BasePass<ComputeCommand>,
+    base: Pass<ComputeCommand>,
     timestamp_writes: Option<PassTimestampWrites>,
 }
 
 impl RecordedComputePass {
     pub fn new(desc: &ComputePassDescriptor) -> Self {
         Self {
-            base: BasePass {
+            base: Pass {
                 label: desc.label.as_ref().map(|cow| cow.to_string()),
                 commands: Vec::new(),
                 dynamic_offsets: Vec::new(),
@@ -717,9 +722,10 @@ pub extern "C" fn wgpu_recorded_compute_pass_end_pipeline_statistics_query(
 
 pub fn replay_render_pass(
     global: &Global,
+    device_id: id::DeviceId,
     id: CommandEncoderId,
     src_pass: &RecordedRenderPass,
-    mut error_buf: crate::error::ErrorBuffer,
+    error_buf: &mut crate::error::OwnedErrorBuffer,
 ) {
     let (mut dst_pass, err) = global.command_encoder_begin_render_pass(
         id,
@@ -732,20 +738,20 @@ pub fn replay_render_pass(
         },
     );
     if let Some(err) = err {
-        error_buf.init(err);
+        error_buf.init(err, device_id);
         return;
     }
     match replay_render_pass_impl(global, src_pass, &mut dst_pass) {
         Ok(()) => (),
         Err(err) => {
-            error_buf.init(err);
+            error_buf.init(err, device_id);
             return;
         }
     };
 
     match global.render_pass_end(&mut dst_pass) {
         Ok(()) => (),
-        Err(err) => error_buf.init(err),
+        Err(err) => error_buf.init(err, device_id),
     }
 }
 
@@ -753,7 +759,7 @@ pub fn replay_render_pass_impl(
     global: &Global,
     src_pass: &RecordedRenderPass,
     dst_pass: &mut wgc::command::RenderPass,
-) -> Result<(), wgc::command::RenderPassError> {
+) -> Result<(), wgc::command::PassStateError> {
     let mut dynamic_offsets = src_pass.base.dynamic_offsets.as_slice();
     let mut dynamic_offsets = |len| {
         let offsets;
@@ -921,9 +927,10 @@ pub fn replay_render_pass_impl(
 
 pub fn replay_compute_pass(
     global: &Global,
+    device_id: id::DeviceId,
     id: CommandEncoderId,
     src_pass: &RecordedComputePass,
-    mut error_buf: crate::error::ErrorBuffer,
+    error_buf: &mut crate::error::OwnedErrorBuffer,
 ) {
     let (mut dst_pass, err) = global.command_encoder_begin_compute_pass(
         id,
@@ -933,11 +940,17 @@ pub fn replay_compute_pass(
         },
     );
     if let Some(err) = err {
-        error_buf.init(err);
+        error_buf.init(err, device_id);
         return;
     }
     if let Err(err) = replay_compute_pass_impl(global, src_pass, &mut dst_pass) {
-        error_buf.init(err);
+        error_buf.init(err, device_id);
+        return;
+    }
+
+    match global.compute_pass_end(&mut dst_pass) {
+        Ok(()) => (),
+        Err(err) => error_buf.init(err, device_id),
     }
 }
 
@@ -945,7 +958,7 @@ fn replay_compute_pass_impl(
     global: &Global,
     src_pass: &RecordedComputePass,
     dst_pass: &mut wgc::command::ComputePass,
-) -> Result<(), wgc::command::ComputePassError> {
+) -> Result<(), wgc::command::PassStateError> {
     let mut dynamic_offsets = src_pass.base.dynamic_offsets.as_slice();
     let mut dynamic_offsets = |len| {
         let offsets;
@@ -1012,5 +1025,5 @@ fn replay_compute_pass_impl(
         }
     }
 
-    global.compute_pass_end(dst_pass)
+    Ok(())
 }

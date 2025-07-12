@@ -3,7 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-import { ContextIdComponent } from "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustContextId.sys.mjs";
+import {
+  ContextIdCallback,
+  ContextIdComponent,
+} from "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustContextId.sys.mjs";
 
 const CONTEXT_ID_PREF = "browser.contextual-services.contextId";
 const CONTEXT_ID_TIMESTAMP_PREF =
@@ -12,7 +15,7 @@ const CONTEXT_ID_ROTATION_DAYS_PREF =
   "browser.contextual-services.contextId.rotation-in-days";
 const CONTEXT_ID_RUST_COMPONENT_ENABLED_PREF =
   "browser.contextual-services.contextId.rust-component.enabled";
-const TOPIC_APP_QUIT = "quit-application";
+const SHUTDOWN_TOPIC = "profile-before-change";
 
 const lazy = {};
 
@@ -22,6 +25,26 @@ XPCOMUtils.defineLazyPreferenceGetter(
   CONTEXT_ID_PREF,
   ""
 );
+
+class JsContextIdCallback extends ContextIdCallback {
+  constructor(dispatchEvent) {
+    super();
+    this.dispatchEvent = dispatchEvent;
+  }
+
+  persist(newContextId, creationTimestamp) {
+    Services.prefs.setCharPref(CONTEXT_ID_PREF, newContextId);
+    Services.prefs.setIntPref(CONTEXT_ID_TIMESTAMP_PREF, creationTimestamp);
+    this.dispatchEvent(new CustomEvent("ContextId:Persisted"));
+  }
+
+  rotated(oldContextId) {
+    GleanPings.contextIdDeletionRequest.setEnabled(true);
+
+    Glean.contextualServices.contextId.set(oldContextId);
+    GleanPings.contextIdDeletionRequest.submit();
+  }
+}
 
 /**
  * A class that manages and (optionally) rotates the context ID, which is a
@@ -56,29 +79,13 @@ export class _ContextId extends EventTarget {
         lazy.CURRENT_CONTEXT_ID,
         Services.prefs.getIntPref(CONTEXT_ID_TIMESTAMP_PREF, 0),
         Cu.isInAutomation,
-        {
-          persist: (newContextId, creationTimestamp) => {
-            Services.prefs.setCharPref(CONTEXT_ID_PREF, newContextId);
-            Services.prefs.setIntPref(
-              CONTEXT_ID_TIMESTAMP_PREF,
-              creationTimestamp
-            );
-            this.dispatchEvent(new CustomEvent("ContextId:Persisted"));
-          },
-
-          rotated: oldContextId => {
-            GleanPings.contextIdDeletionRequest.setEnabled(true);
-
-            Glean.contextualServices.contextId.set(oldContextId);
-            GleanPings.contextIdDeletionRequest.submit();
-          },
-        }
+        new JsContextIdCallback(this.dispatchEvent.bind(this))
       );
       this.#observer = (subject, topic, data) => {
         this.observe(subject, topic, data);
       };
 
-      Services.obs.addObserver(this.#observer, TOPIC_APP_QUIT);
+      Services.obs.addObserver(this.#observer, SHUTDOWN_TOPIC);
     }
   }
 
@@ -90,10 +97,10 @@ export class _ContextId extends EventTarget {
    * @param {string} _data
    */
   observe(_subject, topic, _data) {
-    if (topic == TOPIC_APP_QUIT) {
+    if (topic == SHUTDOWN_TOPIC) {
       // Unregister ourselves as the callback to avoid leak assertions.
       this.#comp.unsetCallback();
-      Services.obs.removeObserver(this.#observer, TOPIC_APP_QUIT);
+      Services.obs.removeObserver(this.#observer, SHUTDOWN_TOPIC);
     }
   }
 

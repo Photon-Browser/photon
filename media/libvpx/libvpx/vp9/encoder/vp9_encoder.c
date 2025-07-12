@@ -5039,8 +5039,7 @@ static void spatial_denoise_frame(VP9_COMP *cpi) {
   // Base the filter strength on the current active max Q.
   const int q = (int)(vp9_convert_qindex_to_q(twopass->active_worst_quality,
                                               cm->bit_depth));
-  int strength =
-      VPXMAX(oxcf->arnr_strength >> 2, VPXMIN(oxcf->arnr_strength, (q >> 4)));
+  int strength = clamp(q >> 4, oxcf->arnr_strength >> 2, oxcf->arnr_strength);
 
   // Denoise each of Y,U and V buffers.
   spatial_denoise_buffer(cpi, src->y_buffer, src->y_stride, src->y_width,
@@ -5779,7 +5778,18 @@ int vp9_receive_raw_frame(VP9_COMP *cpi, vpx_enc_frame_flags_t frame_flags,
                        "4:2:0 color format requires profile 0 or 2");
     res = -1;
   }
-
+  if (cm->color_space == VPX_CS_SRGB) {
+    if (cm->profile == PROFILE_0 || cm->profile == PROFILE_2) {
+      vpx_internal_error(&cm->error, VPX_CODEC_INVALID_PARAM,
+                         "SRGB color space requires profile 1 or 3");
+      res = -1;
+    }
+    if (subsampling_x != 0 || subsampling_y != 0) {
+      vpx_internal_error(&cm->error, VPX_CODEC_INVALID_PARAM,
+                         "SRGB color space requires 4:4:4");
+      res = -1;
+    }
+  }
   return res;
 }
 

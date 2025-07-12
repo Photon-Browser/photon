@@ -647,6 +647,16 @@ TelemetryImpl::GetDebugSlowSQL(JSContext* cx,
 }
 
 NS_IMETHODIMP
+TelemetryImpl::SubmitAndGetUntrustedModulePayload(JSContext* aCx,
+                                                  Promise** aPromise) {
+#if defined(XP_WIN)
+  return Telemetry::SubmitAndGetUntrustedModulePayload(aCx, aPromise);
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+NS_IMETHODIMP
 TelemetryImpl::GetUntrustedModuleLoadEvents(uint32_t aFlags, JSContext* cx,
                                             Promise** aPromise) {
 #if defined(XP_WIN)
@@ -1510,10 +1520,6 @@ void RecordShutdownEndTimeStamp() {
 // These are listed in Telemetry.h
 
 namespace mozilla::Telemetry {
-
-void Accumulate(HistogramID aID, const nsCString& aKey, uint32_t aSample) {
-  TelemetryHistogram::Accumulate(aID, aKey, aSample);
-}
 
 const char* GetHistogramName(HistogramID id) {
   return TelemetryHistogram::GetHistogramName(id);

@@ -855,13 +855,6 @@ size_t MDefinition::defUseCount() const {
 }
 #endif
 
-bool MDefinition::updateWasmRefType() {
-  wasm::MaybeRefType newRefType = computeWasmRefType();
-  bool changed = wasmRefType_ != newRefType;
-  setWasmRefType(newRefType);
-  return changed;
-}
-
 bool MDefinition::hasOneUse() const {
   MUseIterator i(uses_.begin());
   if (i == uses_.end()) {
@@ -1124,12 +1117,8 @@ MConstant::MConstant(TempAllocator& alloc, const js::Value& vp)
       break;
     case MIRType::String: {
       JSString* str = vp.toString();
-      if (str->isAtomRef()) {
-        str = str->atom();
-      }
       MOZ_ASSERT(!IsInsideNursery(str));
-      MOZ_ASSERT(str->isAtom());
-      payload_.str = vp.toString();
+      payload_.str = &str->asOffThreadAtom();
       break;
     }
     case MIRType::Symbol:
@@ -1366,7 +1355,7 @@ Value MConstant::toJSValue() const {
     case MIRType::Float32:
       return Float32Value(toFloat32());
     case MIRType::String:
-      return StringValue(toString());
+      return StringValue(toString()->unwrap());
     case MIRType::Symbol:
       return SymbolValue(toSymbol());
     case MIRType::BigInt:
@@ -1795,7 +1784,7 @@ MCallClassHook* MCallClassHook::New(TempAllocator& alloc, JSNative target,
 
 MDefinition* MStringLength::foldsTo(TempAllocator& alloc) {
   if (string()->isConstant()) {
-    JSString* str = string()->toConstant()->toString();
+    JSOffThreadAtom* str = string()->toConstant()->toString();
     return MConstant::New(alloc, Int32Value(str->length()));
   }
 
@@ -1848,6 +1837,42 @@ MDefinition* MStringConvertCase::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
+// Return true if |def| is `MConstant(Int32(0))`.
+static bool IsConstantZeroInt32(MDefinition* def) {
+  return def->isConstant() && def->toConstant()->isInt32(0);
+}
+
+// If |def| is `MBitOr` and one operand is `MConstant(Int32(0))`, then return
+// the other operand. Otherwise return |def|.
+static MDefinition* RemoveUnnecessaryBitOps(MDefinition* def) {
+  if (def->isBitOr()) {
+    auto* bitOr = def->toBitOr();
+    if (IsConstantZeroInt32(bitOr->lhs())) {
+      return bitOr->rhs();
+    }
+    if (IsConstantZeroInt32(bitOr->rhs())) {
+      return bitOr->lhs();
+    }
+  }
+  return def;
+}
+
+// Return a match if both operands of |binary| have the requested types. If
+// |binary| is commutative, the operands may appear in any order.
+template <typename Lhs, typename Rhs>
+static mozilla::Maybe<std::pair<Lhs*, Rhs*>> MatchOperands(
+    MBinaryInstruction* binary) {
+  auto* lhs = binary->lhs();
+  auto* rhs = binary->rhs();
+  if (lhs->is<Lhs>() && rhs->is<Rhs>()) {
+    return mozilla::Some(std::pair{lhs->to<Lhs>(), rhs->to<Rhs>()});
+  }
+  if (binary->isCommutative() && rhs->is<Lhs>() && lhs->is<Rhs>()) {
+    return mozilla::Some(std::pair{rhs->to<Lhs>(), lhs->to<Rhs>()});
+  }
+  return mozilla::Nothing();
+}
+
 static bool IsSubstrTo(MSubstr* substr, int32_t len) {
   // We want to match this pattern:
   //
@@ -1856,56 +1881,160 @@ static bool IsSubstrTo(MSubstr* substr, int32_t len) {
   // which is generated for the self-hosted `String.p.{substring,slice,substr}`
   // functions when called with constants `start` and `end` parameters.
 
-  auto isConstantZero = [](auto* def) {
-    return def->isConstant() && def->toConstant()->isInt32(0);
-  };
-
-  if (!isConstantZero(substr->begin())) {
+  if (!IsConstantZeroInt32(substr->begin())) {
     return false;
   }
 
-  auto* length = substr->length();
-  if (length->isBitOr()) {
-    // Unnecessary bit-ops haven't yet been removed.
-    auto* bitOr = length->toBitOr();
-    if (isConstantZero(bitOr->lhs())) {
-      length = bitOr->rhs();
-    } else if (isConstantZero(bitOr->rhs())) {
-      length = bitOr->lhs();
-    }
-  }
+  // Unnecessary bit-ops haven't yet been removed.
+  auto* length = RemoveUnnecessaryBitOps(substr->length());
   if (!length->isMinMax() || length->toMinMax()->isMax()) {
     return false;
   }
 
-  auto* min = length->toMinMax();
-  if (!min->lhs()->isConstant() && !min->rhs()->isConstant()) {
-    return false;
-  }
-
-  auto* minConstant = min->lhs()->isConstant() ? min->lhs()->toConstant()
-                                               : min->rhs()->toConstant();
-
-  auto* minOperand = min->lhs()->isConstant() ? min->rhs() : min->lhs();
-  if (!minOperand->isStringLength() ||
-      minOperand->toStringLength()->string() != substr->string()) {
+  auto match = MatchOperands<MConstant, MStringLength>(length->toMinMax());
+  if (!match) {
     return false;
   }
 
   // Ensure |len| matches the substring's length.
-  return minConstant->isInt32(len);
+  auto [cst, strLength] = *match;
+  return cst->isInt32(len) && strLength->string() == substr->string();
+}
+
+static bool IsSubstrLast(MSubstr* substr, int32_t start) {
+  MOZ_ASSERT(start < 0, "start from end is negative");
+
+  // We want to match either this pattern:
+  //
+  // begin = Max(StringLength(string) + start, 0)
+  // length = Max(StringLength(string) - begin, 0)
+  // Substr(string, begin, length)
+  //
+  // or this pattern:
+  //
+  // begin = Max(StringLength(string) + start, 0)
+  // length = Min(StringLength(string), StringLength(string) - begin)
+  // Substr(string, begin, length)
+  //
+  // which is generated for the self-hosted `String.p.{slice,substr}`
+  // functions when called with parameters `start < 0` and `end = undefined`.
+
+  auto* string = substr->string();
+
+  // Unnecessary bit-ops haven't yet been removed.
+  auto* begin = RemoveUnnecessaryBitOps(substr->begin());
+  auto* length = RemoveUnnecessaryBitOps(substr->length());
+
+  // Matches: Max(StringLength(string) + start, 0)
+  auto matchesBegin = [&]() {
+    if (!begin->isMinMax() || !begin->toMinMax()->isMax()) {
+      return false;
+    }
+
+    auto maxOperands = MatchOperands<MAdd, MConstant>(begin->toMinMax());
+    if (!maxOperands) {
+      return false;
+    }
+
+    auto [add, cst] = *maxOperands;
+    if (!cst->isInt32(0)) {
+      return false;
+    }
+
+    auto addOperands = MatchOperands<MStringLength, MConstant>(add);
+    if (!addOperands) {
+      return false;
+    }
+
+    auto [strLength, cstAdd] = *addOperands;
+    return strLength->string() == string && cstAdd->isInt32(start);
+  };
+
+  // Matches: Max(StringLength(string) - begin, 0)
+  auto matchesSliceLength = [&]() {
+    if (!length->isMinMax() || !length->toMinMax()->isMax()) {
+      return false;
+    }
+
+    auto maxOperands = MatchOperands<MSub, MConstant>(length->toMinMax());
+    if (!maxOperands) {
+      return false;
+    }
+
+    auto [sub, cst] = *maxOperands;
+    if (!cst->isInt32(0)) {
+      return false;
+    }
+
+    auto subOperands = MatchOperands<MStringLength, MMinMax>(sub);
+    if (!subOperands) {
+      return false;
+    }
+
+    auto [strLength, minmax] = *subOperands;
+    return strLength->string() == string && minmax == begin;
+  };
+
+  // Matches: Min(StringLength(string), StringLength(string) - begin)
+  auto matchesSubstrLength = [&]() {
+    if (!length->isMinMax() || length->toMinMax()->isMax()) {
+      return false;
+    }
+
+    auto minOperands = MatchOperands<MStringLength, MSub>(length->toMinMax());
+    if (!minOperands) {
+      return false;
+    }
+
+    auto [strLength1, sub] = *minOperands;
+    if (strLength1->string() != string) {
+      return false;
+    }
+
+    auto subOperands = MatchOperands<MStringLength, MMinMax>(sub);
+    if (!subOperands) {
+      return false;
+    }
+
+    auto [strLength2, minmax] = *subOperands;
+    return strLength2->string() == string && minmax == begin;
+  };
+
+  return matchesBegin() && (matchesSliceLength() || matchesSubstrLength());
 }
 
 MDefinition* MSubstr::foldsTo(TempAllocator& alloc) {
   // Fold |str.substring(0, 1)| to |str.charAt(0)|.
-  if (!IsSubstrTo(this, 1)) {
-    return this;
+  if (IsSubstrTo(this, 1)) {
+    MOZ_ASSERT(IsConstantZeroInt32(begin()));
+
+    auto* charCode = MCharCodeAtOrNegative::New(alloc, string(), begin());
+    block()->insertBefore(this, charCode);
+
+    return MFromCharCodeEmptyIfNegative::New(alloc, charCode);
   }
 
-  auto* charCode = MCharCodeAtOrNegative::New(alloc, string(), begin());
-  block()->insertBefore(this, charCode);
+  // Fold |str.slice(-1)| and |str.substr(-1)| to |str.charAt(str.length + -1)|.
+  if (IsSubstrLast(this, -1)) {
+    auto* length = MStringLength::New(alloc, string());
+    block()->insertBefore(this, length);
 
-  return MFromCharCodeEmptyIfNegative::New(alloc, charCode);
+    auto* index = MConstant::New(alloc, Int32Value(-1));
+    block()->insertBefore(this, index);
+
+    // Folded MToRelativeStringIndex, see MToRelativeStringIndex::foldsTo.
+    //
+    // Safe to truncate because |length| is never negative.
+    auto* add = MAdd::New(alloc, index, length, TruncateKind::Truncate);
+    block()->insertBefore(this, add);
+
+    auto* charCode = MCharCodeAtOrNegative::New(alloc, string(), add);
+    block()->insertBefore(this, charCode);
+
+    return MFromCharCodeEmptyIfNegative::New(alloc, charCode);
+  }
+
+  return this;
 }
 
 MDefinition* MCharCodeAt::foldsTo(TempAllocator& alloc) {
@@ -1939,7 +2068,7 @@ MDefinition* MCharCodeAt::foldsTo(TempAllocator& alloc) {
     return charCode;
   }
 
-  JSLinearString* str = &string->toConstant()->toString()->asLinear();
+  JSOffThreadAtom* str = string->toConstant()->toString();
   if (idx < 0 || uint32_t(idx) >= str->length()) {
     return this;
   }
@@ -1979,7 +2108,7 @@ MDefinition* MCodePointAt::foldsTo(TempAllocator& alloc) {
     return charCode;
   }
 
-  JSLinearString* str = &string->toConstant()->toString()->asLinear();
+  JSOffThreadAtom* str = string->toConstant()->toString();
   if (idx < 0 || uint32_t(idx) >= str->length()) {
     return this;
   }
@@ -2352,8 +2481,7 @@ MDefinition* MPhi::foldsTernary(TempAllocator& alloc) {
   // If testArg is a string type we can:
   // - fold testArg ? testArg : "" to testArg
   // - fold testArg ? "" : testArg to ""
-  if (testArg->type() == MIRType::String &&
-      c->toString() == GetJitContext()->runtime->emptyString()) {
+  if (testArg->type() == MIRType::String && c->toString()->empty()) {
     // When folding to the constant we need to hoist it.
     if (trueDef == c && !c->block()->dominates(block())) {
       c->block()->moveBefore(pred->lastIns(), c);
@@ -4608,7 +4736,7 @@ bool MCompare::tryFoldEqualOperands(bool* result) {
   return true;
 }
 
-static JSType TypeOfName(const JSLinearString* str) {
+static JSType TypeOfName(const JSOffThreadAtom* str) {
   static constexpr std::array types = {
       JSTYPE_UNDEFINED, JSTYPE_OBJECT,  JSTYPE_FUNCTION, JSTYPE_STRING,
       JSTYPE_NUMBER,    JSTYPE_BOOLEAN, JSTYPE_SYMBOL,   JSTYPE_BIGINT,
@@ -4617,7 +4745,8 @@ static JSType TypeOfName(const JSLinearString* str) {
 
   const JSAtomState& names = GetJitContext()->runtime->names();
   for (auto type : types) {
-    if (EqualStrings(str, TypeName(type, names))) {
+    // Both sides are atoms, so we can simply compare pointer identity.
+    if (TypeName(type, names) == str->unwrap()) {
       return type;
     }
   }
@@ -4697,7 +4826,7 @@ static mozilla::Maybe<TypeOfCompareInput> IsTypeOfCompare(MCompare* ins) {
 
   auto* constant = lhs->isConstant() ? lhs->toConstant() : rhs->toConstant();
 
-  JSType type = TypeOfName(&constant->toString()->asLinear());
+  JSType type = TypeOfName(constant->toString());
   return mozilla::Some(TypeOfCompareInput(typeOfName, typeOf, type, false));
 }
 
@@ -5002,8 +5131,7 @@ bool MCompare::evaluateConstantOperands(TempAllocator& alloc, bool* result) {
       return true;
     }
     case Compare_String: {
-      int32_t comp = CompareStrings(&lhs->toString()->asLinear(),
-                                    &rhs->toString()->asLinear());
+      int32_t comp = CompareStrings(lhs->toString(), rhs->toString());
       *result = FoldComparison(jsop_, comp, 0);
       return true;
     }
@@ -5019,12 +5147,12 @@ bool MCompare::evaluateConstantOperands(TempAllocator& alloc, bool* result) {
       return true;
     }
     case Compare_BigInt_String: {
-      JSLinearString* linear = &rhs->toString()->asLinear();
-      if (!linear->hasIndexValue()) {
+      JSOffThreadAtom* str = rhs->toString();
+      if (!str->hasIndexValue()) {
         return false;
       }
       *result =
-          FoldBigIntComparison(jsop_, lhs->toBigInt(), linear->getIndexValue());
+          FoldBigIntComparison(jsop_, lhs->toBigInt(), str->getIndexValue());
       return true;
     }
 
@@ -5141,7 +5269,7 @@ MDefinition* MCompare::tryFoldCharCompare(TempAllocator& alloc) {
       return this;
     }
 
-    char16_t charCode = constant->toString()->asLinear().latin1OrTwoByteChar(0);
+    char16_t charCode = constant->toString()->latin1OrTwoByteChar(0);
     MConstant* charCodeConst = MConstant::New(alloc, Int32Value(charCode));
     block()->insertBefore(this, charCodeConst);
 
@@ -5246,22 +5374,28 @@ MDefinition* MCompare::tryFoldStringSubstring(TempAllocator& alloc) {
   static_assert(JSString::MAX_LENGTH < INT32_MAX,
                 "string length can be casted to int32_t");
 
-  if (!IsSubstrTo(substr, int32_t(constant->toString()->length()))) {
+  int32_t stringLength = int32_t(constant->toString()->length());
+
+  MInstruction* replacement;
+  if (IsSubstrTo(substr, stringLength)) {
+    // Fold |str.substring(0, 2) == "aa"| to |str.startsWith("aa")|.
+    replacement = MStringStartsWith::New(alloc, substr->string(), constant);
+  } else if (IsSubstrLast(substr, -stringLength)) {
+    // Fold |str.slice(-2) == "aa"| to |str.endsWith("aa")|.
+    replacement = MStringEndsWith::New(alloc, substr->string(), constant);
+  } else {
     return this;
   }
 
-  // Now fold code like |str.substring(0, 2) == "aa"| to |str.startsWith("aa")|.
-
-  auto* startsWith = MStringStartsWith::New(alloc, substr->string(), constant);
   if (jsop() == JSOp::Eq || jsop() == JSOp::StrictEq) {
-    return startsWith;
+    return replacement;
   }
 
   // Invert for inequality.
   MOZ_ASSERT(jsop() == JSOp::Ne || jsop() == JSOp::StrictNe);
 
-  block()->insertBefore(this, startsWith);
-  return MNot::New(alloc, startsWith);
+  block()->insertBefore(this, replacement);
+  return MNot::New(alloc, replacement);
 }
 
 MDefinition* MCompare::tryFoldStringIndexOf(TempAllocator& alloc) {
@@ -6372,7 +6506,7 @@ MDefinition* MGetFirstDollarIndex::foldsTo(TempAllocator& alloc) {
     return this;
   }
 
-  JSLinearString* str = &strArg->toConstant()->toString()->asLinear();
+  JSOffThreadAtom* str = strArg->toConstant()->toString();
   int32_t index = GetFirstDollarIndexRawFlat(str);
   return MConstant::New(alloc, Int32Value(index));
 }
@@ -6568,12 +6702,16 @@ MDefinition* MIsObject::foldsTo(TempAllocator& alloc) {
 }
 
 MDefinition* MIsNullOrUndefined::foldsTo(TempAllocator& alloc) {
-  MDefinition* input = value();
-  if (!input->isBox()) {
-    return this;
+  // MIsNullOrUndefined doesn't have a type-policy, so the value can already be
+  // unboxed.
+  MDefinition* unboxed = value();
+  if (unboxed->type() == MIRType::Value) {
+    if (!unboxed->isBox()) {
+      return this;
+    }
+    unboxed = unboxed->toBox()->input();
   }
 
-  MDefinition* unboxed = input->toBox()->input();
   return MConstant::New(alloc,
                         BooleanValue(IsNullOrUndefined(unboxed->type())));
 }
@@ -6669,12 +6807,9 @@ MDefinition* MGuardSpecificFunction::foldsTo(TempAllocator& alloc) {
 
 MDefinition* MGuardSpecificAtom::foldsTo(TempAllocator& alloc) {
   if (str()->isConstant()) {
-    JSString* s = str()->toConstant()->toString();
-    if (s->isAtom()) {
-      JSAtom* cstAtom = &s->asAtom();
-      if (cstAtom == atom()) {
-        return str();
-      }
+    JSOffThreadAtom* s = str()->toConstant()->toString();
+    if (s == atom()) {
+      return str();
     }
   }
 
@@ -6833,11 +6968,11 @@ static PropertyKey ToNonIntPropertyKey(MDefinition* idval) {
     return PropertyKey::Void();
   }
   if (constant->type() == MIRType::String) {
-    JSString* str = constant->toString();
-    if (!str->isAtom() || str->asAtom().isIndex()) {
+    JSOffThreadAtom* str = constant->toString();
+    if (str->isIndex()) {
       return PropertyKey::Void();
     }
-    return PropertyKey::NonIntAtom(str);
+    return PropertyKey::NonIntAtom(str->unwrap());
   }
   if (constant->type() == MIRType::Symbol) {
     return PropertyKey::Symbol(constant->toSymbol());
@@ -6975,10 +7110,10 @@ MDefinition* MGuardStringToIndex::foldsTo(TempAllocator& alloc) {
     return this;
   }
 
-  JSString* str = string()->toConstant()->toString();
+  JSOffThreadAtom* str = string()->toConstant()->toString();
 
-  int32_t index = GetIndexFromString(str);
-  if (index < 0) {
+  uint32_t index = UINT32_MAX;
+  if (!str->isIndex(&index) || index > INT32_MAX) {
     return this;
   }
 
@@ -6990,8 +7125,8 @@ MDefinition* MGuardStringToInt32::foldsTo(TempAllocator& alloc) {
     return this;
   }
 
-  JSLinearString* str = &string()->toConstant()->toString()->asLinear();
-  double number = LinearStringToNumber(str);
+  JSOffThreadAtom* str = string()->toConstant()->toString();
+  double number = OffThreadAtomToNumber(str);
 
   int32_t n;
   if (!mozilla::NumberIsInt32(number, &n)) {
@@ -7006,8 +7141,8 @@ MDefinition* MGuardStringToDouble::foldsTo(TempAllocator& alloc) {
     return this;
   }
 
-  JSLinearString* str = &string()->toConstant()->toString()->asLinear();
-  double number = LinearStringToNumber(str);
+  JSOffThreadAtom* str = string()->toConstant()->toString();
+  double number = OffThreadAtomToNumber(str);
   return MConstant::New(alloc, DoubleValue(number));
 }
 
@@ -7260,6 +7395,10 @@ AliasSet MIsPackedArray::getAliasSet() const {
 }
 
 AliasSet MGuardArrayIsPacked::getAliasSet() const {
+  return AliasSet::Load(AliasSet::ObjectFields);
+}
+
+AliasSet MGuardElementsArePacked::getAliasSet() const {
   return AliasSet::Load(AliasSet::ObjectFields);
 }
 

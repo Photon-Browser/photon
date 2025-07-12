@@ -25,6 +25,7 @@
 
 class nsDocShell;
 class nsICookieJarSettings;
+class nsIPolicyContainer;
 class nsINode;
 class nsPIDOMWindowOuter;
 
@@ -197,9 +198,8 @@ class LoadInfo final : public nsILoadInfo {
   // into that CSP. Any subresource loads within that document
   // subesquently will receive the correct CSP by querying
   // loadinfo->GetCsp() from that point on.
-  void SetCSPToInherit(nsIContentSecurityPolicy* aCspToInherit) {
-    mCspToInherit = aCspToInherit;
-  }
+  void SetPolicyContainerToInherit(
+      nsIPolicyContainer* aPolicyContainerToInherit);
 
   bool HasIsThirdPartyContextToTopWindowSet() {
     return mIsThirdPartyContextToTopWindow.isSome();
@@ -228,7 +228,7 @@ class LoadInfo final : public nsILoadInfo {
       nsIPrincipal* aLoadingPrincipal, nsIPrincipal* aTriggeringPrincipal,
       nsIPrincipal* aPrincipalToInherit, nsIPrincipal* aTopLevelPrincipal,
       nsIURI* aResultPrincipalURI, nsICookieJarSettings* aCookieJarSettings,
-      nsIContentSecurityPolicy* aCspToInherit,
+      nsIPolicyContainer* aPolicyContainerToInherit,
       const nsACString& aTriggeringRemoteType,
       const nsID& aSandboxedNullPrincipalID,
       const Maybe<mozilla::dom::ClientInfo>& aClientInfo,
@@ -237,9 +237,12 @@ class LoadInfo final : public nsILoadInfo {
       const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
       nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags,
       uint32_t aTriggeringSandboxFlags, uint64_t aTriggeringWindowId,
-      bool aTriggeringStorageAccess, nsContentPolicyType aContentPolicyType,
-      LoadTainting aTainting, bool aBlockAllMixedContent,
-      bool aUpgradeInsecureRequests, bool aBrowserUpgradeInsecureRequests,
+      bool aTriggeringStorageAccess,
+      uint32_t aTriggeringFirstPartyClassificationFlags,
+      uint32_t aTriggeringThirdPartyClassificationFlags,
+      nsContentPolicyType aContentPolicyType, LoadTainting aTainting,
+      bool aBlockAllMixedContent, bool aUpgradeInsecureRequests,
+      bool aBrowserUpgradeInsecureRequests,
       bool aBrowserDidUpgradeInsecureRequests,
       bool aBrowserWouldUpgradeInsecureRequests, bool aForceAllowDataURI,
       bool aAllowInsecureRedirectToDataURI,
@@ -264,6 +267,7 @@ class LoadInfo final : public nsILoadInfo {
       bool aHasValidUserGestureActivation, bool aTextDirectiveUserActivation,
       bool aIsSameDocumentNavigation, bool aAllowDeprecatedSystemRequests,
       bool aIsInDevToolsContext, bool aParserCreatedScript,
+      Maybe<dom::RequestMode> aRequestMode,
       nsILoadInfo::StoragePermissionState aStoragePermission,
       nsILoadInfo::IPAddressSpace aParentIPAddressSpace,
       nsILoadInfo::IPAddressSpace aIPAddressSpace,
@@ -328,7 +332,7 @@ class LoadInfo final : public nsILoadInfo {
   nsCOMPtr<nsIURI> mChannelCreationOriginalURI;
   nsCOMPtr<nsICSPEventListener> mCSPEventListener;
   nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
-  nsCOMPtr<nsIContentSecurityPolicy> mCspToInherit;
+  nsCOMPtr<nsIPolicyContainer> mPolicyContainerToInherit;
   Maybe<dom::FeaturePolicyInfo> mContainerFeaturePolicyInfo;
   nsCString mTriggeringRemoteType;
   nsID mSandboxedNullPrincipalID;
@@ -347,6 +351,8 @@ class LoadInfo final : public nsILoadInfo {
   uint32_t mTriggeringSandboxFlags = 0;
   uint64_t mTriggeringWindowId = 0;
   bool mTriggeringStorageAccess = false;
+  uint32_t mTriggeringFirstPartyClassificationFlags = 0;
+  uint32_t mTriggeringThirdPartyClassificationFlags = 0;
   nsContentPolicyType mInternalContentPolicyType;
   LoadTainting mTainting = LoadTainting::Basic;
   bool mBlockAllMixedContent = false;
@@ -397,11 +403,12 @@ class LoadInfo final : public nsILoadInfo {
   bool mIsUserTriggeredSave = false;
   bool mIsInDevToolsContext = false;
   bool mParserCreatedScript = false;
+  Maybe<dom::RequestMode> mRequestMode;
   nsILoadInfo::StoragePermissionState mStoragePermission =
       nsILoadInfo::NoStoragePermission;
   // IP Address space of the parent browsing context.
-  nsILoadInfo::IPAddressSpace mParentIPAddressSpace = nsILoadInfo::Public;
-  nsILoadInfo::IPAddressSpace mIPAddressSpace = nsILoadInfo::Public;
+  nsILoadInfo::IPAddressSpace mParentIPAddressSpace = nsILoadInfo::Unknown;
+  nsILoadInfo::IPAddressSpace mIPAddressSpace = nsILoadInfo::Unknown;
 
   Maybe<RFPTargetSet> mOverriddenFingerprintingSettings;
 #ifdef DEBUG

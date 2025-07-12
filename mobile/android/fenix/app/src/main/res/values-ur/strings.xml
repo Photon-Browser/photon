@@ -11,9 +11,9 @@
   -->
   <string name="content_description_menu">مزید اختیارات</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button">نجی براؤزنگ فعال کریں</string>
+  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">نجی براؤزنگ فعال کریں</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button">نجی براؤزنگ غیر فعال کریں</string>
+  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">نجی براؤزنگ غیر فعال کریں</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">پتہ تلاش یا داخل کریں</string>
   <!-- No Open Tabs Message Description -->
@@ -243,7 +243,7 @@
   <!-- Preference for language -->
   <string name="preferences_language">زبان</string>
   <!-- Preference for data choices -->
-  <string name="preferences_data_choices">ڈیٹا کے انتخاب</string>
+  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">ڈیٹا کے انتخاب</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">ڈیٹا مجموعہ</string>
   <!-- Preference for developers -->
@@ -267,7 +267,7 @@
   <!-- Preference for open links in third party apps -->
   <string name="preferences_open_links_in_apps">ایپس میں ربط کھولیں</string>
   <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager">بیرونی ڈاؤن لوڈ مینیجر</string>
+  <string name="preferences_external_download_manager" tools:ignore="UnusedResources" moz:removedIn="141">بیرونی ڈاؤن لوڈ مینیجر</string>
   <!-- Preference for notifications -->
   <string name="preferences_notifications">اعلانات</string>
   <!-- Button caption to confirm the add-on collection configuration -->
@@ -833,7 +833,7 @@
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">نجی ٹیب بند ہوگئیں</string>
   <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed">نجی ٹیبز بند ہوگئیں</string>
+  <string name="snackbar_private_tabs_closed" moz:removedIn="141" tools:ignore="UnusedResources">نجی ٹیبز بند ہوگئیں</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">کالعدم</string>
   <!-- Text shown in snackbar when user removes a top site -->
@@ -1275,12 +1275,14 @@
   -->
   <string name="pocket_stories_header_1" tools:ignore="UnusedResources" moz:removedIn="140">فکر انگیز کہانیاں</string>
   <!-- Header text for a section on the home screen. -->
-  <string name="pocket_stories_categories_header">موضوع کے لحاظ سے کہانیاں</string>
+  <string name="pocket_stories_categories_header" moz:removedIn="141" tools:ignore="UnusedResources">موضوع کے لحاظ سے کہانیاں</string>
   <!-- Text of a button allowing users to access an external url for more Pocket recommendations. -->
-  <string name="pocket_stories_placeholder_text">مزید تلاش کریں</string>
+  <string name="pocket_stories_placeholder_text" moz:removedIn="141" tools:ignore="UnusedResources">مزید تلاش کریں</string>
   <!-- Caption for describing a certain feature. %s is a link using pocket_stories_feature_learn_more as text, which will load an url in a new tab when clicked. -->
   <string name="pocket_stories_feature_caption" moz:removedIn="140" tools:ignore="BrandUsage,UnusedResources">%s کے خاندان کا حصہ</string>
   <!-- Clickable text for opening an external link for more information about Pocket. -->
   <string name="pocket_stories_feature_learn_more" moz:removedIn="140" tools:ignore="UnusedResources">مزید سیکھیں</string>
   <!-- Translations feature -->
+
+  <!-- TextField Design System Component -->
 </resources>

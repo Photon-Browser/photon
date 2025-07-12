@@ -22,6 +22,7 @@
 #include "gfxConfig.h"
 #include "gfxCrashReporterUtils.h"
 #include "gfxPlatform.h"
+#include "MediaCodecsSupport.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Components.h"
 #include "mozilla/FOGIPC.h"
@@ -29,8 +30,8 @@
 #include "mozilla/PerfStats.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcessPriorityManager.h"
-#include "mozilla/RemoteDecoderManagerChild.h"
-#include "mozilla/RemoteDecoderManagerParent.h"
+#include "mozilla/RemoteMediaManagerChild.h"
+#include "mozilla/RemoteMediaManagerParent.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -78,7 +79,6 @@
 #  include "mozilla/layers/GpuProcessD3D11TextureMap.h"
 #  include "mozilla/layers/TextureD3D11.h"
 #  include "mozilla/widget/WinCompositorWindowThread.h"
-#  include "MediaCodecsSupport.h"
 #  include "WMFDecoderModule.h"
 #else
 #  include <unistd.h>
@@ -103,25 +103,6 @@ namespace mozilla::gfx {
 
 using namespace ipc;
 using namespace layers;
-
-static media::MediaCodecsSupported GetFullMediaCodecSupport(
-    bool aForceRefresh = false) {
-#if defined(XP_WIN)
-  // Re-initializing WMFPDM if forcing a refresh is required or hardware
-  // decoding is supported in order to get HEVC result properly. We will disable
-  // it later if the pref is OFF.
-  if (aForceRefresh || (gfx::gfxVars::IsInitialized() &&
-                        gfx::gfxVars::CanUseHardwareVideoDecoding())) {
-    WMFDecoderModule::Init(WMFDecoderModule::Config::ForceEnableHEVC);
-  }
-  auto disableHEVCIfNeeded = MakeScopeExit([]() {
-    if (!StaticPrefs::media_hevc_enabled()) {
-      WMFDecoderModule::DisableForceEnableHEVC();
-    }
-  });
-#endif
-  return PDMFactory::Supported(aForceRefresh);
-}
 
 static GPUParent* sGPUParent;
 
@@ -431,7 +412,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
           []() {
             NS_DispatchToMainThread(NS_NewRunnableFunction(
                 "GPUParent::UpdateMediaCodecsSupported",
-                [supported = GetFullMediaCodecSupport()]() {
+                [supported = media::MCSInfo::GetSupportFromFactory()]() {
                   Unused << GPUParent::GetSingleton()
                                 ->SendUpdateMediaCodecsSupported(supported);
                 }));
@@ -525,9 +506,10 @@ mozilla::ipc::IPCResult GPUParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
               NS_NewRunnableFunction(
                   "GPUParent::RecvUpdateVar",
                   []() {
+                    WMFDecoderModule::Init();
                     NS_DispatchToMainThread(NS_NewRunnableFunction(
                         "GPUParent::UpdateMediaCodecsSupported",
-                        [supported = GetFullMediaCodecSupport(
+                        [supported = media::MCSInfo::GetSupportFromFactory(
                              true /* force refresh */)]() {
                           Unused << GPUParent::GetSingleton()
                                         ->SendUpdateMediaCodecsSupported(
@@ -632,11 +614,11 @@ mozilla::ipc::IPCResult GPUParent::RecvNewContentVRManager(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult GPUParent::RecvNewContentRemoteDecoderManager(
-    Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+mozilla::ipc::IPCResult GPUParent::RecvNewContentRemoteMediaManager(
+    Endpoint<PRemoteMediaManagerParent>&& aEndpoint,
     const ContentParentId& aChildId) {
-  if (!RemoteDecoderManagerParent::CreateForContent(std::move(aEndpoint),
-                                                    aChildId)) {
+  if (!RemoteMediaManagerParent::CreateForContent(std::move(aEndpoint),
+                                                  aChildId)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
@@ -749,7 +731,7 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
   ProcessChild::QuickExit();
 #endif
 
-  // Wait until all RemoteDecoderManagerParent have closed.
+  // Wait until all RemoteMediaManagerParent have closed.
   mShutdownBlockers.WaitUntilClear(10 * 1000 /* 10s timeout*/)
       ->Then(GetCurrentSerialEventTarget(), __func__, [self = RefPtr{this}]() {
         if (self->mProfilerController) {

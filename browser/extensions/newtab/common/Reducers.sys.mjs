@@ -31,7 +31,9 @@ export const INITIAL_STATE = {
   Ads: {
     initialized: false,
     lastUpdated: null,
-    topsites: {},
+    tiles: {},
+    spocs: {},
+    spocPlacements: {},
   },
   TopSites: {
     // Have we received real data from history yet?
@@ -117,7 +119,7 @@ export const INITIAL_STATE = {
   // Messages received from ASRouter to render in newtab
   Messages: {
     // messages received from ASRouter are initially visible
-    isHidden: false,
+    isVisible: true,
     // portID for that tab that was sent the message
     portID: "",
     // READONLY Message data received from ASRouter
@@ -174,6 +176,7 @@ export const INITIAL_STATE = {
   },
   TrendingSearch: {
     suggestions: [],
+    collapsed: false,
   },
 };
 
@@ -508,25 +511,6 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           }),
         })
       );
-    case at.PLACES_SAVED_TO_POCKET:
-      if (!action.data) {
-        return prevState;
-      }
-      return prevState.map(section =>
-        Object.assign({}, section, {
-          rows: section.rows.map(item => {
-            if (item.url === action.data.url) {
-              return Object.assign({}, item, {
-                open_url: action.data.open_url,
-                pocket_id: action.data.pocket_id,
-                title: action.data.title,
-                type: "pocket",
-              });
-            }
-            return item;
-          }),
-        })
-      );
     case at.PLACES_BOOKMARKS_REMOVED:
       if (!action.data) {
         return prevState;
@@ -569,15 +553,6 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           rows: section.rows.filter(site => site.url !== action.data.url),
         })
       );
-    case at.DELETE_FROM_POCKET:
-    case at.ARCHIVE_FROM_POCKET:
-      return prevState.map(section =>
-        Object.assign({}, section, {
-          rows: section.rows.filter(
-            site => site.pocket_id !== action.data.pocket_id
-          ),
-        })
-      );
     default:
       return prevState;
   }
@@ -595,7 +570,7 @@ function Messages(prevState = INITIAL_STATE.Messages, action) {
         portID: action.data.portID || "",
       };
     case at.MESSAGE_TOGGLE_VISIBILITY:
-      return { ...prevState, isHidden: action.data };
+      return { ...prevState, isVisible: action.data };
     default:
       return prevState;
   }
@@ -872,29 +847,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             items.filter(item => item.url !== action.data.url)
           );
 
-    case at.PLACES_SAVED_TO_POCKET: {
-      const addPocketInfo = item => {
-        if (item.url === action.data.url) {
-          return Object.assign({}, item, {
-            open_url: action.data.open_url,
-            pocket_id: action.data.pocket_id,
-            context_type: "pocket",
-          });
-        }
-        return item;
-      };
-      return isNotReady()
-        ? prevState
-        : nextState(items => items.map(addPocketInfo));
-    }
-    case at.DELETE_FROM_POCKET:
-    case at.ARCHIVE_FROM_POCKET:
-      return isNotReady()
-        ? prevState
-        : nextState(items =>
-            items.filter(item => item.pocket_id !== action.data.pocket_id)
-          );
-
     case at.PLACES_BOOKMARK_ADDED: {
       const updateBookmarkInfo = item => {
         if (item.url === action.data.url) {
@@ -1095,11 +1047,19 @@ function Ads(prevState = INITIAL_STATE.Ads, action) {
         ...prevState,
         initialized: true,
       };
-    case at.ADS_UPDATE_DATA:
+    case at.ADS_UPDATE_TILES:
       return {
         ...prevState,
-        topsites: action.data,
+        tiles: action.data.tiles,
       };
+    case at.ADS_UPDATE_SPOCS:
+      return {
+        ...prevState,
+        spocs: action.data.spocs,
+        spocPlacements: action.data.spocPlacements,
+      };
+    case at.ADS_RESET:
+      return { ...INITIAL_STATE.Ads };
     default:
       return prevState;
   }
@@ -1108,7 +1068,9 @@ function Ads(prevState = INITIAL_STATE.Ads, action) {
 function TrendingSearch(prevState = INITIAL_STATE.TrendingSearch, action) {
   switch (action.type) {
     case at.TRENDING_SEARCH_UPDATE:
-      return { suggestions: action.data };
+      return { ...prevState, suggestions: action.data };
+    case at.TRENDING_SEARCH_TOGGLE_COLLAPSE:
+      return { ...prevState, collapsed: action.data.collapsed };
     default:
       return prevState;
   }

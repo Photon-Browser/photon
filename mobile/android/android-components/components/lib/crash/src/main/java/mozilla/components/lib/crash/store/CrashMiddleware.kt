@@ -4,10 +4,23 @@
 
 package mozilla.components.lib.crash.store
 
+import androidx.annotation.StringRes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.crash.CrashReporter
+import mozilla.components.lib.crash.R
+
+/**
+ * Represents the available options for crash reporting preferences.
+ *
+ * @property labelId The string resource label ID associated with the option.
+ */
+enum class CrashReportOption(@param:StringRes val labelId: Int) {
+    Ask(R.string.crash_reporting_ask),
+    Auto(R.string.crash_reporting_auto),
+    Never(R.string.crash_reporting_never),
+}
 
 /**
  * An interface to store and retrieve a timestamp to defer submitting unsent crashes until.
@@ -46,6 +59,22 @@ interface CrashReportCache {
      * Stores the users response to always send crashes.
      */
     suspend fun setAlwaysSend(alwaysSend: Boolean)
+
+    /**
+     * Records that the user does not want to see the remote settings crash pull
+     * anymore
+     */
+    suspend fun setCrashPullNeverShowAgain(neverShowAgain: Boolean)
+
+    /**
+     * Gets the currently set crash report option ('Ask', 'Always' or 'Never')
+     */
+    suspend fun getReportOption(): CrashReportOption
+
+    /**
+     * Stores the currently set crash report option ('Ask', 'Always' or 'Never')
+     */
+    suspend fun setReportOption(option: CrashReportOption)
 }
 
 /**
@@ -62,7 +91,6 @@ class CrashMiddleware(
     private val currentTimeInMillis: () -> TimeInMillis = { System.currentTimeMillis() },
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) {
-
     /**
      * Handle any middleware logic before an action reaches the [crashReducer].
      *
@@ -117,6 +145,9 @@ class CrashMiddleware(
                 }
             }
             CrashAction.CancelTapped -> dispatch(CrashAction.Defer(now = currentTimeInMillis()))
+            CrashAction.CancelForEverTapped -> scope.launch {
+                cache.setCrashPullNeverShowAgain(true)
+            }
             is CrashAction.Defer -> scope.launch {
                 val state = getState()
                 if (state is CrashState.Deferred) {
@@ -124,11 +155,16 @@ class CrashMiddleware(
                 }
             }
             is CrashAction.ReportTapped -> scope.launch {
-                if (action.automaticallySendChecked) {
-                    cache.setAlwaysSend(true)
+                if (action.crashIDs != null && action.crashIDs.size > 0) {
+                    sendCrashReports(action.crashIDs)
+                } else {
+                    if (action.automaticallySendChecked) {
+                        cache.setAlwaysSend(true)
+                    }
+                    sendUnsentCrashReports()
                 }
-                sendUnsentCrashReports()
             }
+            is CrashAction.PullCrashes -> {} // noop
             CrashAction.ShowPrompt -> {} // noop
         }
     }
@@ -141,6 +177,12 @@ class CrashMiddleware(
 
     private suspend fun sendUnsentCrashReports() {
         crashReporter.unsentCrashReportsSince(cutoffDate()).forEach {
+            crashReporter.submitReport(it)
+        }
+    }
+
+    private suspend fun sendCrashReports(crashIDs: Array<String>) {
+        crashReporter.findCrashReports(crashIDs).forEach {
             crashReporter.submitReport(it)
         }
     }

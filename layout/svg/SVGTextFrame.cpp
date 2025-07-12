@@ -8,30 +8,24 @@
 #include "SVGTextFrame.h"
 
 // Keep others in (case-insensitive) order:
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include "DOMSVGPoint.h"
+#include "LookAndFeel.h"
+#include "SVGAnimatedNumberList.h"
+#include "SVGContentUtils.h"
+#include "SVGContextPaint.h"
+#include "SVGLengthList.h"
+#include "SVGNumberList.h"
+#include "SVGPaintServerFrame.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxFont.h"
 #include "gfxSkipChars.h"
 #include "gfxTypes.h"
 #include "gfxUtils.h"
-#include "LookAndFeel.h"
-#include "nsBidiPresUtils.h"
-#include "nsBlockFrame.h"
-#include "nsCaret.h"
-#include "nsContentUtils.h"
-#include "nsGkAtoms.h"
-#include "SVGPaintServerFrame.h"
-#include "nsTArray.h"
-#include "nsTextFrame.h"
-#include "SVGAnimatedNumberList.h"
-#include "SVGContentUtils.h"
-#include "SVGContextPaint.h"
-#include "SVGLengthList.h"
-#include "SVGNumberList.h"
-#include "nsLayoutUtils.h"
-#include "nsFrameSelection.h"
-#include "nsStyleStructInlines.h"
 #include "mozilla/CaretAssociationHint.h"
 #include "mozilla/DisplaySVGItem.h"
 #include "mozilla/Likely.h"
@@ -40,17 +34,24 @@
 #include "mozilla/SVGOuterSVGFrame.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/dom/DOMPointBinding.h"
-#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGRect.h"
 #include "mozilla/dom/SVGTextContentElementBinding.h"
 #include "mozilla/dom/SVGTextPathElement.h"
+#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PatternHelpers.h"
-#include <algorithm>
-#include <cmath>
-#include <limits>
+#include "nsBidiPresUtils.h"
+#include "nsBlockFrame.h"
+#include "nsCaret.h"
+#include "nsContentUtils.h"
+#include "nsFrameSelection.h"
+#include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
+#include "nsStyleStructInlines.h"
+#include "nsTArray.h"
+#include "nsTextFrame.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGTextContentElement_Binding;
@@ -2397,6 +2398,7 @@ class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks {
    * Constructs an SVGTextDrawPathCallbacks.
    *
    * @param aSVGTextFrame The ancestor text frame.
+   * @param aContextPaint Used by context-fill and context-stroke.
    * @param aContext The context to use for painting.
    * @param aFrame The nsTextFrame to paint.
    * @param aCanvasTM The transformation matrix to set when painting; this
@@ -2405,12 +2407,14 @@ class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks {
    * @param aImgParams Whether we need to synchronously decode images.
    * @param aShouldPaintSVGGlyphs Whether SVG glyphs should be painted.
    */
-  SVGTextDrawPathCallbacks(SVGTextFrame* aSVGTextFrame, gfxContext& aContext,
+  SVGTextDrawPathCallbacks(SVGTextFrame* aSVGTextFrame,
+                           SVGContextPaint* aContextPaint, gfxContext& aContext,
                            nsTextFrame* aFrame, const gfxMatrix& aCanvasTM,
                            imgDrawingParams& aImgParams,
                            bool aShouldPaintSVGGlyphs)
       : DrawPathCallbacks(aShouldPaintSVGGlyphs),
         mSVGTextFrame(aSVGTextFrame),
+        mContextPaint(aContextPaint),
         mContext(aContext),
         mFrame(aFrame),
         mCanvasTM(aCanvasTM),
@@ -2469,6 +2473,7 @@ class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks {
                     const StyleSVGOpacity& aOpacity) const;
 
   SVGTextFrame* const mSVGTextFrame;
+  SVGContextPaint* const mContextPaint;
   gfxContext& mContext;
   nsTextFrame* const mFrame;
   const gfxMatrix& mCanvasTM;
@@ -2589,13 +2594,14 @@ void SVGTextDrawPathCallbacks::ApplyOpacity(
         sRGBColor::FromABGR(aPaint.kind.AsColor().CalcColor(*mFrame->Style()))
             .a;
   }
-  aColor.a *= SVGUtils::GetOpacity(aOpacity, /*aContextPaint*/ nullptr);
+  aColor.a *= SVGUtils::GetOpacity(aOpacity, mContextPaint);
 }
 
 void SVGTextDrawPathCallbacks::MakeFillPattern(GeneralPattern* aOutPattern) {
   if (mColor == NS_SAME_AS_FOREGROUND_COLOR ||
       mColor == NS_40PERCENT_FOREGROUND_COLOR) {
-    SVGUtils::MakeFillPatternFor(mFrame, &mContext, aOutPattern, mImgParams);
+    SVGUtils::MakeFillPatternFor(mFrame, &mContext, aOutPattern, mImgParams,
+                                 mContextPaint);
     return;
   }
 
@@ -2665,7 +2671,7 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
     return;
   }
 
-  if (!SVGUtils::HasStroke(mFrame, /*aContextPaint*/ nullptr)) {
+  if (!SVGUtils::HasStroke(mFrame, mContextPaint)) {
     return;
   }
 
@@ -2677,7 +2683,7 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
     strokePattern.InitColorPattern(ToDeviceColor(color));
   } else {
     SVGUtils::MakeStrokePatternFor(mFrame, &mContext, &strokePattern,
-                                   mImgParams, /*aContextPaint*/ nullptr);
+                                   mImgParams, mContextPaint);
   }
   if (strokePattern.GetPattern()) {
     SVGElement* svgOwner =
@@ -2693,7 +2699,7 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
     RefPtr<Path> path = mContext.GetPath();
     SVGContentUtils::AutoStrokeOptions strokeOptions;
     SVGContentUtils::GetStrokeOptions(&strokeOptions, svgOwner, mFrame->Style(),
-                                      /*aContextPaint*/ nullptr);
+                                      mContextPaint);
     DrawOptions drawOptions;
     drawOptions.mAntialiasMode =
         SVGUtils::ToAntialiasMode(mFrame->StyleText()->mTextRendering);
@@ -2885,17 +2891,18 @@ void SVGTextFrame::ScheduleReflowSVGNonDisplayText(IntrinsicDirty aReason) {
 NS_IMPL_ISUPPORTS(SVGTextFrame::MutationObserver, nsIMutationObserver)
 
 void SVGTextFrame::MutationObserver::ContentAppended(
-    nsIContent* aFirstNewContent) {
+    nsIContent* aFirstNewContent, const ContentAppendInfo&) {
   mFrame->NotifyGlyphMetricsChange(true);
 }
 
-void SVGTextFrame::MutationObserver::ContentInserted(nsIContent* aChild) {
+void SVGTextFrame::MutationObserver::ContentInserted(nsIContent* aChild,
+                                                     const ContentInsertInfo&) {
   mFrame->NotifyGlyphMetricsChange(true);
 }
 
 void SVGTextFrame::MutationObserver::ContentWillBeRemoved(
-    nsIContent* aChild, const BatchRemovalState* aState) {
-  if (aState && !aState->mIsFirst) {
+    nsIContent* aChild, const ContentRemoveInfo& aInfo) {
+  if (aInfo.mBatchRemovalState && !aInfo.mBatchRemovalState->mIsFirst) {
     return;
   }
   mFrame->NotifyGlyphMetricsChange(true);
@@ -3198,10 +3205,10 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                                                 opacity);
       }
 
-      if (ShouldRenderAsPath(frame, paintSVGGlyphs)) {
-        SVGTextDrawPathCallbacks callbacks(this, aContext, frame,
-                                           matrixForPaintServers, aImgParams,
-                                           paintSVGGlyphs);
+      if (ShouldRenderAsPath(frame, outerContextPaint, paintSVGGlyphs)) {
+        SVGTextDrawPathCallbacks callbacks(this, outerContextPaint, aContext,
+                                           frame, matrixForPaintServers,
+                                           aImgParams, paintSVGGlyphs);
         params.callbacks = &callbacks;
         frame->PaintText(params, startEdge, endEdge, nsPoint(), isSelected);
       } else {
@@ -4955,6 +4962,7 @@ void SVGTextFrame::DoGlyphPositioning() {
 }
 
 bool SVGTextFrame::ShouldRenderAsPath(nsTextFrame* aFrame,
+                                      SVGContextPaint* aContextPaint,
                                       bool& aShouldPaintSVGGlyphs) {
   // Rendering to a clip path.
   if (HasAnyStateBits(NS_STATE_SVG_CLIPPATH_CHILD)) {
@@ -4969,8 +4977,7 @@ bool SVGTextFrame::ShouldRenderAsPath(nsTextFrame* aFrame,
   // Fill is a non-solid paint or is not opaque.
   if (!(style->mFill.kind.IsNone() ||
         (style->mFill.kind.IsColor() &&
-         SVGUtils::GetOpacity(style->mFillOpacity, /*aContextPaint*/ nullptr) ==
-             1.0f))) {
+         SVGUtils::GetOpacity(style->mFillOpacity, aContextPaint) == 1.0f))) {
     return true;
   }
 

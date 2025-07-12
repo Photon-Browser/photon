@@ -682,15 +682,16 @@ nsCSPContext::GetAllowsInline(CSPDirective aDirective, bool aHasUnsafeHash,
     // Check the content length to ensure the content is not allocated more than
     // once. Even though we are in a for loop, it is probable that there is only
     // one policy, so this check may be unnecessary.
-    if (content.IsEmpty() && aTriggeringElement) {
-      nsCOMPtr<nsIScriptElement> element =
-          do_QueryInterface(aTriggeringElement);
-      if (element) {
-        element->GetScriptText(content);
-      }
-    }
     if (content.IsEmpty()) {
-      content = aContentOfPseudoScript;
+      if (aContentOfPseudoScript.IsVoid()) {
+        // Lazily retrieve the text of inline script, see bug 1376651.
+        nsCOMPtr<nsIScriptElement> element =
+            do_QueryInterface(aTriggeringElement);
+        MOZ_ASSERT(element);
+        element->GetScriptText(content);
+      } else {
+        content = aContentOfPseudoScript;
+      }
     }
 
     // Step 3. Let unsafe-hashes flag be false.
@@ -1006,7 +1007,7 @@ void nsCSPContext::logToConsole(const char* aName,
 
 /**
  * Strip URI for reporting according to:
- * https://w3c.github.io/webappsec-csp/#security-violation-reports
+ * https://w3c.github.io/webappsec-csp/#strip-url-for-use-in-reports
  *
  * @param aSelfURI
  *        The URI of the CSP policy. Used for cross-origin checks.
@@ -1021,38 +1022,48 @@ void nsCSPContext::logToConsole(const char* aName,
 void StripURIForReporting(nsIURI* aSelfURI, nsIURI* aURI,
                           const nsAString& aEffectiveDirective,
                           nsACString& outStrippedURI) {
+  // Non-standard: For reports going to internal chrome: documents include the
+  // whole URI.
   if (aSelfURI->SchemeIs("chrome")) {
     aURI->GetSpecIgnoringRef(outStrippedURI);
     return;
   }
 
-  // If the origin of aURI is a globally unique identifier (for example,
-  // aURI has a scheme of data, blob, or filesystem), then
-  // return the ASCII serialization of uri’s scheme.
-  bool isWsOrWss = aURI->SchemeIs("ws") || aURI->SchemeIs("wss");
-
-  if (!net::SchemeIsHttpOrHttps(aURI) && !isWsOrWss) {
-    // not strictly spec compliant, but what we really care about is
-    // http/https. If it's not http/https, then treat aURI
-    // as if it's a globally unique identifier and just return the scheme.
+  // Step 1. If url’s scheme is not an HTTP(S) scheme, then return url’s scheme.
+  // https://github.com/w3c/webappsec-csp/issues/735: We also allow WS(S)
+  // schemes.
+  if (!net::SchemeIsHttpOrHttps(aURI) &&
+      !(aURI->SchemeIs("ws") || aURI->SchemeIs("wss"))) {
     aURI->GetScheme(outStrippedURI);
     return;
   }
 
+  // Step 2. Set url’s fragment to the empty string.
+  // Step 3. Set url’s username to the empty string.
+  // Step 3. Set url’s password to the empty string.
+  nsCOMPtr<nsIURI> stripped;
+  if (NS_FAILED(NS_MutateURI(aURI).SetRef(""_ns).SetUserPass(""_ns).Finalize(
+          stripped))) {
+    // Mutating the URI failed for some reason, just return the scheme.
+    aURI->GetScheme(outStrippedURI);
+    return;
+  }
+
+  // Non-standard: https://github.com/w3c/webappsec-csp/issues/735
   // For cross-origin URIs in frame-src also strip the path.
   // This prevents detailed tracking of pages loaded into an iframe
   // by the embedding page using a report-only policy.
   if (aEffectiveDirective.EqualsLiteral("frame-src") ||
       aEffectiveDirective.EqualsLiteral("object-src")) {
     nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-    if (NS_FAILED(ssm->CheckSameOriginURI(aSelfURI, aURI, false, false))) {
-      aURI->GetPrePath(outStrippedURI);
+    if (NS_FAILED(ssm->CheckSameOriginURI(aSelfURI, stripped, false, false))) {
+      stripped->GetPrePath(outStrippedURI);
       return;
     }
   }
 
-  // Return aURI, with any fragment component removed.
-  aURI->GetSpecIgnoringRef(outStrippedURI);
+  // Step 4. Return the result of executing the URL serializer on url.
+  stripped->GetSpec(outStrippedURI);
 }
 
 nsresult nsCSPContext::GatherSecurityPolicyViolationEventData(
@@ -2141,6 +2152,15 @@ void CSPReportRedirectSink::SetInterceptController(
 
 NS_IMETHODIMP
 nsCSPContext::Read(nsIObjectInputStream* aStream) {
+  return ReadImpl(aStream, false);
+}
+
+nsresult nsCSPContext::PolicyContainerRead(nsIObjectInputStream* aInputStream) {
+  return ReadImpl(aInputStream, true);
+}
+
+nsresult nsCSPContext::ReadImpl(nsIObjectInputStream* aStream,
+                                bool aForPolicyContainer) {
   CSPCONTEXTLOG(("nsCSPContext::Read"));
 
   nsresult rv;
@@ -2168,29 +2188,57 @@ nsCSPContext::Read(nsIObjectInputStream* aStream) {
     return NS_OK;
   }
 
+  if (aForPolicyContainer) {
+    return TryReadPolicies(PolicyDataVersion::Post136, aStream, numPolicies,
+                           true);
+  }
+
   // Note: This assume that there is no other data following the CSP!
   // E10SUtils.deserializeCSP is the only user of this logic.
   nsTArray<uint8_t> data;
   rv = NS_ConsumeStream(aStream, UINT32_MAX, data);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  auto createStreamFromData =
+      [&data]() -> already_AddRefed<nsIObjectInputStream> {
+    nsCOMPtr<nsIInputStream> binaryStream;
+    nsresult rv = NS_NewByteInputStream(
+        getter_AddRefs(binaryStream),
+        Span(reinterpret_cast<const char*>(data.Elements()), data.Length()),
+        NS_ASSIGNMENT_DEPEND);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+
+    nsCOMPtr<nsIObjectInputStream> stream =
+        NS_NewObjectInputStream(binaryStream);
+
+    return stream.forget();
+  };
+
   // Because of accidental backwards incompatible changes we have to try and
   // parse multiple different versions of the CSP data. Starting with the
   // current data format.
-  if (NS_SUCCEEDED(TryReadPolicies(PolicyDataVersion::Post136, Span(data),
-                                   numPolicies))) {
+
+  nsCOMPtr<nsIObjectInputStream> stream = createStreamFromData();
+  NS_ENSURE_TRUE(stream, NS_ERROR_FAILURE);
+
+  if (NS_SUCCEEDED(TryReadPolicies(PolicyDataVersion::Post136, stream,
+                                   numPolicies, false))) {
     CSPCONTEXTLOG(("nsCSPContext::Read: Data was in version ::Post136."));
     return NS_OK;
   }
 
-  if (NS_SUCCEEDED(TryReadPolicies(PolicyDataVersion::Pre136, Span(data),
-                                   numPolicies))) {
+  stream = createStreamFromData();
+  NS_ENSURE_TRUE(stream, NS_ERROR_FAILURE);
+  if (NS_SUCCEEDED(TryReadPolicies(PolicyDataVersion::Pre136, stream,
+                                   numPolicies, false))) {
     CSPCONTEXTLOG(("nsCSPContext::Read: Data was in version ::Pre136."));
     return NS_OK;
   }
 
-  if (NS_SUCCEEDED(TryReadPolicies(PolicyDataVersion::V138_9PreRelease,
-                                   Span(data), numPolicies))) {
+  stream = createStreamFromData();
+  NS_ENSURE_TRUE(stream, NS_ERROR_FAILURE);
+  if (NS_SUCCEEDED(TryReadPolicies(PolicyDataVersion::V138_9PreRelease, stream,
+                                   numPolicies, false))) {
     CSPCONTEXTLOG(
         ("nsCSPContext::Read: Data was in version ::V138_9PreRelease."));
     return NS_OK;
@@ -2201,21 +2249,13 @@ nsCSPContext::Read(nsIObjectInputStream* aStream) {
 }
 
 nsresult nsCSPContext::TryReadPolicies(PolicyDataVersion aVersion,
-                                       Span<const uint8_t> aData,
-                                       uint32_t aNumPolicies) {
-  nsCOMPtr<nsIInputStream> binaryStream;
-  nsresult rv = NS_NewByteInputStream(
-      getter_AddRefs(binaryStream),
-      Span(reinterpret_cast<const char*>(aData.Elements()), aData.Length()),
-      NS_ASSIGNMENT_DEPEND);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIObjectInputStream> stream = NS_NewObjectInputStream(binaryStream);
-
+                                       nsIObjectInputStream* aStream,
+                                       uint32_t aNumPolicies,
+                                       bool aForPolicyContainer) {
   // Like ReadBoolean, but ensures the byte is actually 0 or 1.
-  auto ReadBooleanSafe = [stream](bool* aBoolean) {
+  auto ReadBooleanSafe = [aStream](bool* aBoolean) {
     uint8_t raw = 0;
-    nsresult rv = stream->Read8(&raw);
+    nsresult rv = aStream->Read8(&raw);
     NS_ENSURE_SUCCESS(rv, rv);
     if (!(raw == 0 || raw == 1)) {
       CSPCONTEXTLOG(("nsCSPContext::TryReadPolicies: Bad boolean value"));
@@ -2231,7 +2271,7 @@ nsresult nsCSPContext::TryReadPolicies(PolicyDataVersion aVersion,
   while (aNumPolicies > 0) {
     aNumPolicies--;
 
-    rv = stream->ReadString(policyString);
+    nsresult rv = aStream->ReadString(policyString);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // nsCSPParser::policy removed all non-ASCII tokens while parsing the CSP
@@ -2265,7 +2305,7 @@ nsresult nsCSPContext::TryReadPolicies(PolicyDataVersion aVersion,
       // This was added in bug 1942306, but wasn't really necessary.
       // Removed again in bug 1958259.
       uint32_t numExpressions;
-      rv = stream->Read32(&numExpressions);
+      rv = aStream->Read32(&numExpressions);
       NS_ENSURE_SUCCESS(rv, rv);
       // We assume that because Trusted Types was disabled by default
       // that no "trusted type expressions" were written during that time.
@@ -2279,12 +2319,15 @@ nsresult nsCSPContext::TryReadPolicies(PolicyDataVersion aVersion,
                               hasRequireTrustedTypesForDirective));
   }
 
-  // Make sure all data was consumed.
-  uint64_t available = 0;
-  rv = stream->Available(&available);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (available) {
-    return NS_ERROR_FAILURE;
+  // PolicyContainer may contain extra stuff.
+  if (!aForPolicyContainer) {
+    // Make sure all data was consumed.
+    uint64_t available = 0;
+    nsresult rv = aStream->Available(&available);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (available) {
+      return NS_ERROR_FAILURE;
+    }
   }
 
   // Success! Add the policies now.

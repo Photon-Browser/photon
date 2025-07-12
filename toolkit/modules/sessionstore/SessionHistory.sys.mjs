@@ -8,6 +8,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
 });
 
+ChromeUtils.defineLazyGetter(lazy, "PolicyContainer", () => {
+  return Components.Constructor(
+    "@mozilla.org/policycontainer;1",
+    "nsIPolicyContainer",
+    "initFromCSP"
+  );
+});
+
 /**
  * The external API exported by this module.
  */
@@ -285,8 +293,8 @@ var SessionHistoryInternal = {
       );
     }
 
-    if (shEntry.csp) {
-      entry.csp = lazy.E10SUtils.serializeCSP(shEntry.csp);
+    if (shEntry.policyContainer?.csp) {
+      entry.csp = lazy.E10SUtils.serializeCSP(shEntry.policyContainer.csp);
     }
 
     entry.docIdentifier = shEntry.bfcacheID;
@@ -316,7 +324,7 @@ var SessionHistoryInternal = {
       }
     }
 
-    entry.persist = shEntry.persist;
+    entry.transient = shEntry.isTransient();
 
     return entry;
   },
@@ -373,7 +381,6 @@ var SessionHistoryInternal = {
       if (!entry.url) {
         continue;
       }
-      let persist = "persist" in entry ? entry.persist : true;
       let shEntry = this.deserializeEntry(entry, idMap, docIdentMap, history);
 
       // To enable a smooth migration, we treat values of null/undefined as having
@@ -388,7 +395,7 @@ var SessionHistoryInternal = {
         shEntry.hasUserInteraction = entry.hasUserInteraction;
       }
 
-      history.addEntry(shEntry, persist);
+      history.addEntry(shEntry);
     }
 
     // Select the right history entry.
@@ -466,6 +473,18 @@ var SessionHistoryInternal = {
 
     if (entry.cacheKey) {
       shEntry.cacheKey = entry.cacheKey;
+    }
+
+    // The persist attribute was replaced by SetTransient() and IsTransient().
+    // But existing session storage might contain entries with the persist attribute,
+    // so we translate them to transient.
+    // Bug 1971274 tracks removing this.
+    if ("persist" in entry) {
+      entry.transient = !entry.persist;
+    }
+
+    if (entry.transient) {
+      shEntry.setTransient();
     }
 
     if (entry.ID) {
@@ -569,7 +588,8 @@ var SessionHistoryInternal = {
       );
     }
     if (entry.csp) {
-      shEntry.csp = lazy.E10SUtils.deserializeCSP(entry.csp);
+      const csp = lazy.E10SUtils.deserializeCSP(entry.csp);
+      shEntry.policyContainer = new lazy.PolicyContainer(csp);
     }
     if (entry.wireframe) {
       shEntry.wireframe = entry.wireframe;

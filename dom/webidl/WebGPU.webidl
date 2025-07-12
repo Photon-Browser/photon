@@ -121,7 +121,6 @@ interface GPUAdapter {
     [SameObject] readonly attribute GPUSupportedFeatures features;
     [SameObject] readonly attribute GPUSupportedLimits limits;
     [SameObject] readonly attribute GPUAdapterInfo info;
-    readonly attribute boolean isFallbackAdapter;
 
     [Throws]
     Promise<GPUDevice> requestDevice(optional GPUDeviceDescriptor descriptor = {});
@@ -138,6 +137,7 @@ dictionary GPUDeviceDescriptor
 };
 
 enum GPUFeatureName {
+    "core-features-and-limits",
     "depth-clip-control",
     "depth32float-stencil8",
     "texture-compression-bc",
@@ -155,9 +155,6 @@ enum GPUFeatureName {
     "clip-distances",
     "dual-source-blending",
     "subgroups",
-    // Not standard yet, but proposed with some roadmap already set aside for implementing it:
-    // <https://bugzilla.mozilla.org/show_bug.cgi?id=webgpu-compatibility-mode>
-    "core-features-and-limits",
 };
 
 [Func="mozilla::webgpu::Instance::PrefEnabled",
@@ -165,6 +162,7 @@ enum GPUFeatureName {
 interface GPUDevice : EventTarget {
     [SameObject] readonly attribute GPUSupportedFeatures features;
     [SameObject] readonly attribute GPUSupportedLimits limits;
+    [SameObject, BinaryName="GetAdapterInfo"] readonly attribute GPUAdapterInfo adapterInfo;
 
     [SameObject, BinaryName="getQueue"] readonly attribute GPUQueue queue;
 
@@ -524,6 +522,7 @@ dictionary GPUBindGroupLayoutEntry {
     GPUSamplerBindingLayout sampler;
     GPUTextureBindingLayout texture;
     GPUStorageTextureBindingLayout storageTexture;
+    GPUExternalTextureBindingLayout externalTexture;
 };
 
 typedef [EnforceRange] unsigned long GPUShaderStageFlags;
@@ -583,6 +582,9 @@ dictionary GPUStorageTextureBindingLayout {
     GPUTextureViewDimension viewDimension = "2d";
 };
 
+dictionary GPUExternalTextureBindingLayout {
+};
+
 [Func="mozilla::webgpu::Instance::PrefEnabled",
  Exposed=(Window, Worker), SecureContext]
 interface GPUBindGroup {
@@ -595,7 +597,9 @@ dictionary GPUBindGroupDescriptor
     required sequence<GPUBindGroupEntry> entries;
 };
 
-typedef (GPUSampler or GPUTextureView or GPUBufferBinding) GPUBindingResource;
+typedef (GPUSampler or
+         GPUTextureView or
+         GPUBufferBinding) GPUBindingResource;
 
 dictionary GPUBindGroupEntry {
     required GPUIndex32 binding;
@@ -1286,13 +1290,14 @@ dictionary GPUCanvasConfiguration {
 };
 
 enum GPUDeviceLostReason {
+    "unknown",
     "destroyed",
 };
 
 [Func="mozilla::webgpu::Instance::PrefEnabled",
  Exposed=(Window, Worker), SecureContext]
 interface GPUDeviceLostInfo {
-    readonly attribute any reason; // GPUDeviceLostReason or undefined
+    readonly attribute GPUDeviceLostReason reason;
     readonly attribute DOMString message;
 };
 

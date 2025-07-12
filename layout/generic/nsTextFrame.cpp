@@ -8,91 +8,86 @@
 
 #include "nsTextFrame.h"
 
-#include "gfx2DGlue.h"
-
-#include "gfxUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/CaretAssociationHint.h"
-#include "mozilla/ComputedStyle.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/StaticPresData.h"
-#include "mozilla/SVGTextFrame.h"
-#include "mozilla/TextEditor.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/BinarySearch.h"
-#include "mozilla/IntegerRange.h"
-#include "mozilla/Unused.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/dom/PerformanceMainThread.h"
-
-#include "nsCOMPtr.h"
-#include "nsBlockFrame.h"
-#include "nsFontMetrics.h"
-#include "nsSplittableFrame.h"
-#include "nsLineLayout.h"
-#include "nsString.h"
-#include "nsUnicharUtils.h"
-#include "nsPresContext.h"
-#include "nsIContent.h"
-#include "nsStyleConsts.h"
-#include "nsStyleStruct.h"
-#include "nsStyleStructInlines.h"
-#include "nsCoord.h"
-#include "gfxContext.h"
-#include "nsTArray.h"
-#include "nsCSSPseudoElements.h"
-#include "nsCSSFrameConstructor.h"
-#include "nsCompatibility.h"
-#include "nsCSSColorUtils.h"
-#include "nsLayoutUtils.h"
-#include "nsDisplayList.h"
-#include "nsIFrame.h"
-#include "nsIMathMLFrame.h"
-#include "nsFirstLetterFrame.h"
-#include "nsPlaceholderFrame.h"
-#include "nsTextFrameUtils.h"
-#include "nsTextPaintStyle.h"
-#include "nsTextRunTransformations.h"
-#include "MathMLTextRunFactory.h"
-#include "nsUnicodeProperties.h"
-#include "nsStyleUtil.h"
-#include "nsRubyFrame.h"
-#include "PresShellInlines.h"
-#include "TextDrawTarget.h"
-
-#include "nsTextFragment.h"
-#include "nsGkAtoms.h"
-#include "nsFrameSelection.h"
-#include "nsRange.h"
-#include "nsCSSRendering.h"
-#include "nsContentUtils.h"
-#include "nsLineBreaker.h"
-#include "nsIFrameInlines.h"
-#include "mozilla/intl/Bidi.h"
-#include "mozilla/intl/Segmenter.h"
-#include "mozilla/intl/UnicodeProperties.h"
-#include "mozilla/ServoStyleSet.h"
-
 #include <algorithm>
 #include <limits>
 #include <type_traits>
+
+#include "MathMLTextRunFactory.h"
+#include "PresShellInlines.h"
+#include "TextDrawTarget.h"
+#include "gfx2DGlue.h"
+#include "gfxContext.h"
+#include "gfxUtils.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/BinarySearch.h"
+#include "mozilla/CaretAssociationHint.h"
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/IntegerRange.h"
+#include "mozilla/Likely.h"
+#include "mozilla/MathAlgorithms.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/SVGTextFrame.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPresData.h"
+#include "mozilla/TextEditor.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/Unused.h"
+#include "mozilla/dom/PerformanceMainThread.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/intl/Bidi.h"
+#include "mozilla/intl/Segmenter.h"
+#include "mozilla/intl/UnicodeProperties.h"
+#include "nsBlockFrame.h"
+#include "nsCOMPtr.h"
+#include "nsCSSColorUtils.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsCSSPseudoElements.h"
+#include "nsCSSRendering.h"
+#include "nsCompatibility.h"
+#include "nsContentUtils.h"
+#include "nsCoord.h"
+#include "nsDisplayList.h"
+#include "nsFirstLetterFrame.h"
+#include "nsFontMetrics.h"
+#include "nsFrameSelection.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
+#include "nsIMathMLFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsLineBreaker.h"
+#include "nsLineLayout.h"
+#include "nsPlaceholderFrame.h"
+#include "nsPresContext.h"
+#include "nsRange.h"
+#include "nsRubyFrame.h"
+#include "nsSplittableFrame.h"
+#include "nsString.h"
+#include "nsStyleConsts.h"
+#include "nsStyleStruct.h"
+#include "nsStyleStructInlines.h"
+#include "nsStyleUtil.h"
+#include "nsTArray.h"
+#include "nsTextFragment.h"
+#include "nsTextFrameUtils.h"
+#include "nsTextPaintStyle.h"
+#include "nsTextRunTransformations.h"
+#include "nsUnicharUtils.h"
+#include "nsUnicodeProperties.h"
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
 #endif
 
-#include "nsPrintfCString.h"
-
-#include "mozilla/gfx/DrawTargetRecording.h"
-
-#include "mozilla/UniquePtr.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/gfx/DrawTargetRecording.h"
+#include "nsPrintfCString.h"
 
 #ifdef DEBUG
 #  undef NOISY_REFLOW
@@ -1909,7 +1904,8 @@ bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
                                           Side aSide) {
       while (aFrame != aAncestor) {
         ComputedStyle* ctx = aFrame->Style();
-        const auto positionProperty = ctx->StyleDisplay()->mPosition;
+        const auto anchorResolutionParams =
+            AnchorPosResolutionParams::From(aFrame);
         // According to https://drafts.csswg.org/css-text/#boundary-shaping:
         //
         // Text shaping must be broken at inline box boundaries when any of
@@ -1918,8 +1914,8 @@ bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
         //
         // 1. Any of margin/border/padding separating the two typographic
         //    character units in the inline axis is non-zero.
-        const auto margin =
-            ctx->StyleMargin()->GetMargin(aSide, positionProperty);
+        const auto margin = ctx->StyleMargin()->GetMargin(
+            aSide, anchorResolutionParams.mPosition);
         if (!margin->ConvertsToLength() ||
             margin->AsLengthPercentage().ToLength() != 0) {
           return true;
@@ -6883,10 +6879,10 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
   gfx::Point textBaselinePt;
   if (verticalRun) {
     if (wm.IsVerticalLR()) {
-      textBaselinePt.x = nsLayoutUtils::GetSnappedBaselineX(
+      textBaselinePt.x = nsLayoutUtils::GetMaybeSnappedBaselineX(
           this, aParams.context, nscoord(aParams.framePt.x), mAscent);
     } else {
-      textBaselinePt.x = nsLayoutUtils::GetSnappedBaselineX(
+      textBaselinePt.x = nsLayoutUtils::GetMaybeSnappedBaselineX(
           this, aParams.context, nscoord(aParams.framePt.x) + frameWidth,
           -mAscent);
     }
@@ -6896,7 +6892,7 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
     textBaselinePt =
         gfx::Point(reversed ? aParams.framePt.x.value + frameWidth
                             : aParams.framePt.x.value,
-                   nsLayoutUtils::GetSnappedBaselineY(
+                   nsLayoutUtils::GetMaybeSnappedBaselineY(
                        this, aParams.context, aParams.framePt.y, mAscent));
   }
   Range range = ComputeTransformedRange(provider);
@@ -7996,6 +7992,7 @@ class MOZ_STACK_CLASS ClusterIterator {
   bool IsInlineWhitespace() const;
   bool IsNewline() const;
   bool IsPunctuation() const;
+  intl::Script ScriptCode() const;
   bool HaveWordBreakBefore() const { return mHaveWordBreak; }
 
   // Get the charIndex that corresponds to the "before" side of the current
@@ -8159,6 +8156,20 @@ bool ClusterIterator::IsPunctuation() const {
   NS_ASSERTION(mCharIndex >= 0, "No cluster selected");
   const char16_t ch = mFrag->CharAt(AssertedCast<uint32_t>(mCharIndex));
   return mozilla::IsPunctuationForWordSelect(ch);
+}
+
+intl::Script ClusterIterator::ScriptCode() const {
+  NS_ASSERTION(mCharIndex >= 0, "No cluster selected");
+  const char16_t ch = mFrag->CharAt(AssertedCast<uint32_t>(mCharIndex));
+  return intl::UnicodeProperties::GetScriptCode(ch);
+}
+
+static inline bool IsKorean(intl::Script aScript) {
+  // We only need to check for HANGUL script code; there is a script code
+  // KOREAN but this is not assigned to any codepoints. (If that ever changes,
+  // we could check for both codes here.)
+  MOZ_ASSERT(aScript != intl::Script::KOREAN, "unexpected script code");
+  return aScript == intl::Script::HANGUL;
 }
 
 int32_t ClusterIterator::GetAfterInternal() const {
@@ -8342,17 +8353,22 @@ nsIFrame::FrameSearchResult nsTextFrame::PeekOffsetWord(
     return CONTINUE_EMPTY;
   }
 
+  // Do we need to check for Korean characters?
+  bool is2b = TextFragment()->Is2b();
   do {
     bool isPunctuation = cIter.IsPunctuation();
     bool isInlineWhitespace = cIter.IsInlineWhitespace();
     bool isWhitespace = isInlineWhitespace || cIter.IsNewline();
     bool isWordBreakBefore = cIter.HaveWordBreakBefore();
+    // If the text is one-byte, we don't actually care about script code as
+    // there cannot be any Korean in the frame.
+    intl::Script scriptCode = is2b ? cIter.ScriptCode() : intl::Script::COMMON;
     if (!isWhitespace || isInlineWhitespace) {
       aState->SetSawInlineCharacter();
     }
     if (aWordSelectEatSpace == isWhitespace && !aState->mSawBeforeType) {
       aState->SetSawBeforeType();
-      aState->Update(isPunctuation, isWhitespace);
+      aState->Update(isPunctuation, isWhitespace, scriptCode);
       continue;
     }
     // See if we can break before the current cluster
@@ -8373,12 +8389,18 @@ nsIFrame::FrameSearchResult nsTextFrame::PeekOffsetWord(
         canBreak = isWordBreakBefore && aState->mSawBeforeType &&
                    (aWordSelectEatSpace != isWhitespace);
       }
+      // Special-case for Korean: treat a boundary between Hangul & non-Hangul
+      // characters as a word boundary (see bug 1973393 and UAX#29).
+      if (!canBreak && is2b && aState->mLastScript != intl::Script::INVALID &&
+          IsKorean(aState->mLastScript) != IsKorean(scriptCode)) {
+        canBreak = true;
+      }
       if (canBreak) {
         *aOffset = cIter.GetBeforeOffset() - mContentOffset;
         return FOUND;
       }
     }
-    aState->Update(isPunctuation, isWhitespace);
+    aState->Update(isPunctuation, isWhitespace, scriptCode);
   } while (cIter.NextCluster());
 
   *aOffset = cIter.GetAfterOffset() - mContentOffset;

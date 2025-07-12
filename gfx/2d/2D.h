@@ -724,7 +724,7 @@ class SourceSurface : public SupportsThreadSafeWeakPtr<SourceSurface> {
   }
 
   /** Tries to generate a SurfaceDescriptor for the surface, if possible. */
-  virtual bool GetSurfaceDescriptor(layers::SurfaceDescriptor& aDesc) const {
+  virtual bool GetSurfaceDescriptor(layers::SurfaceDescriptor& aDesc) {
     return false;
   }
 
@@ -1995,6 +1995,23 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
    * @param aType Type of filter node to be created.
    */
   virtual already_AddRefed<FilterNode> CreateFilter(FilterType aType) = 0;
+
+  /**
+   * Create a SourceSurface to resolve a deferred filter input.
+   */
+  already_AddRefed<SourceSurface> ResolveFilterInput(
+      const Path* aPath, const Pattern& aPattern, const IntRect& aSourceRect,
+      const Matrix& aDestTransform, const DrawOptions& aOptions = DrawOptions(),
+      const StrokeOptions* aStrokeOptions = nullptr,
+      SurfaceFormat aFormat = SurfaceFormat::B8G8R8A8);
+
+  /**
+   * Create a FilterNode that may defer drawing of the input path.
+   */
+  virtual already_AddRefed<FilterNode> DeferFilterInput(
+      const Path* aPath, const Pattern& aPattern, const IntRect& aSourceRect,
+      const IntPoint& aDestOffset, const DrawOptions& aOptions = DrawOptions(),
+      const StrokeOptions* aStrokeOptions = nullptr);
 
   Matrix GetTransform() const { return mTransform; }
 

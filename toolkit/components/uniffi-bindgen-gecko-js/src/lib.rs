@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use askama::Template;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use indexmap::IndexSet;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uniffi_bindgen::pipeline::initial;
 use uniffi_pipeline::PrintOptions;
@@ -84,18 +84,33 @@ struct PipelineArgs {
 #[derive(Clone, Debug, Deserialize, Serialize, Node)]
 pub struct Config {
     #[serde(default)]
-    async_wrappers: AsyncWrappersConfig,
+    pub async_wrappers: IndexMap<String, ConcrrencyMode>,
+    #[serde(default)]
+    custom_types: IndexMap<String, CustomTypeConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Node, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+pub enum ConcrrencyMode {
+    /// Function will remain synchronous, running on the main thread
+    Sync,
+    /// Function will be wrapped in an async wrapper
+    AsyncWrapped,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Node)]
-struct AsyncWrappersConfig {
-    /// This converts synchronous Rust functions into async JS functions, by wrapping them at the
-    /// C++ layer.
+struct CustomTypeConfig {
+    /// The name of the type in JavaScript
     #[serde(default)]
-    enable: bool,
-    /// Functions that should be run on the main thread and not be wrapped
+    type_name: Option<String>,
+    /// Modules to import (e.g., for Node.js require statements)
     #[serde(default)]
-    main_thread: IndexSet<String>,
+    imports: Vec<String>,
+    /// Expression to convert from FFI type to JS type
+    /// {} will be replaced with the value
+    lift: String,
+    /// Expression to convert from JS type to FFI type
+    lower: String,
 }
 
 fn render(out_path: &Utf8Path, template: impl Template) -> Result<()> {

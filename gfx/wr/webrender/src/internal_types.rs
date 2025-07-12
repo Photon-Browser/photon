@@ -11,6 +11,7 @@ use crate::composite::NativeSurfaceOperation;
 use crate::device::TextureFilter;
 use crate::renderer::{FullFrameStats, PipelineInfo};
 use crate::gpu_cache::GpuCacheUpdateList;
+use crate::gpu_types::BlurEdgeMode;
 use crate::frame_builder::Frame;
 use crate::profiler::TransactionProfile;
 use crate::spatial_tree::SpatialNodeIndex;
@@ -118,7 +119,7 @@ impl Eq for FrameStamp {}
 impl PartialEq for FrameStamp {
     fn eq(&self, other: &Self) -> bool {
         // We should not be checking equality unless the documents are the same
-        debug_assert!(self.document_id == other.document_id);
+        debug_assert_eq!(self.document_id, other.document_id);
         self.id == other.id
     }
 }
@@ -774,6 +775,7 @@ pub enum Filter {
         width: f32,
         height: f32,
         should_inflate: bool,
+        edge_mode: BlurEdgeMode,
     },
     Brightness(f32),
     Contrast(f32),
@@ -887,7 +889,12 @@ impl From<FilterOp> for Filter {
     fn from(op: FilterOp) -> Self {
         match op {
             FilterOp::Identity => Filter::Identity,
-            FilterOp::Blur(width, height) => Filter::Blur { width, height, should_inflate: true },
+            FilterOp::Blur(width, height) => Filter::Blur {
+                width,
+                height,
+                should_inflate: true,
+                edge_mode: BlurEdgeMode::Duplicate,
+            },
             FilterOp::Brightness(b) => Filter::Brightness(b),
             FilterOp::Contrast(c) => Filter::Contrast(c),
             FilterOp::Grayscale(g) => Filter::Grayscale(g),
@@ -1362,6 +1369,11 @@ pub enum ResultMsg {
     PublishPipelineInfo(PipelineInfo),
     PublishDocument(
         FramePublishId,
+        DocumentId,
+        RenderedDocument,
+        ResourceUpdateList,
+    ),
+    RenderDocumentOffscreen(
         DocumentId,
         RenderedDocument,
         ResourceUpdateList,

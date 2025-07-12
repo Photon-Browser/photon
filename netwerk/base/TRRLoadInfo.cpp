@@ -42,6 +42,12 @@ TRRLoadInfo::GetTriggeringPrincipal(nsIPrincipal** aTriggeringPrincipal) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+TRRLoadInfo::SetTriggeringPrincipalForTesting(
+    nsIPrincipal* aTriggeringPrincipal) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 nsIPrincipal* TRRLoadInfo::TriggeringPrincipal() { return nullptr; }
 
 NS_IMETHODIMP
@@ -141,6 +147,26 @@ TRRLoadInfo::GetTriggeringStorageAccess(bool* aResult) {
 }
 NS_IMETHODIMP
 TRRLoadInfo::SetTriggeringStorageAccess(bool aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetTriggeringFirstPartyClassificationFlags(uint32_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetTriggeringFirstPartyClassificationFlags(uint32_t aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetTriggeringThirdPartyClassificationFlags(uint32_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetTriggeringThirdPartyClassificationFlags(uint32_t aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -756,15 +782,16 @@ TRRLoadInfo::SetCspEventListener(nsICSPEventListener* aCSPEventListener) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-already_AddRefed<nsIContentSecurityPolicy> TRRLoadInfo::GetCsp() {
-  return nullptr;
-}
-
 already_AddRefed<nsIContentSecurityPolicy> TRRLoadInfo::GetPreloadCsp() {
   return nullptr;
 }
 
-already_AddRefed<nsIContentSecurityPolicy> TRRLoadInfo::GetCspToInherit() {
+already_AddRefed<nsIPolicyContainer> TRRLoadInfo::GetPolicyContainer() {
+  return nullptr;
+}
+
+already_AddRefed<nsIPolicyContainer>
+TRRLoadInfo::GetPolicyContainerToInherit() {
   return nullptr;
 }
 
@@ -873,6 +900,16 @@ TRRLoadInfo::GetParserCreatedScript(bool* aParserCreatedScript) {
 
 NS_IMETHODIMP
 TRRLoadInfo::SetParserCreatedScript(bool aParserCreatedScript) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetRequestMode(Maybe<RequestMode>* aRequestMode) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetRequestMode(Maybe<RequestMode> aRequestMode) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

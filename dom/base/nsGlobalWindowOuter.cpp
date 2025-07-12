@@ -1756,7 +1756,7 @@ bool nsGlobalWindowOuter::WouldReuseInnerWindow(Document* aNewDocument) {
 }
 
 void nsGlobalWindowOuter::SetInitialPrincipal(
-    nsIPrincipal* aNewWindowPrincipal, nsIContentSecurityPolicy* aCSP,
+    nsIPrincipal* aNewWindowPrincipal, nsIPolicyContainer* aPolicyContainer,
     const Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCOEP) {
   // We should never create windows with an expanded principal.
   // If we have a system principal, make sure we're not using it for a content
@@ -1791,7 +1791,7 @@ void nsGlobalWindowOuter::SetInitialPrincipal(
   // the new window finishes navigating and gets a real storage principal.
   nsDocShell::Cast(GetDocShell())
       ->CreateAboutBlankDocumentViewer(aNewWindowPrincipal, aNewWindowPrincipal,
-                                       aCSP, nullptr,
+                                       aPolicyContainer, nullptr,
                                        /* aIsInitialDocument */ true, aCOEP);
 
   if (mDoc) {
@@ -4937,9 +4937,8 @@ void nsGlobalWindowOuter::PrintOuter(ErrorResult& aError) {
     }
   });
 
-  const bool forPreview =
-      !StaticPrefs::print_always_print_silent() &&
-      !Preferences::GetBool("print.prefer_system_dialog", false);
+  const bool forPreview = !StaticPrefs::print_always_print_silent() &&
+                          !StaticPrefs::print_prefer_system_dialog();
   Print(nullptr, nullptr, nullptr, nullptr, IsPreview(forPreview),
         IsForWindowDotPrint::Yes, nullptr, nullptr, aError);
 #endif
@@ -5136,8 +5135,11 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
     // The exception is if we're using the passed-in aCachedBrowsingContext, in
     // which case this is the second print with this static document clone that
     // we created the first time through, and we are responsible for cleaning it
-    // up.
-    closeWindowAfterPrint = usingCachedBrowsingContext;
+    // up. There's also an exception if we're directly using the system print
+    // dialog rather than our preview panel, because in this case the preview
+    // will not take care of cleaning up the cloned doc.
+    closeWindowAfterPrint =
+        usingCachedBrowsingContext || StaticPrefs::print_prefer_system_dialog();
   } else {
     // In this case the document was not a static clone, so we made a static
     // clone for printing purposes and must clean it up after the print is done.
@@ -5178,6 +5180,9 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
     }
     if (aIsPreview == IsPreview::Yes) {
       return !hasPrintCallbacks;
+    }
+    if (StaticPrefs::print_prefer_system_dialog()) {
+      return true;
     }
     return StaticPrefs::dom_window_print_fuzzing_block_while_printing();
   }();

@@ -8,11 +8,11 @@
 #define nsComboboxControlFrame_h___
 
 #include "mozilla/Attributes.h"
-#include "nsIAnonymousContentCreator.h"
-#include "nsISelectControlFrame.h"
-#include "nsIRollupListener.h"
-#include "nsThreadUtils.h"
 #include "nsHTMLButtonControlFrame.h"
+#include "nsIAnonymousContentCreator.h"
+#include "nsIRollupListener.h"
+#include "nsISelectControlFrame.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 class PresShell;
@@ -108,7 +108,8 @@ class nsComboboxControlFrame final : public nsHTMLButtonControlFrame,
   };
   DropDownPositionState AbsolutelyPositionDropDown();
 
-  nscoord GetLongestOptionISize(gfxContext*) const;
+  enum class Type { Longest, Current };
+  nscoord GetOptionISize(gfxContext*, Type) const;
 
   class RedisplayTextEvent : public mozilla::Runnable {
    public:

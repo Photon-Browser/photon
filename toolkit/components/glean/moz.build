@@ -37,6 +37,7 @@ EXPORTS.mozilla.glean.bindings += [
     "bindings/private/Datetime.h",
     "bindings/private/Denominator.h",
     "bindings/private/DistributionData.h",
+    "bindings/private/DualLabeledCounter.h",
     "bindings/private/Event.h",
     "bindings/private/Labeled.h",
     "bindings/private/MemoryDistribution.h",
@@ -85,6 +86,7 @@ UNIFIED_SOURCES += [
     "bindings/private/CustomDistribution.cpp",
     "bindings/private/Datetime.cpp",
     "bindings/private/Denominator.cpp",
+    "bindings/private/DualLabeledCounter.cpp",
     "bindings/private/Event.cpp",
     "bindings/private/Labeled.cpp",
     "bindings/private/MemoryDistribution.cpp",
@@ -196,6 +198,14 @@ GeneratedFile(
     script="build_scripts/glean_parser_ext/run_glean_parser.py",
     flags=glean_parser_flags,
     inputs=["!metrics_yamls.cached"],
+)
+
+GeneratedFile(
+    "/dist/@types/lib.gecko.glean.d.ts",
+    entry_point="ts_metrics_pings",
+    script="build_scripts/glean_parser_ext/run_glean_parser.py",
+    inputs=["!metrics_yamls.cached", "!pings_yamls.cached"],
+    flags=glean_parser_flags,
 )
 
 GeneratedFile(

@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.components.appstate
 
+import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.sync.TabData
@@ -32,7 +33,6 @@ import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.library.history.PendingDeletionHistory
 import org.mozilla.fenix.messaging.MessagingState
-import org.mozilla.fenix.search.SearchDialogFragment
 import org.mozilla.fenix.wallpapers.Wallpaper
 
 /**
@@ -60,9 +60,22 @@ sealed class AppAction : Action {
     data class UpdateFirstFrameDrawn(val drawn: Boolean) : AppAction()
 
     /**
-     * Updates whether the [SearchDialogFragment] is visible.
+     * Updates whether the user is currently performing a search.
+     *
+     * @property isSearchActive Whether the user is currently performing a search or not.
      */
-    data class UpdateSearchDialogVisibility(val isVisible: Boolean) : AppAction()
+    data class UpdateSearchBeingActiveState(val isSearchActive: Boolean) : AppAction()
+
+    /**
+     * Updates the [SearchEngine] used for the current in-progress browser search.
+     *
+     * @property searchEngine The new [SearchEngine] to use for the current in-progress browser search.
+     * @property isUserSelected Whether the search engine was selected by the user or not.
+     */
+    data class SearchEngineSelected(
+        val searchEngine: SearchEngine,
+        val isUserSelected: Boolean,
+    ) : AppAction()
     data class AddNonFatalCrash(val crash: NativeCodeCrash) : AppAction()
     data class RemoveNonFatalCrash(val crash: NativeCodeCrash) : AppAction()
     object RemoveAllNonFatalCrashes : AppAction()
@@ -83,7 +96,11 @@ sealed class AppAction : Action {
         AppAction()
 
     data class CollectionsChange(val collections: List<TabCollection>) : AppAction()
-    data class ModeChange(val mode: BrowsingMode) : AppAction()
+
+    /**
+     * Action dispatched when the browsing mode changes inside the BrowsingModeManager.
+     */
+    data class BrowsingModeManagerModeChanged(val mode: BrowsingMode) : AppAction()
     data class TopSitesChange(val topSites: List<TopSite>) : AppAction()
     data class RecentTabsChange(val recentTabs: List<RecentTab>) : AppAction()
     data class RemoveRecentTab(val recentTab: RecentTab) : AppAction()
@@ -553,24 +570,18 @@ sealed class AppAction : Action {
          * Replaces the current list of Pocket sponsored stories.
          *
          * @property sponsoredStories The new list of [PocketSponsoredStory] that was fetched.
-         * @property showContentRecommendations Whether or not to show Merino content
-         * recommendations.
          */
         data class PocketSponsoredStoriesChange(
             val sponsoredStories: List<PocketSponsoredStory>,
-            val showContentRecommendations: Boolean,
         ) : ContentRecommendationsAction()
 
         /**
          * Replaces the current list of [SponsoredContent]s.
          *
          * @property sponsoredContents THe new list of [SponsoredContent] that was fetched.
-         * @property showContentRecommendations Whether or not to show Merino content
-         * recommendations.
          */
         data class SponsoredContentsChange(
             val sponsoredContents: List<SponsoredContent>,
-            val showContentRecommendations: Boolean,
         ) : ContentRecommendationsAction()
 
         /**
@@ -670,5 +681,35 @@ sealed class AppAction : Action {
          * @property downloadState The state object containing information about the failed download.
          */
         data class CannotOpenFile(val downloadState: DownloadState) : DownloadAction()
+    }
+
+    /**
+     * [AppAction]s related to prompting the user for a store review/rating.
+     */
+    sealed class ReviewPromptAction : AppAction() {
+        /**
+         * Dispatched to trigger review prompt eligibility checks.
+         */
+        data object CheckIfEligibleForReviewPrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched when no triggers for showing the prompt are satisfied.
+         */
+        data object DoNotShowReviewPrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched when a trigger to show the Play Store prompt is satisfied.
+         */
+        data object ShowPlayStorePrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched when a trigger to show our custom review prompt is satisfied.
+         */
+        data object ShowCustomReviewPrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched after a review prompt was shown.
+         */
+        data object ReviewPromptShown : ReviewPromptAction()
     }
 }

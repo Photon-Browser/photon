@@ -3,10 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import json
 import logging
 from functools import partial
 
+from taskgraph.util import json
 from taskgraph.util.taskcluster import get_artifact, get_task_definition, list_artifacts
 
 from .registry import register_callback_action
@@ -35,7 +35,7 @@ def get_failures(task_id, task_definition):
             test = test.replace(".window.html", ".window.js")
 
         if test.startswith("/_mozilla"):
-            test = "testing/web-platform/mozilla/tests" + test[len("_mozilla") :]
+            test = "testing/web-platform/mozilla/tests" + test[len("/_mozilla") :]
         else:
             test = "testing/web-platform/tests/" + test.strip("/")
         # some wpt tests have params, those are not supported

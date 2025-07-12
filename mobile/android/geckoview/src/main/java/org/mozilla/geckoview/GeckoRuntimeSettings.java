@@ -369,6 +369,18 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
+     * Set whether the user wants to disable the CrashPullController.Delegate from showing the
+     * notification requesting crash pull.
+     *
+     * @param enabled A flag determining whether the notification should be shown.
+     * @return The Builder instance.
+     */
+    public @NonNull Builder crashPullNeverShowAgain(final boolean enabled) {
+      getSettings().mRemoteSettingCrashPullNeverShowAgain.set(enabled);
+      return this;
+    }
+
+    /**
      * Sets whether Session History in Parent (SHIP) should be disabled or not.
      *
      * @param value A flag determining whether SHIP should be disabled or not.
@@ -727,6 +739,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("javascript.options.use_fdlibm_for_sin_cos_tan", false);
   /* package */ final Pref<Integer> mUserCharacteristicPingCurrentVersion =
       new Pref<>("toolkit.telemetry.user_characteristics_ping.current_version", 0);
+  /* package */ final PrefWithoutDefault<Boolean> mBaselineFingerprintingProtection =
+      new PrefWithoutDefault<>("privacy.baselineFingerprintingProtection");
+  /* package */ final PrefWithoutDefault<String> mBaselineFingerprintingProtectionOverrides =
+      new PrefWithoutDefault<>("privacy.baselineFingerprintingProtection.overrides");
   /* package */ PrefWithoutDefault<Boolean> mDisableShip =
       new PrefWithoutDefault<Boolean>("fission.disableSessionHistoryInParent");
   /* package */ final Pref<Boolean> mFetchPriorityEnabled =
@@ -752,6 +768,9 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
           "docshell.shistory.sameDocumentNavigationOverridesLoadType.forceDisable", "");
   /* package */ final Pref<String> mBannedPorts =
       new Pref<String>("network.security.ports.banned", "");
+  /* package */ final PrefWithoutDefault<Boolean> mRemoteSettingCrashPullNeverShowAgain =
+      new PrefWithoutDefault<Boolean>("browser.crashReports.requestedNeverShowAgain");
+
   /* package */ int mPreferredColorScheme = COLOR_SCHEME_SYSTEM;
 
   /* package */ boolean mForceEnableAccessibility;
@@ -919,7 +938,9 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    * Set the Fingerprint protection overrides
    *
    * @param overrides The overrides value to add or remove fingerprinting protection targets. Please
-   *     check RFPTargets.inc for all supported targets.
+   *     check RFPTargets.inc for all supported targets. The format of the overrides is
+   *     +Target1,-Target2,+Target3 where + means add and - means remove. The targets are separated
+   *     by commas. The default value is empty string.
    * @return This GeckoRuntimeSettings instance
    */
   public @NonNull GeckoRuntimeSettings setFingerprintingProtectionOverrides(
@@ -977,6 +998,50 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   /**
+   * Set the Baseline fingerprint protection.
+   *
+   * @param enabled Whether we set the pref to true or false
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setBaselineFingerprintingProtection(final boolean enabled) {
+    mBaselineFingerprintingProtection.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Set the Baseline fingerprint protection overrides
+   *
+   * @param overrides The overrides value to add or remove fingerprinting protection targets. Please
+   *     check RFPTargets.inc for all supported targets. The format of the overrides is
+   *     +Target1,-Target2,+Target3 where + means add and - means remove. The targets are separated
+   *     by commas. The default value is empty string.
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setBaselineFingerprintingProtectionOverrides(
+      @NonNull final String overrides) {
+    mBaselineFingerprintingProtectionOverrides.commit(overrides);
+    return this;
+  }
+
+  /**
+   * Get whether Fingerprint protection is enabled private browsing mode.
+   *
+   * @return Whether Fingerprint protection is enabled private browsing mode.
+   */
+  public @Nullable Boolean getBaselineFingerprintingProtection() {
+    return mBaselineFingerprintingProtection.get();
+  }
+
+  /**
+   * Get Fingerprint protection overrides.
+   *
+   * @return The string of the fingerprinting protection overrides.
+   */
+  public @Nullable String getBaselineFingerprintingProtectionOverrides() {
+    return mBaselineFingerprintingProtectionOverrides.get();
+  }
+
+  /**
    * Set the pref to control the cookie behavior opt-in partitioning.
    *
    * @param enabled Whether we set the pref to true or false
@@ -996,6 +1061,19 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   public @NonNull GeckoRuntimeSettings setCookieBehaviorOptInPartitioningPBM(
       final boolean enabled) {
     mCookieBehaviorOptInPartitioningPBM.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Set the pref to control whether the CrashPullController.Delegate may show the crash pull
+   * notification.
+   *
+   * @param enabled Whether we set the pref to true or false
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setRemoteSettingCrashPullNeverShowAgain(
+      final boolean enabled) {
+    mRemoteSettingCrashPullNeverShowAgain.commit(enabled);
     return this;
   }
 

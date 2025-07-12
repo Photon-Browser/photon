@@ -246,7 +246,7 @@ int av1_rc_bits_per_mb(const AV1_COMP *cpi, FRAME_TYPE frame_type, int qindex,
     const int ratio = (cpi->rc.bit_est_ratio == 0) ? get_init_ratio(sse_sqrt)
                                                    : cpi->rc.bit_est_ratio;
     // Clamp the enumerator to lower the q fluctuations.
-    enumerator = AOMMIN(AOMMAX((int)(ratio * sse_sqrt), 20000), 170000);
+    enumerator = clamp((int)(ratio * sse_sqrt), 20000, 170000);
   } else if (cpi->oxcf.rc_cfg.mode == AOM_CBR && frame_type == KEY_FRAME &&
              cpi->sf.rt_sf.rc_adjust_keyframe && bit_depth == 8 &&
              cpi->oxcf.rc_cfg.max_intra_bitrate_pct > 0 &&
@@ -620,9 +620,9 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
     // next refresh cycle.
     if (cpi->is_screen_content_type &&
         (cpi->cyclic_refresh->sb_index > cpi->cyclic_refresh->last_sb_index)) {
-      max_delta_down = AOMMIN(8, AOMMAX(1, rc->q_1_frame / 32));
+      max_delta_down = clamp(rc->q_1_frame / 32, 1, 8);
     } else {
-      max_delta_down = AOMMIN(16, AOMMAX(1, rc->q_1_frame / 8));
+      max_delta_down = clamp(rc->q_1_frame / 8, 1, 16);
     }
     if (!cpi->ppi->use_svc && cpi->is_screen_content_type) {
       // Link max_delta_up to max_delta_down and buffer status.
@@ -633,9 +633,9 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
       }
     }
   } else {
-    max_delta_down = (cpi->is_screen_content_type)
-                         ? AOMMIN(8, AOMMAX(1, rc->q_1_frame / 16))
-                         : AOMMIN(16, AOMMAX(1, rc->q_1_frame / 8));
+    max_delta_down = cpi->is_screen_content_type
+                         ? clamp(rc->q_1_frame / 16, 1, 8)
+                         : clamp(rc->q_1_frame / 8, 1, 16);
   }
   // For screen static content with stable buffer level: relax the
   // limit on max_delta_down and apply bias qp, based on buffer fullness.
@@ -756,7 +756,7 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality,
     const int min_dist = av1_svc_get_min_ref_dist(cpi);
     q = q - AOMMIN(min_dist, 20);
   }
-  return AOMMAX(AOMMIN(q, cpi->rc.worst_quality), cpi->rc.best_quality);
+  return clamp(q, cpi->rc.best_quality, cpi->rc.worst_quality);
 }
 
 static const RATE_FACTOR_LEVEL rate_factor_levels[FRAME_UPDATE_TYPES] = {
@@ -2034,19 +2034,12 @@ static int rc_pick_q_and_bounds_q_mode(const AV1_COMP *cpi, int width,
 
   if (cq_level > 0) active_best_quality = AOMMAX(1, active_best_quality);
 
-  *top_index = active_worst_quality;
-  *bottom_index = active_best_quality;
+  *top_index = clamp(active_worst_quality, rc->best_quality, rc->worst_quality);
 
-  *top_index = AOMMAX(*top_index, rc->best_quality);
-  *top_index = AOMMIN(*top_index, rc->worst_quality);
+  *bottom_index =
+      clamp(active_best_quality, rc->best_quality, rc->worst_quality);
 
-  *bottom_index = AOMMAX(*bottom_index, rc->best_quality);
-  *bottom_index = AOMMIN(*bottom_index, rc->worst_quality);
-
-  q = active_best_quality;
-
-  q = AOMMAX(q, rc->best_quality);
-  q = AOMMIN(q, rc->worst_quality);
+  q = *bottom_index;
 
   assert(*top_index <= rc->worst_quality && *top_index >= rc->best_quality);
   assert(*bottom_index <= rc->worst_quality &&
@@ -3265,6 +3258,7 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
     for (int sbi_col = 0; sbi_col < sb_cols; ++sbi_col) {
       int block_is_active = 1;
       if (cpi->active_map.enabled && rc->percent_blocks_inactive > 0) {
+        // Fix this to include skip feature via ROI.
         block_is_active = set_block_is_active(active_map_4x4, mi_cols, mi_rows,
                                               sbi_col, sbi_row);
       }
@@ -3342,8 +3336,13 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
       // to determine if motion is scroll. Only test 3 points (pts) for now.
       // TODO(marpan): Only allow for 8 bit-depth for now.
       if (cm->seq_params->bit_depth == 8) {
-        const int sw_row = (cpi->rc.frame_source_sad > 20000) ? 512 : 192;
-        const int sw_col = (cpi->rc.frame_source_sad > 20000) ? 512 : 160;
+        int sw_row = (cpi->rc.frame_source_sad > 20000) ? 512 : 192;
+        int sw_col = (cpi->rc.frame_source_sad > 20000) ? 512 : 160;
+        if (cm->width * cm->height >= 3840 * 2160 &&
+            cpi->svc.number_temporal_layers > 1) {
+          sw_row = sw_row << 1;
+          sw_col = sw_col << 1;
+        }
         const int num_pts =
             unscaled_src->y_width * unscaled_src->y_height >= 1920 * 1080 ? 3
                                                                           : 1;
@@ -3574,7 +3573,8 @@ static void resize_reset_rc(AV1_COMP *cpi, int resize_width, int resize_height,
 
 /*!\brief Check for resize based on Q, for 1 pass real-time mode.
  *
- * Check if we should resize, based on average QP from past x frames.
+ * Check if we should resize, based on average QP and content/motion
+ * complexity from past x frames.
  * Only allow for resize at most 1/2 scale down for now, Scaling factor
  * for each step may be 3/4 or 1/2.
  *
@@ -3606,8 +3606,13 @@ static void dynamic_resize_one_pass_cbr(AV1_COMP *cpi) {
   if ((cm->width * cm->height) < min_width * min_height) down_size_on = 0;
 
   // Resize based on average buffer underflow and QP over some window.
-  // Ignore samples close to key frame, since QP is usually high after key.
-  if (cpi->rc.frames_since_key > cpi->framerate) {
+  // Ignore samples close to key frame or scene change, since QP is usually high
+  // after key and scene change.
+  // Need to incorpoate content/motion from scene detection analysis.
+  if (cpi->rc.frames_since_key > cpi->framerate &&
+      (cpi->oxcf.tune_cfg.content != AOM_CONTENT_SCREEN ||
+       cpi->oxcf.q_cfg.aq_mode != CYCLIC_REFRESH_AQ ||
+       cpi->cyclic_refresh->counter_encode_maxq_scene_change > 4)) {
     const int window = AOMMIN(30, (int)(2 * cpi->framerate));
     rc->resize_avg_qp += p_rc->last_q[INTER_FRAME];
     if (cpi->ppi->p_rc.buffer_level <
@@ -3695,8 +3700,8 @@ static inline int set_key_frame(AV1_COMP *cpi, unsigned int frame_flags) {
 
 // Set to true if this frame is a recovery frame, for 1 layer RPS,
 // and whether we should apply some boost (QP, adjust speed features, etc).
-// Recovery frame here means frame whose closest reference suddenly
-// switched from previous frame to one much further away.
+// Recovery frame here means frame whose closest reference is x frames away,
+// where x = 4.
 // TODO(marpan): Consider adding on/off flag to SVC_REF_FRAME_CONFIG to
 // allow more control for applications.
 static bool set_flag_rps_bias_recovery_frame(const AV1_COMP *const cpi) {
@@ -3706,8 +3711,8 @@ static bool set_flag_rps_bias_recovery_frame(const AV1_COMP *const cpi) {
       cpi->ppi->rtc_ref.reference_was_previous_frame) {
     int min_dist = av1_svc_get_min_ref_dist(cpi);
     // Only consider boost for this frame if its closest reference is further
-    // than x frames away, using x = 4 for now.
-    if (min_dist != INT_MAX && min_dist > 4) return true;
+    // than or equal to x frames away, using x = 4 for now.
+    if (min_dist != INT_MAX && min_dist >= 4) return true;
   }
   return false;
 }

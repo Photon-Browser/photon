@@ -210,8 +210,7 @@ class QuotaManager final : public BackgroundThreadObject {
    * LSNG.
    */
   void InitQuotaForOrigin(const FullOriginMetadata& aFullOriginMetadata,
-                          const ClientUsageArray& aClientUsages,
-                          uint64_t aUsageBytes, bool aDirectoryExists = true);
+                          bool aDirectoryExists = true);
 
   // XXX clients can use QuotaObject instead of calling this method directly.
   void DecreaseUsageForClient(const ClientMetadata& aClientMetadata,
@@ -223,7 +222,13 @@ class QuotaManager final : public BackgroundThreadObject {
                               const OriginMetadata& aOriginMetadata,
                               Client::Type aClientType);
 
-  void UpdateOriginAccessTime(const OriginMetadata& aOriginMetadata);
+  void UpdateOriginAccessTime(const OriginMetadata& aOriginMetadata,
+                              int64_t aTimestamp);
+
+  void UpdateOriginMaintenanceDate(const OriginMetadata& aOriginMetadata,
+                                   int32_t aMaintenanceDate);
+
+  void UpdateOriginAccessed(const OriginMetadata& aOriginMetadata);
 
   void RemoveQuota();
 
@@ -286,8 +291,7 @@ class QuotaManager final : public BackgroundThreadObject {
       const OriginMetadata& aOriginMetadata);
 
   static nsresult CreateDirectoryMetadata2(
-      nsIFile& aDirectory, int64_t aTimestamp, bool aPersisted,
-      const OriginMetadata& aOriginMetadata);
+      nsIFile& aDirectory, const FullOriginMetadata& aFullOriginMetadata);
 
   nsresult RestoreDirectoryMetadata2(nsIFile* aDirectory);
 
@@ -507,6 +511,8 @@ class QuotaManager final : public BackgroundThreadObject {
       const ClientMetadata& aClientMetadata,
       RefPtr<UniversalDirectoryLock> aDirectoryLock);
 
+  bool IsPersistentClientInitialized(const ClientMetadata& aClientMetadata);
+
   // Returns a pair of an nsIFile object referring to the directory, and a bool
   // indicating whether the directory was newly created.
   Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult>
@@ -518,6 +524,8 @@ class QuotaManager final : public BackgroundThreadObject {
   RefPtr<BoolPromise> InitializeTemporaryClient(
       const ClientMetadata& aClientMetadata, bool aCreateIfNonExistent,
       RefPtr<UniversalDirectoryLock> aDirectoryLock);
+
+  bool IsTemporaryClientInitialized(const ClientMetadata& aClientMetadata);
 
   // Returns a pair of an nsIFile object referring to the directory, and a bool
   // indicating whether the directory was newly created.
@@ -545,7 +553,11 @@ class QuotaManager final : public BackgroundThreadObject {
   RefPtr<BoolPromise> InitializeAllTemporaryOrigins();
 
   RefPtr<BoolPromise> SaveOriginAccessTime(
-      const OriginMetadata& aOriginMetadata, int64_t aTimestamp);
+      const OriginMetadata& aOriginMetadata);
+
+  RefPtr<BoolPromise> SaveOriginAccessTime(
+      const OriginMetadata& aOriginMetadata,
+      RefPtr<UniversalDirectoryLock> aDirectoryLock);
 
   RefPtr<OriginUsageMetadataArrayPromise> GetUsage(
       bool aGetAll, RefPtr<BoolPromise> aOnCancelPromise = nullptr);
@@ -669,6 +681,10 @@ class QuotaManager final : public BackgroundThreadObject {
   void SetThumbnailPrivateIdentityId(uint32_t aThumbnailPrivateIdentityId);
 
   uint64_t GetGroupLimit() const;
+  static uint64_t GetGroupLimitForLimit(uint64_t aLimit);
+
+  Maybe<OriginStateMetadata> GetOriginStateMetadata(
+      const OriginMetadata& aOriginMetadata);
 
   std::pair<uint64_t, uint64_t> GetUsageAndLimitForEstimate(
       const OriginMetadata& aOriginMetadata);
@@ -826,10 +842,9 @@ class QuotaManager final : public BackgroundThreadObject {
   nsresult InitializeRepository(PersistenceType aPersistenceType,
                                 OriginFunc&& aOriginFunc);
 
-  nsresult InitializeOrigin(PersistenceType aPersistenceType,
-                            const OriginMetadata& aOriginMetadata,
-                            int64_t aAccessTime, bool aPersisted,
-                            nsIFile* aDirectory, bool aForGroup = false);
+  nsresult InitializeOrigin(nsIFile* aDirectory,
+                            const FullOriginMetadata& aFullOriginMetadata,
+                            bool aForGroup = false);
 
   using OriginInfosFlatTraversable =
       nsTArray<NotNull<RefPtr<const OriginInfo>>>;
@@ -859,8 +874,6 @@ class QuotaManager final : public BackgroundThreadObject {
       (*mClients)[type]->ReleaseIOThreadObjects();
     }
   }
-
-  void ClearOpenClientDirectoryInfos();
 
   void AddTemporaryOrigin(const FullOriginMetadata& aFullOriginMetadata);
 
@@ -900,6 +913,22 @@ class QuotaManager final : public BackgroundThreadObject {
   bool IsOriginInitialized(PersistenceType aPersistenceType,
                            const nsACString& aOrigin) const;
 
+  void NoteInitializedClient(PersistenceType aPersistenceType,
+                             const nsACString& aOrigin,
+                             Client::Type aClientType);
+
+  void NoteUninitializedClients(
+      const ClientMetadataArray& aClientMetadataArray);
+
+  void NoteUninitializedClients(
+      const OriginMetadataArray& aOriginMetadataArray);
+
+  void NoteUninitializedClients(PersistenceType aPersistenceType);
+
+  bool IsClientInitialized(PersistenceType aPersistenceType,
+                           const nsACString& aOrigin,
+                           Client::Type aClientType) const;
+
   bool IsSanitizedOriginValid(const nsACString& aSanitizedOrigin);
 
   Result<nsCString, nsresult> EnsureStorageOriginFromOrigin(
@@ -922,6 +951,25 @@ class QuotaManager final : public BackgroundThreadObject {
   template <typename UpdateCallback>
   void RegisterClientDirectoryLockHandle(const OriginMetadata& aOriginMetadata,
                                          UpdateCallback&& aUpdateCallback);
+
+  /**
+   * Invokes the given callback with the active OpenClientDirectoryInfo entry
+   * for the specified origin.
+   *
+   * This method is typically used after the first handle has been registered
+   * via RegisterClientDirectoryLockHandle. It provides easy access to the
+   * associated OpenClientDirectoryInfo for reading and/or updating its data.
+   *
+   * Currently, it is primarily used in the final step of OpenClientDirectory
+   * to retrieve the first-access promise returned by SaveOriginAccessTime,
+   * which is stored during the first handle registration. The returned promise
+   * is then used to ensure that client access is blocked until the origin
+   * access time update is complete.
+   */
+  template <typename Callback>
+  auto WithOpenClientDirectoryInfo(const OriginMetadata& aOriginMetadata,
+                                   Callback&& aCallback)
+      -> std::invoke_result_t<Callback, OpenClientDirectoryInfo&>;
 
   /**
    * Unregisters a ClientDirectoryLockHandle for the given origin.
@@ -1034,6 +1082,12 @@ class QuotaManager final : public BackgroundThreadObject {
   // accessed on the owning (PBackground) thread only.
   nsTArray<NotNull<DirectoryLockImpl*>> mDirectoryLocks;
 
+  // Maintains a list of directory locks that are exclusive. This is a subset
+  // of mDirectoryLocks and is used to optimize lock acquisition by allowing
+  // shared locks to skip unnecessary comparisons. It is accessed only on the
+  // owning (PBackground) thread.
+  nsTArray<NotNull<DirectoryLockImpl*>> mExclusiveDirectoryLocks;
+
   // Only modifed on the owning thread, but read on multiple threads. Therefore
   // all modifications (including those on the owning thread) and all reads off
   // the owning thread must be protected by mQuotaMutex. In other words, only
@@ -1058,6 +1112,11 @@ class QuotaManager final : public BackgroundThreadObject {
   using BoolArray = AutoTArray<bool, PERSISTENCE_TYPE_INVALID>;
   nsTHashMap<nsCStringHashKeyWithDisabledMemmove, BoolArray>
       mInitializedOrigins;
+
+  using BitSetArray =
+      AutoTArray<BitSet<Client::TYPE_MAX>, PERSISTENCE_TYPE_INVALID>;
+  nsTHashMap<nsCStringHashKeyWithDisabledMemmove, BitSetArray>
+      mInitializedClients;
 
   // Things touched on the IO thread only.
   struct IOThreadAccessible {

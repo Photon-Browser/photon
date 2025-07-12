@@ -977,7 +977,7 @@ void ExternalEngineStateMachine::OnRequestAudio() {
                 LOG("Reach to the end, no more audio data");
                 EndOfStream(MediaData::Type::AUDIO_DATA);
                 break;
-              case NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR:
+              case NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR:
                 // We will handle the process crash in `NotifyErrorInternal()`
                 // so here just silently ignore this.
                 break;
@@ -1053,7 +1053,7 @@ void ExternalEngineStateMachine::OnRequestVideo() {
                 LOG("Reach to the end, no more video data");
                 EndOfStream(MediaData::Type::VIDEO_DATA);
                 break;
-              case NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR:
+              case NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR:
                 // We will handle the process crash in `NotifyErrorInternal()`
                 // so here just silently ignore this.
                 break;
@@ -1274,8 +1274,8 @@ void ExternalEngineStateMachine::NotifyErrorInternal(
     ReportTelemetry(NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR);
     DecodeError(
         MediaResult(NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR));
-  } else if (aError == NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR) {
-    ReportTelemetry(NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR);
+  } else if (aError == NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR) {
+    ReportTelemetry(NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR);
     RecoverFromCDMProcessCrashIfNeeded();
   } else if (mState.IsInitEngine() && mKeySystem.IsEmpty()) {
     // If any error occurs during media engine initialization, we should attempt
@@ -1421,7 +1421,7 @@ nsresult ExternalEngineStateMachine::IsCDMProxySupported(CDMProxy* aProxy) {
     return NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR;
   }
 
-  // 1=enabled encrypted and clear, 2=enabled encrytped
+  // 1=enabled encrypted and clear, 2=enabled encrypted
   if (StaticPrefs::media_wmf_media_engine_enabled() != 1 &&
       StaticPrefs::media_wmf_media_engine_enabled() != 2) {
     return NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR;

@@ -342,8 +342,9 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
   // The method to add random noises to the image data based on the random key
   // of the given cookieJarSettings.
   static nsresult RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
-                                  uint8_t* aData, uint32_t aWidth,
-                                  uint32_t aHeight, uint32_t aSize,
+                                  nsIPrincipal* aPrincipal, uint8_t* aData,
+                                  uint32_t aWidth, uint32_t aHeight,
+                                  uint32_t aSize,
                                   mozilla::gfx::SurfaceFormat aSurfaceFormat);
 
   // --------------------------------------------------------------------------
@@ -412,6 +413,12 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
 
   static CSSIntRect GetSpoofedScreenAvailSize(const nsRect& aRect, float aScale,
                                               bool aIsFullscreen);
+
+  static uint64_t GetSpoofedStorageLimit();
+
+  static bool ExposeWebCodecsAPI(JSContext* aCx, JSObject* aObj);
+  static bool ExposeWebCodecsAPIImageDecoder(JSContext* aCx, JSObject* aObj);
+  static bool IsWebCodecsRFPTargetEnabled(JSContext* aCx);
 
  private:
   nsresult Init();
@@ -517,7 +524,7 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
   static FingerprintingProtectionType GetFingerprintingProtectionType(
       bool aIsPrivateMode);
 
-  static Maybe<bool> HandleExeptionalRFPTargets(
+  static Maybe<bool> HandleExceptionalRFPTargets(
       RFPTarget aTarget, bool aIsPrivateMode,
       FingerprintingProtectionType aMode);
 

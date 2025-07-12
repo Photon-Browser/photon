@@ -9,15 +9,9 @@ import {
 
 export const PREFERENCES_LOADED_EVENT = "home-pane-loaded";
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-});
-
 // These "section" objects are formatted in a way to be similar to the ones from
 // SectionsManager to construct the preferences view.
-const PREFS_BEFORE_SECTIONS = () => [
+const PREFS_FOR_SETTINGS = () => [
   {
     id: "search",
     pref: {
@@ -45,6 +39,28 @@ const PREFS_BEFORE_SECTIONS = () => [
     ),
   },
   {
+    id: "trending-searches",
+    pref: {
+      feed: "trendingSearch.enabled",
+      titleString: "home-prefs-trending-search-header",
+      descString: "home-prefs-trending-search-description",
+    },
+    eventSource: "TRENDING_SEARCH",
+    shouldHidePref:
+      // Hide if Trending Search experiment is not enabled for this user
+      !Services.prefs.getBoolPref(
+        "browser.newtabpage.activity-stream.system.trendingSearch.enabled",
+        false
+      ) ||
+      // Also hide if it's enabled but the user doesn't have Google as their default search engine
+      (Services.prefs.getBoolPref(
+        "browser.newtabpage.activity-stream.system.trendingSearch.enabled",
+        false
+      ) &&
+        Services.prefs.getStringPref("browser.urlbar.placeholderName", "") !==
+          "Google"),
+  },
+  {
     id: "topsites",
     pref: {
       feed: "feeds.topsites",
@@ -57,7 +73,7 @@ const PREFS_BEFORE_SECTIONS = () => [
           eventSource: "SPONSORED_TOP_SITES",
           // Hide this nested pref if "Support Firefox" checkbox is enabled
           shouldHidePref: Services.prefs.getBoolPref(
-            "browser.newtabpage.activity-stream.sponsoredCheckboxes.group",
+            "browser.newtabpage.activity-stream.system.showSponsoredCheckboxes",
             false
           ),
         },
@@ -66,6 +82,43 @@ const PREFS_BEFORE_SECTIONS = () => [
     maxRows: 4,
     rowsPref: "topSitesRows",
     eventSource: "TOP_SITES",
+  },
+  {
+    id: "topstories",
+    pref: {
+      feed: "feeds.section.topstories",
+      titleString: {
+        id: "home-prefs-recommended-by-header-generic",
+      },
+      descString: {
+        id: "home-prefs-recommended-by-description-generic",
+      },
+      nestedPrefs: [
+        ...(Services.prefs.getBoolPref(
+          "browser.newtabpage.activity-stream.system.showSponsored",
+          true
+        ) && // Hide this nested pref if "Support Firefox" checkbox is enabled
+        !Services.prefs.getBoolPref(
+          "browser.newtabpage.activity-stream.system.showSponsoredCheckboxes",
+          false
+        )
+          ? [
+              {
+                name: "showSponsored",
+                titleString:
+                  "home-prefs-recommended-by-option-sponsored-stories",
+                icon: "icon-info",
+                eventSource: "POCKET_SPOCS",
+              },
+            ]
+          : []),
+      ],
+    },
+    shouldHidePref: !Services.prefs.getBoolPref(
+      "browser.newtabpage.activity-stream.feeds.system.topstories",
+      true
+    ),
+    eventSource: "TOP_STORIES",
   },
   {
     id: "support-firefox",
@@ -82,11 +135,19 @@ const PREFS_BEFORE_SECTIONS = () => [
           name: "showSponsored",
           titleString: "home-prefs-recommended-by-option-sponsored-stories",
           eventSource: "POCKET_SPOCS",
+          shouldHidePref: !Services.prefs.getBoolPref(
+            "browser.newtabpage.activity-stream.feeds.system.topstories",
+            true
+          ),
+          shouldDisablePref: !Services.prefs.getBoolPref(
+            "browser.newtabpage.activity-stream.feeds.section.topstories",
+            true
+          ),
         },
       ],
     },
     shouldHidePref: !Services.prefs.getBoolPref(
-      "browser.newtabpage.activity-stream.sponsoredCheckboxes.group",
+      "browser.newtabpage.activity-stream.system.showSponsoredCheckboxes",
       false
     ),
   },
@@ -121,24 +182,6 @@ export class AboutPreferences {
     }
   }
 
-  /**
-   * Drop obsolete, pre-Discovery Stream pref for Recommended Stories
-   * that sets the number of rows for stories.
-   *
-   * @param sections
-   * @returns {*}
-   */
-  handleDiscoverySettings(sections) {
-    // Deep copy object to not modify original Sections state in store
-    let sectionsCopy = JSON.parse(JSON.stringify(sections));
-    sectionsCopy.forEach(obj => {
-      if (obj.id === "topstories") {
-        obj.rowsPref = "";
-      }
-    });
-    return sectionsCopy;
-  }
-
   setupUserEvent(element, eventSource) {
     element.addEventListener("command", e => {
       const { checked } = e.target;
@@ -157,12 +200,12 @@ export class AboutPreferences {
   observe(window) {
     const { document, Preferences } = window;
 
-    let sections = this.store.getState().Sections;
-    sections = this.handleDiscoverySettings(sections);
+    // Extract just the "Recent activity" pref info from SectionsManager as we have everything else already
+    const highlights = this.store
+      .getState()
+      .Sections.find(el => el.id === "highlights");
 
-    const featureConfig = lazy.NimbusFeatures.newtab.getAllVariables() || {};
-
-    const allSections = [...PREFS_BEFORE_SECTIONS(featureConfig), ...sections];
+    const allSections = [...PREFS_FOR_SETTINGS(), highlights];
 
     // Render the preferences
     allSections.forEach(pref => {
@@ -301,9 +344,38 @@ export class AboutPreferences {
 
         subChecks.push(subcheck);
         subcheck.disabled = !pref._value;
+        if (nested.shouldDisablePref) {
+          subcheck.disabled = nested.shouldDisablePref;
+        }
         subcheck.hidden = nested.hidden;
       }
     });
+
+    // Special cases to like the nested prefs with another pref,
+    // so we can disable it real time.
+    if (id === "support-firefox") {
+      function setupSupportFirefoxSubCheck(triggerPref, subPref) {
+        const subCheckFullName = `browser.newtabpage.activity-stream.${triggerPref}`;
+        const subCheckPref = Preferences.get(subCheckFullName);
+
+        subCheckPref?.on("change", () => {
+          const showSponsoredFullName = `browser.newtabpage.activity-stream.${subPref}`;
+          const showSponsoredSubcheck = subChecks.find(
+            subcheck =>
+              subcheck.getAttribute("preference") === showSponsoredFullName
+          );
+          if (showSponsoredSubcheck) {
+            showSponsoredSubcheck.disabled = !Services.prefs.getBoolPref(
+              subCheckFullName,
+              true
+            );
+          }
+        });
+      }
+
+      setupSupportFirefoxSubCheck("feeds.section.topstories", "showSponsored");
+      setupSupportFirefoxSubCheck("feeds.topsites", "showSponsoredTopSites");
+    }
 
     pref.on("change", () => {
       subChecks.forEach(subcheck => {

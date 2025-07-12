@@ -219,7 +219,8 @@ void CertVerifier::LoadKnownCTLogs() {
 
     const CTLogOperatorInfo& logOperator =
         kCTLogOperatorList[log.operatorIndex];
-    CTLogVerifier logVerifier(logOperator.id, log.state, log.timestamp);
+    CTLogVerifier logVerifier(logOperator.id, log.state, log.format,
+                              log.timestamp);
     rv = logVerifier.Init(publicKey);
     if (rv != Success) {
       MOZ_ASSERT_UNREACHABLE("Failed initializing a known CT Log");
@@ -403,7 +404,8 @@ Result CertVerifier::VerifyCertificateTransparencyPolicyInner(
 
   CTVerifyResult result;
   rv = mCTVerifier->Verify(endEntityInput, issuerPublicKeyInput, embeddedSCTs,
-                           sctsFromOCSP, sctsFromTLS, time, result);
+                           sctsFromOCSP, sctsFromTLS, time,
+                           trustDomain.GetDistrustAfterTime(), result);
   if (rv != Success) {
     MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
             ("SCT verification failed with fatal error %" PRId32 "\n",
@@ -428,10 +430,10 @@ Result CertVerifier::VerifyCertificateTransparencyPolicyInner(
             ("SCT verification result: "
              "valid=%zu unknownLog=%zu retiredLog=%zu "
              "invalidSignature=%zu invalidTimestamp=%zu "
-             "decodingErrors=%zu\n",
+             "distrustedTimestamp=%zu decodingErrors=%zu\n",
              validCount, result.sctsFromUnknownLogs, retiredLogCount,
              result.sctsWithInvalidSignatures, result.sctsWithInvalidTimestamps,
-             result.decodingErrors));
+             result.sctsWithDistrustedTimestamps, result.decodingErrors));
   }
 
   BackCert endEntityBackCert(endEntityInput, EndEntityOrCA::MustBeEndEntity,

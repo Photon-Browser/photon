@@ -421,10 +421,9 @@ const CurlUtils = {
       return "\\u" + ("0000" + code).substr(code.length, 4);
     }
 
-    // Escape & and |, which are special characters on Windows.
-    const winSpecialCharsRegEx = /([&\|])/g;
-
-    if (/[^\x20-\x7E]|\'/.test(str)) {
+    // Escape characters which are not within the charater range
+    // SPACE to "~"(char codes 32 - 126), the `!` (code 33) and '(code 39);
+    if (/[^\x20-\x7E]|!|\'/.test(str)) {
       // Use ANSI-C quoting syntax.
       return (
         "$'" +
@@ -434,14 +433,13 @@ const CurlUtils = {
           .replace(/\n/g, "\\n")
           .replace(/\r/g, "\\r")
           .replace(/!/g, "\\041")
-          .replace(winSpecialCharsRegEx, "^$1")
           .replace(/[^\x20-\x7E]/g, escapeCharacter) +
         "'"
       );
     }
 
     // Use single quote syntax.
-    return "'" + str.replace(winSpecialCharsRegEx, "^$1") + "'";
+    return "'" + str + "'";
   },
 
   /**
@@ -484,7 +482,7 @@ const CurlUtils = {
         // Lastly we replace new lines with ^ and TWO new lines because the first
         // new line is there to enact the escape command the second is the character
         // to escape (in this case new line).
-        .replace(/\r?\n/g, "^\n\n") +
+        .replace(/\r?\n|\r/g, "^\n\n") +
       encapsChars
     );
   },

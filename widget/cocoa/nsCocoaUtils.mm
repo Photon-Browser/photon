@@ -303,8 +303,8 @@ BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
 
   CFStringRef lgnwPlistName = CFSTR("com.apple.loginwindow");
   CFStringRef saveStateKey = CFSTR("TALLogoutSavesState");
-  CFPropertyListRef lgnwPlist = (CFPropertyListRef)(::CFPreferencesCopyAppValue(
-      saveStateKey, lgnwPlistName));
+  auto lgnwPlist = CFTypeRefPtr<CFPropertyListRef>::WrapUnderCreateRule(
+      ::CFPreferencesCopyAppValue(saveStateKey, lgnwPlistName));
   // The .plist doesn't exist unless the user changed the "Reopen windows..."
   // preference. If it doesn't exist, restore by default (as this is the macOS
   // default).
@@ -313,7 +313,12 @@ BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
     return YES;
   }
 
-  if (CFBooleanRef shouldRestoreState = static_cast<CFBooleanRef>(lgnwPlist)) {
+  if (::CFGetTypeID(lgnwPlist.get()) != ::CFBooleanGetTypeID()) {
+    return YES;
+  }
+
+  if (CFBooleanRef shouldRestoreState =
+          static_cast<CFBooleanRef>(lgnwPlist.get())) {
     return ::CFBooleanGetValue(shouldRestoreState);
   }
 
@@ -322,6 +327,13 @@ BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
 
 void nsCocoaUtils::PrepareForNativeAppModalDialog() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+
+  if (!NSApp.active) {
+    // Early exit if the app isn't active. This is because we can't safely
+    // set the NSApp.mainMenu property in such a case. We early exit so we
+    // also don't invoke any side effects.
+    return;
+  }
 
   // Don't do anything if this is embedding. We'll assume that if there is no
   // hidden window we shouldn't do anything, and that should cover the embedding

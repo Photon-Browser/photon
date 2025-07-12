@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Icon
-import androidx.compose.material.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,7 +85,7 @@ internal fun MozillaAccountMenuButton(
                     )
 
                     Text(
-                        text = stringResource(id = R.string.browser_menu_sign_in_caption),
+                        text = stringResource(id = R.string.browser_menu_sign_in_caption_3),
                         color = FirefoxTheme.colors.textSecondary,
                         maxLines = 2,
                         style = FirefoxTheme.typography.caption.merge(
@@ -154,7 +154,7 @@ private fun FallbackAvatarIcon() {
                 shape = ICON_SHAPE,
             )
             .padding(all = 4.dp),
-        tint = FirefoxTheme.colors.iconSecondary,
+        tint = FirefoxTheme.colors.iconPrimary,
     )
 }
 

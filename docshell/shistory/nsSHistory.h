@@ -159,7 +159,9 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   };
 
   MOZ_CAN_RUN_SCRIPT
-  static void LoadURIs(nsTArray<LoadEntryResult>& aLoadResults);
+  static void LoadURIs(nsTArray<LoadEntryResult>& aLoadResults,
+                       mozilla::dom::BrowsingContext* aTraversable = nullptr);
+
   MOZ_CAN_RUN_SCRIPT
   static void LoadURIOrBFCache(LoadEntryResult& aLoadEntry);
 
@@ -244,7 +246,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   // Evict content viewers in this window which don't lie in the "safe" range
   // around aIndex.
   virtual void EvictOutOfRangeWindowDocumentViewers(int32_t aIndex);
+
+ public:
   void EvictDocumentViewerForEntry(nsISHEntry* aEntry);
+
+ private:
   static void GloballyEvictDocumentViewers();
   static void GloballyEvictAllDocumentViewers();
 

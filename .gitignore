@@ -83,7 +83,7 @@ build/reports/
 /gecko.log
 
 # Ignore all node_modules directories except for ones under third_party
-node_modules/
+/node_modules/
 devtools/**/node_modules/
 tools/browsertime/node_modules/
 tools/lint/eslint/eslint-plugin-mozilla/node_modules/
@@ -187,6 +187,7 @@ remote/test/puppeteer/experimental/
 remote/test/puppeteer/lib/
 remote/test/puppeteer/node_modules/
 remote/test/puppeteer/package-lock.json
+remote/test/puppeteer/packages/browsers/src/generated
 remote/test/puppeteer/packages/ng-schematics/test/build
 remote/test/puppeteer/packages/puppeteer/**/README.md
 remote/test/puppeteer/packages/puppeteer-core/src/generated
@@ -234,8 +235,8 @@ mobile/android/**/generated
 # Android local.properties
 mobile/android/**/local.properties
 
-# Android - Web extensions: manifest.json files are generated
-mobile/android/**/manifest.json
+# Android - Built-in web extensions: manifest.json files are generated
+mobile/android/android-components/**/assets/extensions/**/manifest.json
 
 # XCode project cruft
 /*.xcodeproj/

@@ -83,6 +83,16 @@ sealed class MenuAction : Action {
     data object FindInPage : MenuAction()
 
     /**
+     * [MenuAction] dispatched when it's a new installation of Firefox.
+     */
+    data object MenuBanner : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when menu banner should be dismissed.
+     */
+    data object DismissMenuBanner : MenuAction()
+
+    /**
      * [MenuAction] dispatched when a private tab is open in normal tab.
      */
     data object OpenInRegularTab : MenuAction()
@@ -199,16 +209,6 @@ sealed class MenuAction : Action {
      * [MenuAction] dispatched when requesting to switch to the mobile version of the current page.
      */
     data object RequestMobileSite : MenuAction()
-
-    /**
-     * [MenuAction] dispatched when the save menu item is clicked.
-     */
-    data object SaveMenuClicked : MenuAction()
-
-    /**
-     * [MenuAction] dispatched when the tools menu item is clicked.
-     */
-    data object ToolsMenuClicked : MenuAction()
 
     /**
      * [MenuAction] dispatched to show the menu CFR.
@@ -364,5 +364,10 @@ sealed class MenuAction : Action {
         data class Reload(
             val bypassCache: Boolean,
         ) : Navigate()
+
+        /**
+         * [Navigate] action dispatched when stopping the current page from loading.
+         */
+        data object Stop : Navigate()
     }
 }

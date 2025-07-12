@@ -423,7 +423,7 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
     topsrcdir = lintargs["root"]
     topobjdir = lintargs["topobjdir"]
 
-    gradle(
+    ret = gradle(
         lintargs["log"],
         topsrcdir=topsrcdir,
         topobjdir=topobjdir,
@@ -464,9 +464,9 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
             rules = data.get("tool", {}).get("driver", {}).get("rules", [])
 
             for issue in issues:
-                dir = os.path.join(topsrcdir, subdir)
-                if subdir != os.path.join("mobile", "android", "android-components"):
-                    dir = os.path.join(topsrcdir, "mobile", "android")
+                dir = os.path.join(topsrcdir)
+                if subdir == os.path.join("mobile", "android", "android-components"):
+                    dir = os.path.join(topsrcdir, subdir)
                 name = os.path.join(
                     dir,
                     issue.get("locations", [{}])[0]
@@ -505,6 +505,16 @@ def read_lint_report(config, subdir, tasks=[], **lintargs):
                     "level": level,
                 }
                 results.append(result.from_config(config, **err))
+
+        if ret != 0 and results == []:
+            err = {
+                "level": "error",
+                "rule": "build-failure",
+                "message": f"Build Failed running {tasks} - Please check logs for more information",
+                "path": os.path.join(topsrcdir, subdir),
+                "lineno": 0,
+            }
+            results.append(result.from_config(config, **err))
         return results
     except FileNotFoundError:
         print("Could not read lint report from ", subdir)

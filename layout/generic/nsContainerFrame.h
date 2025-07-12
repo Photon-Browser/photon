@@ -9,12 +9,12 @@
 #ifndef nsContainerFrame_h___
 #define nsContainerFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "LayoutConstants.h"
-#include "nsISelectionDisplay.h"
-#include "nsSplittableFrame.h"
+#include "mozilla/Attributes.h"
 #include "nsFrameList.h"
+#include "nsISelectionDisplay.h"
 #include "nsLineBox.h"
+#include "nsSplittableFrame.h"
 #include "nsTHashSet.h"
 
 class nsOverflowContinuationTracker;
@@ -852,7 +852,7 @@ class nsContainerFrame : public nsSplittableFrame {
 
   // Helper used by Progress and Meter frames. Returns true if the bar should
   // be rendered vertically, based on writing-mode and -moz-orient properties.
-  bool ResolvedOrientationIsVertical();
+  bool ResolvedOrientationIsVertical() const;
 
   /**
    * Calculate the used values for 'width' and 'height' for a replaced element.

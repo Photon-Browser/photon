@@ -6,41 +6,42 @@
 
 #include "nsComboboxControlFrame.h"
 
+#include <algorithm>
+
+#include "HTMLSelectEventListener.h"
 #include "gfxContext.h"
 #include "gfxUtils.h"
+#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/Likely.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/HTMLSelectElement.h"
 #include "nsCOMPtr.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentUtils.h"
 #include "nsDeviceContext.h"
+#include "nsDisplayList.h"
 #include "nsFocusManager.h"
 #include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
 #include "nsIFormControl.h"
 #include "nsILayoutHistoryState.h"
-#include "nsListControlFrame.h"
-#include "nsPIDOMWindow.h"
-#include "nsView.h"
-#include "nsViewManager.h"
 #include "nsISelectControlFrame.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/HTMLSelectElement.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/ServoStyleSet.h"
-#include "nsNodeInfoManager.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsLayoutUtils.h"
-#include "nsDisplayList.h"
 #include "nsITheme.h"
+#include "nsLayoutUtils.h"
+#include "nsListControlFrame.h"
+#include "nsNodeInfoManager.h"
+#include "nsPIDOMWindow.h"
 #include "nsStyleConsts.h"
 #include "nsTextFrameUtils.h"
-#include "nsTextRunTransformations.h"
-#include "HTMLSelectEventListener.h"
-#include "mozilla/Likely.h"
-#include <algorithm>
 #include "nsTextNode.h"
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/PresShellInlines.h"
+#include "nsTextRunTransformations.h"
+#include "nsView.h"
+#include "nsViewManager.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -132,8 +133,8 @@ int32_t nsComboboxControlFrame::CharCountOfLargestOptionForInflation() const {
   return int32_t(maxLength);
 }
 
-nscoord nsComboboxControlFrame::GetLongestOptionISize(
-    gfxContext* aRenderingContext) const {
+nscoord nsComboboxControlFrame::GetOptionISize(gfxContext* aRenderingContext,
+                                               Type aType) const {
   // Compute the width of each option's (potentially text-transformed) text,
   // and use the widest one as part of our intrinsic size.
   nscoord maxOptionSize = 0;
@@ -148,8 +149,8 @@ nscoord nsComboboxControlFrame::GetLongestOptionISize(
   nsAtom* language = StyleFont()->mLanguage;
   AutoTArray<bool, 50> charsToMergeArray;
   AutoTArray<bool, 50> deletedCharsArray;
-  for (auto i : IntegerRange(Select().Options()->Length())) {
-    GetOptionText(i, label);
+  auto GetOptionSize = [&](uint32_t aIndex) -> nscoord {
+    GetOptionText(aIndex, label);
     const nsAutoString* stringToUse = &label;
     if (textTransform ||
         textStyle->mWebkitTextSecurity != StyleTextSecurity::None) {
@@ -163,9 +164,15 @@ nscoord nsComboboxControlFrame::GetLongestOptionISize(
           deletedCharsArray);
       stringToUse = &transformedLabel;
     }
-    maxOptionSize = std::max(maxOptionSize,
-                             nsLayoutUtils::AppUnitWidthOfStringBidi(
-                                 *stringToUse, this, *fm, *aRenderingContext));
+    return nsLayoutUtils::AppUnitWidthOfStringBidi(*stringToUse, this, *fm,
+                                                   *aRenderingContext);
+  };
+  if (aType == Type::Longest) {
+    for (auto i : IntegerRange(Select().Options()->Length())) {
+      maxOptionSize = std::max(maxOptionSize, GetOptionSize(i));
+    }
+  } else {
+    maxOptionSize = GetOptionSize(mDisplayedIndex);
   }
   if (maxOptionSize) {
     // HACK: Add one app unit to workaround silly Netgear router styling, see
@@ -185,7 +192,10 @@ nscoord nsComboboxControlFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
 
   nscoord displayISize = 0;
   if (!containISize && !StyleContent()->mContent.IsNone()) {
-    displayISize += GetLongestOptionISize(aInput.mContext);
+    auto optionType = StyleUIReset()->mFieldSizing == StyleFieldSizing::Content
+                          ? Type::Current
+                          : Type::Longest;
+    displayISize += GetOptionISize(aInput.mContext, optionType);
   }
 
   // Add room for the dropmarker button (if there is one).

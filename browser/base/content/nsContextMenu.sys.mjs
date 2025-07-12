@@ -21,7 +21,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
@@ -248,7 +247,9 @@ export class nsContextMenu {
       this.ownerDoc = this.target.ownerDocument;
     }
 
-    this.csp = lazy.E10SUtils.deserializeCSP(context.csp);
+    this.policyContainer = lazy.E10SUtils.deserializePolicyContainer(
+      context.policyContainer
+    );
 
     if (this.contentData) {
       this.browser = this.contentData.browser;
@@ -338,7 +339,6 @@ export class nsContextMenu {
     this.initViewItems();
     this.initImageItems();
     this.initMiscItems();
-    this.initPocketItems();
     this.initSpellingItems();
     this.initSaveItems();
     this.initSyncItems();
@@ -444,7 +444,7 @@ export class nsContextMenu {
 
     // Only show remove option if there are text fragments on the page.
     this.showItem("context-sep-highlights", this.hasTextFragments);
-    this.showItem("context-remove-all-highlights", this.hasTextFragments);
+    this.showItem("context-remove-highlight", this.hasTextFragments);
   }
 
   async getTextDirective() {
@@ -913,10 +913,12 @@ export class nsContextMenu {
 
     this.showAndFormatSearchContextItem();
     this.showTranslateSelectionItem();
-    lazy.GenAI.buildAskChatMenu(
-      document.getElementById("context-ask-chat"),
-      this
-    );
+    lazy.GenAI.buildAskChatMenu(document.getElementById("context-ask-chat"), {
+      browser: this.browser,
+      selectionInfo: this.selectionInfo,
+      showItem: this.showItem.bind(this),
+      source: "page",
+    });
 
     // srcdoc cannot be opened separately due to concerns about web
     // content with about:srcdoc in location bar masquerading as trusted
@@ -945,52 +947,6 @@ export class nsContextMenu {
       "context-bidi-page-direction-toggle",
       !this.onTextInput && window.top.gBidiUI
     );
-  }
-
-  initPocketItems() {
-    const pocketEnabled = Services.prefs.getBoolPref(
-      "extensions.pocket.enabled"
-    );
-    let showSaveCurrentPageToPocket = false;
-    let showSaveLinkToPocket = false;
-
-    // We can skip all this is Pocket is not enabled.
-    if (pocketEnabled) {
-      let targetURL, targetURI;
-      // If the context menu is opened over a link, we target the link,
-      // if not, we target the page.
-      if (this.onLink) {
-        targetURL = this.linkURL;
-        // linkURI may be null if the URL is invalid.
-        targetURI = this.linkURI;
-      } else {
-        targetURL = this.browser?.currentURI?.spec;
-        targetURI = Services.io.newURI(targetURL);
-      }
-
-      const canPocket =
-        targetURI?.schemeIs("http") ||
-        targetURI?.schemeIs("https") ||
-        (targetURI?.schemeIs("about") &&
-          lazy.ReaderMode?.getOriginalUrl(targetURL));
-
-      // If the target is valid, decide which menu item to enable.
-      if (canPocket) {
-        showSaveLinkToPocket = this.onLink;
-        showSaveCurrentPageToPocket = !(
-          this.onTextInput ||
-          this.onLink ||
-          this.isContentSelected ||
-          this.onImage ||
-          this.onCanvas ||
-          this.onVideo ||
-          this.onAudio
-        );
-      }
-    }
-
-    this.showItem("context-pocket", showSaveCurrentPageToPocket);
-    this.showItem("context-savelinktopocket", showSaveLinkToPocket);
   }
 
   initSpellingItems() {
@@ -1497,7 +1453,7 @@ export class nsContextMenu {
       originStoragePrincipal: this.storagePrincipal,
       triggeringPrincipal: this.principal,
       triggeringRemoteType: this.remoteType,
-      csp: this.csp,
+      policyContainer: this.policyContainer,
       frameID: this.contentData.frameID,
       hasValidUserGestureActivation: true,
     };
@@ -1594,7 +1550,7 @@ export class nsContextMenu {
     this.window.openLinkIn(this.contentData.docLocation, "tab", {
       charset: this.contentData.charSet,
       triggeringPrincipal: this.browser.contentPrincipal,
-      csp: this.browser.csp,
+      policyContainer: this.browser.policyContainer,
       referrerInfo: this.contentData.frameReferrerInfo,
     });
   }
@@ -1610,7 +1566,7 @@ export class nsContextMenu {
     this.window.openLinkIn(this.contentData.docLocation, "window", {
       charset: this.contentData.charSet,
       triggeringPrincipal: this.browser.contentPrincipal,
-      csp: this.browser.csp,
+      policyContainer: this.browser.policyContainer,
       referrerInfo: this.contentData.frameReferrerInfo,
     });
   }
@@ -1731,7 +1687,7 @@ export class nsContextMenu {
       referrerInfo: this.contentData.referrerInfo,
       triggeringPrincipal: this.principal,
       triggeringRemoteType: this.remoteType,
-      csp: this.csp,
+      policyContainer: this.policyContainer,
     });
   }
 
@@ -1786,7 +1742,7 @@ export class nsContextMenu {
         forceAllowDataURI: true,
         triggeringPrincipal: this.principal,
         triggeringRemoteType: this.remoteType,
-        csp: this.csp,
+        policyContainer: this.policyContainer,
       });
     }
   }
@@ -1852,7 +1808,7 @@ export class nsContextMenu {
       forceAllowDataURI: true,
       triggeringPrincipal: this.principal,
       triggeringRemoteType: this.remoteType,
-      csp: this.csp,
+      policyContainer: this.policyContainer,
     });
   }
 
@@ -2827,7 +2783,8 @@ export class nsContextMenu {
     // Store searchTerms in context menu item so we know what to search onclick
     menuItem.searchTerms = menuItemPrivate.searchTerms = selectedText;
     menuItem.principal = menuItemPrivate.principal = this.principal;
-    menuItem.csp = menuItemPrivate.csp = this.csp;
+    menuItem.policyContainer = menuItemPrivate.policyContainer =
+      this.policyContainer;
 
     // Copied to alert.js' prefillAlertInfo().
     // If the JS character after our truncation point is a trail surrogate,

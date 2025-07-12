@@ -43,10 +43,6 @@ notes = "This is a crate Henri wrote which is also published. We should probably
 audit-as-crates-io = true
 notes = "This is a crate Henri wrote which is also published. We should probably update Firefox to tip and certify that."
 
-[policy.coremidi]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
-
 [policy.cose]
 audit-as-crates-io = true
 notes = "This is upstream plus a warning fix from bug 1823866."
@@ -201,10 +197,6 @@ audit-as-crates-io = false
 [policy.peek-poke-derive]
 audit-as-crates-io = false
 
-[policy.plist]
-audit-as-crates-io = true
-notes = "This is the upstream code plus one local fix, see bug 1874167."
-
 [policy.pulse]
 audit-as-crates-io = false
 notes = "This is a first-party crate which is entirely unrelated to the crates.io package of the same name."
@@ -335,10 +327,6 @@ criteria = "safe-to-run"
 
 [[exemptions.coreaudio-sys]]
 version = "0.2.10"
-criteria = "safe-to-deploy"
-
-[[exemptions.coremidi]]
-version = "0.6.0@git:fc68464b5445caf111e41f643a2e69ccce0b4f83"
 criteria = "safe-to-deploy"
 
 [[exemptions.coremidi-sys]]
@@ -543,18 +531,8 @@ notes = "The in-gecko feature that we enable makes only pre-built bindings used,
 version = "0.2.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.lmdb-rkv-sys]]
-version = "0.11.2"
-criteria = "safe-to-deploy"
-suggest = false
-notes = "This crate is forked from another crate and not developed in-house. Given that LMDB-backed RKV is going away, we will probably never bother auditing this"
-
 [[exemptions.mach]]
 version = "0.3.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.memalloc]]
-version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.memmap2]]
@@ -627,6 +605,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.quick-error]]
 version = "1.2.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.remove_dir_all]]
+version = "0.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.replace_with]]

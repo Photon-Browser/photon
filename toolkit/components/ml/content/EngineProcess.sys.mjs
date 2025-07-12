@@ -71,7 +71,7 @@ export const DEFAULT_MODELS = Object.freeze({
   summarization: { modelId: "Xenova/distilbart-cnn-6-6", dtype: "q8" },
   translation: { modelId: "Xenova/t5-small", dtype: "q8" },
   "text2text-generation": { modelId: "Xenova/flan-t5-small", dtype: "q8" },
-  "text-generation": { modelId: "Xenova/gpt2", dtype: "q8" },
+  "text-generation": { modelId: "onnx-community/gpt2-ONNX", dtype: "q8" },
   "zero-shot-classification": {
     modelId: "Xenova/distilbert-base-uncased-mnli",
     dtype: "q8",
@@ -1073,11 +1073,10 @@ export class EngineProcess {
 }
 
 /**
- * Creates a new ML engine instance with the provided options.
+ * Creates a new `MLEngine` instance with the provided options.
  *
  * @param {object} options - Configuration options for the ML engine.
  * @param {?function(ProgressAndStatusCallbackParams):void} notificationsCallback A function to call to indicate notifications.
- * @returns {Promise<MLEngine>} - A promise that resolves to the ML engine instance.
  */
 export async function createEngine(options, notificationsCallback = null) {
   try {

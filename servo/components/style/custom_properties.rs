@@ -107,6 +107,10 @@ fn get_scrollbar_inline_size(device: &Device, url_data: &UrlExtraData) -> Variab
     VariableValue::pixels(device.scrollbar_inline_size().px(), url_data)
 }
 
+fn get_hairline(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(app_units::Au(device.app_units_per_device_pixel()).to_f32_px(), url_data)
+}
+
 static ENVIRONMENT_VARIABLES: [EnvironmentVariable; 4] = [
     make_variable!(atom!("safe-area-inset-top"), get_safearea_inset_top),
     make_variable!(atom!("safe-area-inset-bottom"), get_safearea_inset_bottom),
@@ -155,11 +159,6 @@ static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 10] = [
         MacTitlebarHeight,
         int_pixels
     ),
-    lnf_int_variable!(
-        atom!("-moz-gtk-csd-titlebar-button-spacing"),
-        TitlebarButtonSpacing,
-        int_pixels
-    ),
     make_variable!(
         atom!("-moz-gtk-csd-titlebar-radius"),
         eval_gtk_csd_titlebar_radius
@@ -194,6 +193,7 @@ static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 10] = [
         get_content_preferred_color_scheme
     ),
     make_variable!(atom!("scrollbar-inline-size"), get_scrollbar_inline_size),
+    make_variable!(atom!("hairline"), get_hairline),
 ];
 
 impl CssEnvironment {

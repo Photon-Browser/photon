@@ -66,7 +66,7 @@ const SameSiteType = {
   [Ci.nsICookie.SAMESITE_NONE]: "none",
   [Ci.nsICookie.SAMESITE_LAX]: "lax",
   [Ci.nsICookie.SAMESITE_STRICT]: "strict",
-  [Ci.nsICookie.SAMESITE_UNSET]: "none",
+  [Ci.nsICookie.SAMESITE_UNSET]: "default",
 };
 
 class StorageModule extends RootBiDiModule {
@@ -301,8 +301,9 @@ class StorageModule extends RootBiDiModule {
 
     const isPartitioned = originAttributes.partitionKey?.length > 0;
 
+    let cv;
     try {
-      Services.cookies.add(
+      cv = Services.cookies.add(
         domain,
         path === null ? "/" : path,
         name,
@@ -311,7 +312,11 @@ class StorageModule extends RootBiDiModule {
         httpOnly === null ? false : httpOnly,
         isSession,
         // The XPCOM interface requires the expiry field even for session cookies.
-        expiry === null ? MAX_COOKIE_EXPIRY : expiry,
+        // The expiry value must be passed in milliseconds and is capped at 400
+        // days.
+        expiry === null
+          ? MAX_COOKIE_EXPIRY
+          : Services.cookies.maybeCapExpiry(expiry * 1000),
         originAttributes,
         this.#getSameSitePlatformProperty(sameSite),
         schemeType,
@@ -319,6 +324,12 @@ class StorageModule extends RootBiDiModule {
       );
     } catch (e) {
       throw new lazy.error.UnableToSetCookieError(e);
+    }
+
+    if (cv.result !== Ci.nsICookieValidation.eOK) {
+      throw new lazy.error.UnableToSetCookieError(
+        `Invalid cookie: ${cv.errorString}`
+      );
     }
 
     return {
@@ -592,6 +603,10 @@ class StorageModule extends RootBiDiModule {
           deserializedValue = lazy.deserializeBytesValue(value);
           break;
 
+        case "expiry":
+          deserializedValue = value * 1000;
+          break;
+
         default:
           deserializedValue = value;
       }
@@ -790,9 +805,12 @@ class StorageModule extends RootBiDiModule {
       case "strict": {
         return Ci.nsICookie.SAMESITE_STRICT;
       }
+      case "none": {
+        return Ci.nsICookie.SAMESITE_NONE;
+      }
     }
 
-    return Ci.nsICookie.SAMESITE_NONE;
+    return Ci.nsICookie.SAMESITE_UNSET;
   }
 
   /**
@@ -888,14 +906,6 @@ class StorageModule extends RootBiDiModule {
         storedCookieValue = this.#getCookieSize(storedCookie);
       }
 
-      // Let's map any SAMESITE_UNSET to SAMESITE_NONE.
-      if (
-        fieldName === "sameSite" &&
-        storedCookieValue === Ci.nsICookie.SAMESITE_UNSET
-      ) {
-        storedCookieValue = Ci.nsICookie.SAMESITE_NONE;
-      }
-
       if (storedCookieValue !== value) {
         return false;
       }
@@ -918,7 +928,7 @@ class StorageModule extends RootBiDiModule {
         case "expiry": {
           const expiry = this.#getCookieExpiry(storedCookie);
           if (expiry !== null) {
-            cookie.expiry = expiry;
+            cookie.expiry = Math.round(expiry / 1000);
           }
           break;
         }

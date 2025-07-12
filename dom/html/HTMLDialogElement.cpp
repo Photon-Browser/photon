@@ -8,6 +8,7 @@
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/CloseWatcher.h"
 #include "mozilla/dom/CloseWatcherManager.h"
+#include "mozilla/dom/HTMLButtonElement.h"
 #include "mozilla/dom/HTMLDialogElementBinding.h"
 
 #include "nsIDOMEventListener.h"
@@ -560,37 +561,51 @@ void HTMLDialogElement::RunCancelDialogSteps() {
   // refactored when the CloseWatcher specifications settle.
   if (defaultAction) {
     Optional<nsAString> retValue;
-    retValue = &RequestCloseReturnValue();
+    if (!RequestCloseReturnValue().IsEmpty()) {
+      retValue = &RequestCloseReturnValue();
+    }
     Close(retValue);
   }
 }
 
-bool HTMLDialogElement::IsValidInvokeAction(InvokeAction aAction) const {
-  return nsGenericHTMLElement::IsValidInvokeAction(aAction) ||
-         aAction == InvokeAction::ShowModal || aAction == InvokeAction::Close;
+bool HTMLDialogElement::IsValidCommandAction(Command aCommand) const {
+  return nsGenericHTMLElement::IsValidCommandAction(aCommand) ||
+         aCommand == Command::ShowModal || aCommand == Command::Close ||
+         aCommand == Command::RequestClose;
 }
 
-bool HTMLDialogElement::HandleInvokeInternal(Element* aInvoker,
-                                             InvokeAction aAction,
-                                             ErrorResult& aRv) {
-  if (nsGenericHTMLElement::HandleInvokeInternal(aInvoker, aAction, aRv)) {
+bool HTMLDialogElement::HandleCommandInternal(Element* aSource,
+                                              Command aCommand,
+                                              ErrorResult& aRv) {
+  if (nsGenericHTMLElement::HandleCommandInternal(aSource, aCommand, aRv)) {
     return true;
   }
 
-  MOZ_ASSERT(IsValidInvokeAction(aAction));
+  MOZ_ASSERT(IsValidCommandAction(aCommand));
 
-  const bool actionMayClose =
-      aAction == InvokeAction::Auto || aAction == InvokeAction::Close;
-  const bool actionMayOpen =
-      aAction == InvokeAction::Auto || aAction == InvokeAction::ShowModal;
-
-  if (actionMayClose && Open()) {
-    Optional<nsAString> retValue;
-    Close(retValue);
+  if ((aCommand == Command::Close || aCommand == Command::RequestClose) &&
+      Open()) {
+    Optional<nsAString> retValueOpt;
+    nsString retValue;
+    if (aSource->HasAttr(nsGkAtoms::value)) {
+      if (auto* button = HTMLButtonElement::FromNodeOrNull(aSource)) {
+        button->GetValue(retValue);
+        retValueOpt = &retValue;
+      }
+    }
+    if (aCommand == Command::Close) {
+      Close(retValueOpt);
+    } else {
+      MOZ_ASSERT(aCommand == Command::RequestClose);
+      if (retValueOpt.WasPassed()) {
+        SetReturnValue(retValueOpt.Value());
+      }
+      RequestClose(retValueOpt);
+    }
     return true;
   }
 
-  if (IsInComposedDoc() && !Open() && actionMayOpen) {
+  if (IsInComposedDoc() && !Open() && aCommand == Command::ShowModal) {
     ShowModal(aRv);
     return true;
   }
@@ -656,7 +671,7 @@ void HTMLDialogElement::SetDialogCloseWatcherIfNeeded() {
   // otherwise false.
   SetCloseWatcherEnabledState();
 
-  window->EnsureCloseWatcherManager()->Add(*mCloseWatcher);
+  mCloseWatcher->AddToWindowsCloseWatcherManager();
 }
 
 // https://whatpr.org/html/10954/interactive-elements.html#dialog-setup-steps

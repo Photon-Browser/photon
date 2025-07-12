@@ -14,8 +14,11 @@ namespace mozilla::webgpu {
 GPU_IMPL_CYCLE_COLLECTION(RenderBundle, mParent)
 GPU_IMPL_JS_WRAP(RenderBundle)
 
-RenderBundle::RenderBundle(Device* const aParent, RawId aId)
-    : ChildOf(aParent), mId(aId) {
+RenderBundle::RenderBundle(Device* const aParent, RawId aId,
+                           CanvasContextArray&& aCanvasContexts)
+    : ChildOf(aParent),
+      mId(aId),
+      mUsedCanvasContexts(std::move(aCanvasContexts)) {
   // TODO: we may be running into this if we finish an encoder twice.
   MOZ_RELEASE_ASSERT(aId);
 }
@@ -33,9 +36,8 @@ void RenderBundle::Cleanup() {
     return;
   }
 
-  if (bridge->CanSend()) {
-    bridge->SendRenderBundleDrop(mId);
-  }
+  ffi::wgpu_client_drop_render_bundle(bridge->GetClient(), mId);
+
   wgpu_client_free_render_bundle_id(bridge->GetClient(), mId);
 }
 

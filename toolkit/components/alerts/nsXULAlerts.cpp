@@ -15,6 +15,7 @@
 #include "mozilla/dom/Notification.h"
 #include "nsISupportsPrimitives.h"
 #include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
 #include "nsIWindowWatcher.h"
 
 using namespace mozilla;
@@ -380,6 +381,11 @@ nsXULAlerts::CloseAlert(const nsAString& aAlertName, bool aContextClosed) {
                                    ChromeOnlyDispatch::eYes);
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP nsXULAlerts::GetHistory(nsTArray<nsString>& aResult) {
+  // XUL backend do not manage a notification history.
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP nsXULAlerts::Teardown() { return NS_OK; }

@@ -68,11 +68,13 @@
 #include "mozilla/dom/HTMLObjectElement.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/net/DocumentChannel.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsChannelClassifier.h"
 #include "nsFocusManager.h"
 #include "ReferrerInfo.h"
@@ -539,8 +541,8 @@ void nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI,
   }
 
   // See if requester is planning on using the JS API.
-  nsAutoCString uri;
-  nsresult rv = aURI->GetSpec(uri);
+  nsAutoCString prePath;
+  nsresult rv = aURI->GetPrePath(prePath);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -551,10 +553,10 @@ void nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI,
   // URLs, convert the parameters to query in order to make the video load
   // correctly as an iframe. In either case, warn about it in the
   // developer console.
-  int32_t ampIndex = uri.FindChar('&', 0);
+  int32_t ampIndex = path.FindChar('&', 0);
   bool replaceQuery = false;
   if (ampIndex != -1) {
-    int32_t qmIndex = uri.FindChar('?', 0);
+    int32_t qmIndex = path.FindChar('?', 0);
     if (qmIndex == -1 || qmIndex > ampIndex) {
       replaceQuery = true;
     }
@@ -570,19 +572,21 @@ void nsObjectLoadingContent::MaybeRewriteYoutubeEmbed(nsIURI* aURI,
     return;
   }
 
-  nsAutoString utf16OldURI = NS_ConvertUTF8toUTF16(uri);
+  NS_ConvertUTF8toUTF16 utf16OldURI(prePath);
+  AppendUTF8toUTF16(path, utf16OldURI);
   // If we need to convert the URL, it means an ampersand comes first.
   // Use the index we found earlier.
   if (replaceQuery) {
     // Replace question marks with ampersands.
-    uri.ReplaceChar('?', '&');
+    path.ReplaceChar('?', '&');
     // Replace the first ampersand with a question mark.
-    uri.SetCharAt('?', ampIndex);
+    path.SetCharAt('?', ampIndex);
   }
   // Switch out video access url formats, which should possibly allow HTML5
   // video loading.
-  uri.ReplaceSubstring("/v/"_ns, "/embed/"_ns);
-  nsAutoString utf16URI = NS_ConvertUTF8toUTF16(uri);
+  path.ReplaceSubstring("/v/"_ns, "/embed/"_ns);
+  NS_ConvertUTF8toUTF16 utf16URI(prePath);
+  AppendUTF8toUTF16(path, utf16URI);
   rv = nsContentUtils::NewURIWithDocumentCharset(aRewrittenURI, utf16URI, doc,
                                                  aBaseURI);
   if (NS_FAILED(rv)) {
@@ -734,11 +738,12 @@ nsObjectLoadingContent::UpdateObjectParameters() {
   /// Codebase
   ///
 
-  nsAutoString codebaseStr;
   nsIURI* docBaseURI = el->GetBaseURI();
-  el->GetAttr(nsGkAtoms::codebase, codebaseStr);
 
-  if (!codebaseStr.IsEmpty()) {
+  nsAutoString codebaseStr;
+  el->GetAttr(nsGkAtoms::codebase, codebaseStr);
+  if (StaticPrefs::dom_object_embed_codebase_enabled() &&
+      !codebaseStr.IsEmpty()) {
     rv = nsContentUtils::NewURIWithDocumentCharset(
         getter_AddRefs(newBaseURI), codebaseStr, el->OwnerDoc(), docBaseURI);
     if (NS_FAILED(rv)) {
@@ -1174,27 +1179,28 @@ nsresult nsObjectLoadingContent::LoadObject(bool aNotify, bool aForceLoad,
     }
   }
 
-  // Don't allow view-source scheme.
-  // view-source is the only scheme to which this applies at the moment due to
-  // potential timing attacks to read data from cross-origin documents. If this
-  // widens we should add a protocol flag for whether the scheme is only allowed
-  // in top and use something like nsNetUtil::NS_URIChainHasFlags.
-  if (mType != ObjectType::Fallback) {
-    nsCOMPtr<nsIURI> tempURI = mURI;
-    nsCOMPtr<nsINestedURI> nestedURI = do_QueryInterface(tempURI);
-    while (nestedURI) {
-      // view-source should always be an nsINestedURI, loop and check the
-      // scheme on this and all inner URIs that are also nested URIs.
-      if (tempURI->SchemeIs("view-source")) {
-        LOG(("OBJLC [%p]: Blocking as effective URI has view-source scheme",
-             this));
-        mType = ObjectType::Fallback;
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-object-element
+  // requires that `embed` and `object` go through `Fetch` with mode=navigate,
+  // see 1.3.5. This will in https://fetch.spec.whatwg.org/#fetching plumb us
+  // through to https://fetch.spec.whatwg.org/#concept-main-fetch where in step
+  // 12 a switch is performed. Since `object` and `embed` have mode=navigate the
+  // result of https://fetch.spec.whatwg.org/#concept-scheme-fetch will decide
+  // if main fetch proceeds. We short-circuit that scheme-fetch here, inspecting
+  // if the scheme of `mURI` is one that would return a network error. The
+  // following schemes are allowed through in scheme fetch:
+  // "about", "blob", "data", "file", "http", "https".
+  //
+  // Some accessibility tests use our internal "chrome" scheme.
+  if (mType != ObjectType::Fallback && mURI) {
+    ObjectType type = ObjectType::Fallback;
+    for (const auto& candidate :
+         {"about", "blob", "chrome", "data", "file", "http", "https"}) {
+      if (mURI->SchemeIs(candidate)) {
+        type = mType;
         break;
       }
-
-      nestedURI->GetInnerURI(getter_AddRefs(tempURI));
-      nestedURI = do_QueryInterface(tempURI);
     }
+    mType = type;
   }
 
   // Items resolved as Image/Document are not candidates for content blocking,
@@ -1427,17 +1433,19 @@ nsresult nsObjectLoadingContent::OpenChannel() {
                           nsIRequest::LOAD_HTML_OBJECT_DATA;
   uint32_t sandboxFlags = doc->GetSandboxFlags();
 
-  // For object loads we store the CSP that potentially needs to
+  // For object loads we store the policyContainer that potentially needs to
   // be inherited, e.g. in case we are loading an opaque origin
   // like a data: URI. The actual inheritance check happens within
-  // Document::InitCSP(). Please create an actual copy of the CSP
-  // (do not share the same reference) otherwise a Meta CSP of an
-  // opaque origin will incorrectly be propagated to the embedding
-  // document.
-  RefPtr<nsCSPContext> cspToInherit;
-  if (nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp()) {
-    cspToInherit = new nsCSPContext();
-    cspToInherit->InitFromOther(static_cast<nsCSPContext*>(csp.get()));
+  // Document::InitPolicyContainer(). Please create an actual copy of the
+  // policyContainer (do not share the same reference) otherwise modifications
+  // done (such as the meta CSP of the new doc) in an opaque origin will
+  // incorrectly be propagated to the embedding document.
+  RefPtr<PolicyContainer> policyContainerToInherit;
+  if (nsCOMPtr<nsIPolicyContainer> policyContainer =
+          doc->GetPolicyContainer()) {
+    policyContainerToInherit = new PolicyContainer();
+    policyContainerToInherit->InitFromOther(
+        PolicyContainer::Cast(policyContainer.get()));
   }
 
   // --- Create LoadInfo
@@ -1455,8 +1463,15 @@ nsresult nsObjectLoadingContent::OpenChannel() {
     loadInfo->SetPrincipalToInherit(el->NodePrincipal());
   }
 
-  if (cspToInherit) {
-    loadInfo->SetCSPToInherit(cspToInherit);
+  // For object loads we store the policyContainer that potentially needs to
+  // be inherited, e.g. in case we are loading an opaque origin
+  // like a data: URI. The actual inheritance check happens within
+  // Document::InitPolicyContainer(). Please create an actual copy of the
+  // policyContainer (do not share the same reference) otherwise modifications
+  // done (such as the meta CSP of the new doc) in an opaque origin will
+  // incorrectly be propagated to the embedding document.
+  if (policyContainerToInherit) {
+    loadInfo->SetPolicyContainerToInherit(policyContainerToInherit);
   }
 
   if (DocumentChannel::CanUseDocumentChannel(mURI) &&
@@ -1466,8 +1481,8 @@ nsresult nsObjectLoadingContent::OpenChannel() {
     RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(mURI);
     loadState->SetPrincipalToInherit(el->NodePrincipal());
     loadState->SetTriggeringPrincipal(loadInfo->TriggeringPrincipal());
-    if (cspToInherit) {
-      loadState->SetCsp(cspToInherit);
+    if (policyContainerToInherit) {
+      loadState->SetPolicyContainer(policyContainerToInherit);
     }
     loadState->SetTriggeringSandboxFlags(sandboxFlags);
 
@@ -1505,36 +1520,17 @@ nsresult nsObjectLoadingContent::OpenChannel() {
                                loadFlags,             // aLoadFlags
                                nullptr);              // aIoService
     NS_ENSURE_SUCCESS(rv, rv);
-
-    if (inheritAttrs) {
-      nsCOMPtr<nsILoadInfo> loadinfo = chan->LoadInfo();
-      loadinfo->SetPrincipalToInherit(el->NodePrincipal());
-    }
-
-    // For object loads we store the CSP that potentially needs to
-    // be inherited, e.g. in case we are loading an opaque origin
-    // like a data: URI. The actual inheritance check happens within
-    // Document::InitCSP(). Please create an actual copy of the CSP
-    // (do not share the same reference) otherwise a Meta CSP of an
-    // opaque origin will incorrectly be propagated to the embedding
-    // document.
-    if (cspToInherit) {
-      nsCOMPtr<nsILoadInfo> loadinfo = chan->LoadInfo();
-      static_cast<LoadInfo*>(loadinfo.get())->SetCSPToInherit(cspToInherit);
-    }
   };
 
   // Referrer
-  nsCOMPtr<nsIHttpChannel> httpChan(do_QueryInterface(chan));
-  if (httpChan) {
+  if (nsCOMPtr<nsIHttpChannel> httpChan = do_QueryInterface(chan)) {
     auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
 
     rv = httpChan->SetReferrerInfoWithoutClone(referrerInfo);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     // Set the initiator type
-    nsCOMPtr<nsITimedChannel> timedChannel(do_QueryInterface(httpChan));
-    if (timedChannel) {
+    if (nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(httpChan)) {
       timedChannel->SetInitiatorType(el->LocalName());
     }
 
@@ -1542,12 +1538,6 @@ nsresult nsObjectLoadingContent::OpenChannel() {
     if (cos && UserActivation::IsHandlingUserInput()) {
       cos->AddClassFlags(nsIClassOfService::UrgentStart);
     }
-  }
-
-  nsCOMPtr<nsIScriptChannel> scriptChannel = do_QueryInterface(chan);
-  if (scriptChannel) {
-    // Allow execution against our context if the principals match
-    scriptChannel->SetExecutionPolicy(nsIScriptChannel::EXECUTE_NORMAL);
   }
 
   // AsyncOpen can fail if a file does not exist.

@@ -1189,6 +1189,7 @@ void BaseCompiler::patchHotnessCheck(CodeOffset offset, uint32_t step) {
   // Zero makes the hotness check pointless.  Above 127 is not representable in
   // the short-form Intel encoding.
   MOZ_RELEASE_ASSERT(step > 0 && step <= 127);
+  MOZ_ASSERT(!masm.oom());
   masm.patchSub32FromMemAndBranchIfNegative(offset, Imm32(step));
 }
 
@@ -4309,6 +4310,11 @@ bool BaseCompiler::emitEnd() {
           size_t loopBytecodeSize =
               iter_.lastOpcodeOffset() - controlItem().loopBytecodeStart;
           uint32_t step = BlockSizeToDownwardsStep(loopBytecodeSize);
+          // Don't try to patch the check if we've OOM'd, since the check might
+          // not actually exist.
+          if (masm.oom()) {
+            return false;
+          }
           patchHotnessCheck(controlItem().offsetOfCtrDec, step);
         }
       }
@@ -5388,10 +5394,27 @@ bool BaseCompiler::emitCall() {
     return true;
   }
 
+  bool import = codeMeta_.funcIsImport(funcIndex);
+
+  if (import) {
+    BuiltinModuleFuncId knownFuncImport = codeMeta_.knownFuncImport(funcIndex);
+    if (knownFuncImport != BuiltinModuleFuncId::None) {
+      const BuiltinModuleFunc& builtinModuleFunc =
+          BuiltinModuleFuncs::getFromId(knownFuncImport);
+      if (builtinModuleFunc.usesMemory()) {
+        // The final parameter of an builtinModuleFunc is implicitly the heap
+        // base
+        pushHeapBase(0);
+      }
+
+      // Call the builtinModuleFunc
+      return emitInstanceCall(*builtinModuleFunc.sig());
+    }
+  }
+
   sync();
 
   const FuncType& funcType = codeMeta_.getFuncType(funcIndex);
-  bool import = codeMeta_.funcIsImport(funcIndex);
 
   uint32_t numArgs = funcType.args().length();
   size_t stackArgBytes = stackConsumed(numArgs);
@@ -10531,14 +10554,8 @@ bool BaseCompiler::emitBody() {
       case uint16_t(Op::Rethrow):
         CHECK_NEXT(emitRethrow());
       case uint16_t(Op::ThrowRef):
-        if (!codeMeta_.exnrefEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitThrowRef());
       case uint16_t(Op::TryTable):
-        if (!codeMeta_.exnrefEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitTryTable());
       case uint16_t(Op::Br):
         CHECK_NEXT(emitBr());

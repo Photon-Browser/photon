@@ -60,6 +60,7 @@ dx12 = [
     "dep:libloading",
     "dep:log",
     "dep:ordered-float",
+    "dep:parking_lot",
     "dep:profiling",
     "dep:range-alloc",
     "dep:windows-core",
@@ -82,7 +83,6 @@ gles = [
     "naga/glsl-out",
     "dep:arrayvec",
     "dep:bytemuck",
-    "dep:cfg-if",
     "dep:glow",
     "dep:glutin_wgl_sys",
     "dep:hashbrown",
@@ -92,9 +92,11 @@ gles = [
     "dep:log",
     "dep:ndk-sys",
     "dep:objc",
+    "dep:parking_lot",
     "dep:profiling",
     "dep:wasm-bindgen",
     "dep:web-sys",
+    "wgpu-types/web",
     "windows/Win32_Graphics_OpenGL",
     "windows/Win32_Graphics_Gdi",
     "windows/Win32_System_LibraryLoader",
@@ -111,15 +113,20 @@ metal = [
     "dep:log",
     "dep:metal",
     "dep:objc",
+    "dep:parking_lot",
     "dep:profiling",
 ]
-portable-atomic = ["dep:portable-atomic"]
+portable-atomic = [
+    "dep:portable-atomic",
+    "dep:portable-atomic-util",
+]
 renderdoc = [
     "dep:libloading",
     "dep:renderdoc-sys",
     "dep:log",
 ]
 static-dxc = ["dep:mach-dxcompiler-rs"]
+validation_canary = ["dep:parking_lot"]
 vulkan = [
     "naga/spv-out",
     "dep:android_system_properties",
@@ -133,6 +140,7 @@ vulkan = [
     "dep:libloading",
     "dep:log",
     "dep:ordered-float",
+    "dep:parking_lot",
     "dep:profiling",
     "dep:smallvec",
     "dep:windows",
@@ -175,7 +183,6 @@ optional = true
 
 [dependencies.cfg-if]
 version = "1"
-optional = true
 
 [dependencies.glow]
 version = "0.16"
@@ -198,11 +205,6 @@ optional = true
 version = "25.0.0"
 path = "../naga"
 
-[dependencies.once_cell]
-version = "1.21"
-optional = true
-default-features = false
-
 [dependencies.ordered-float]
 version = ">=3, <=5.0"
 optional = true
@@ -210,6 +212,7 @@ default-features = false
 
 [dependencies.parking_lot]
 version = "0.12.3"
+optional = true
 
 [dependencies.profiling]
 version = "1"
@@ -232,9 +235,7 @@ default-features = false
 [dependencies.wgpu-types]
 version = "25.0.0"
 path = "../wgpu-types"
-
-[dev-dependencies.cfg-if]
-version = "1"
+default-features = false
 
 [dev-dependencies.env_logger]
 version = "0.11"
@@ -283,6 +284,10 @@ default-features = false
 version = "0.1.4"
 optional = true
 default-features = false
+
+[target.'cfg(any(not(target_has_atomic = "64"), not(target_has_atomic = "ptr")))'.dependencies.portable-atomic]
+version = "1.8"
+optional = true
 
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "visionos")))'.dev-dependencies.glutin]
 version = "0.31"
@@ -345,8 +350,9 @@ version = "1.9"
 features = ["union"]
 optional = true
 
-[target.'cfg(not(target_has_atomic = "64"))'.dependencies.portable-atomic]
-version = "1.2"
+[target.'cfg(not(target_has_atomic = "ptr"))'.dependencies.portable-atomic-util]
+version = "0.2.4"
+features = ["alloc"]
 optional = true
 
 [target.'cfg(target_os = "android")'.dependencies.android_system_properties]

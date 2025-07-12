@@ -718,65 +718,29 @@ export class FeatureCallout {
         );
         continue;
       }
-      let scope = this.doc.documentElement;
-      // %triggerTab% is a special token that gets replaced with :scope, and
-      // instructs us to look for the anchor element within the trigger tab.
-      if (this.browser && selector.includes("%triggerTab%")) {
-        let triggerTab = this.browser.ownerGlobal.gBrowser?.getTabForBrowser(
-          this.browser
-        );
-        if (triggerTab) {
-          selector = selector.replace("%triggerTab%", ":scope");
-          scope = triggerTab;
-        } else {
-          continue;
-        }
+
+      const resolvedSelectorAndScope = this._resolveSelectorAndScope(selector);
+      // Attempt to resolve the selector into a usable DOM context.
+      // Handles special tokens like %triggerTab%, shadow DOM traversal (::%shadow%), etc.
+      // If resolution fails (e.g., element is not visible or overflows), returns null.
+      // Applies to both plain selectors and tokenized ones.
+      if (!resolvedSelectorAndScope) {
+        continue;
       }
-      if (selector.includes("::%shadow%")) {
-        let parts = selector.split("::%shadow%");
-        for (let i = 0; i < parts.length; i++) {
-          selector = parts[i].trim();
-          if (i === parts.length - 1) {
-            break;
-          }
-          let el = scope.querySelector(selector);
-          if (!el) {
-            break;
-          }
-          if (el.shadowRoot) {
-            scope = el.shadowRoot;
-          }
-        }
-      }
-      let element = scope.querySelector(selector);
+      const { scope, selector: resolvedSelector } = resolvedSelectorAndScope;
+      let element = scope.querySelector(resolvedSelector);
+
       // The element may not be a child of the scope, but the scope itself. For
       // example, if we're anchoring directly to the trigger tab, our selector
       // might look like `%triggerTab%[visuallyselected]`. In this case,
       // querySelector() will return nothing, but matches() will return true.
-      if (!element && scope.matches?.(selector)) {
+      if (!element && scope.matches?.(resolvedSelector)) {
         element = scope;
       }
       if (!element) {
         continue; // Element doesn't exist at all.
       }
-      const isVisible = () => {
-        if (
-          this.context === "chrome" &&
-          typeof this.win.isElementVisible === "function"
-        ) {
-          // In chrome windows, we can use the isElementVisible function to
-          // check that the element has non-zero width and height. If it was
-          // hidden, it would most likely have zero width and/or height.
-          if (!this.win.isElementVisible(element)) {
-            return false;
-          }
-        }
-        // CSS rules like visibility: hidden or display: none. These result in
-        // element being invisible and unclickable.
-        const style = this.win.getComputedStyle(element);
-        return style?.visibility === "visible" && style?.display !== "none";
-      };
-      if (!isVisible()) {
+      if (!this._isElementVisible(element)) {
         continue;
       }
       if (
@@ -801,6 +765,148 @@ export class FeatureCallout {
       return { ...anchor, element };
     }
     return null;
+  }
+
+  _isElementVisible(el) {
+    if (
+      this.context === "chrome" &&
+      typeof this.win.isElementVisible === "function" &&
+      !this.win.isElementVisible(el)
+    ) {
+      return false;
+    }
+
+    const style = this.win.getComputedStyle(el);
+    return style?.visibility === "visible" && style?.display !== "none";
+  }
+
+  /**
+   * Resolves selector tokens into a usable scope and selector.
+   *
+   * The selector string may contain custom tokens that are substituted and resolved
+   * against the appropriate DOM context.
+   *
+   * Supported custom tokens:
+   * - %triggerTab%: The <tab> element associated with the current browser.
+   * - %triggeredTabBookmark%: Bookmark item in the toolbar matching the current tab's URL or label.
+   * - ::%shadow%: Traverses nested shadow DOM boundaries.
+   *
+   * @param {string} selector
+   * @returns {{scope: Element, selector: string} | null}
+   */
+  _resolveSelectorAndScope(selector) {
+    let scope = this.doc.documentElement;
+    let normalizedSelector = selector;
+
+    // %triggerTab%
+    if (this.browser && normalizedSelector.includes("%triggerTab%")) {
+      const triggerTab = this.browser.ownerGlobal.gBrowser?.getTabForBrowser(
+        this.browser
+      );
+      if (!triggerTab) {
+        lazy.log.debug(
+          `In ${this.location}: Failed to resolve %triggerTab% in selector: ${selector}`
+        );
+        return null;
+      }
+      scope = triggerTab;
+      normalizedSelector = normalizedSelector.replace("%triggerTab%", ":scope");
+    }
+
+    // %triggeredTabBookmark%
+    if (normalizedSelector.includes("%triggeredTabBookmark%")) {
+      const gBrowser = this.browser?.ownerGlobal?.gBrowser;
+      const tab = gBrowser?.getTabForBrowser(this.browser);
+      const url = this.browser?.currentURI?.spec;
+      const label = tab?.label;
+      const toolbar = this.doc.getElementById("PersonalToolbar");
+      const scrollbox = this.doc.getElementById("PlacesToolbarItems");
+
+      // Early return if the toolbar is collapsed or missing context
+      if (!toolbar || toolbar.collapsed || !scrollbox || (!url && !label)) {
+        lazy.log.debug(
+          `In ${this.location}: Bookmarks toolbar is collapsed: ${selector}`
+        );
+        return null;
+      }
+
+      // If a selector prefix is provided before the %triggeredTabBookmark% token,
+      // resolve it as the root scope. If there's a selector suffix after the token,
+      // it is appended to the resolved element using :scope as the base,
+      // e.g. `:root %triggeredTabBookmark% > image` becomes `:scope > image`.
+      const [preTokenSelector, postTokenSelector = ""] =
+        normalizedSelector.split("%triggeredTabBookmark%");
+      const rootScope = preTokenSelector.trim()
+        ? this.doc.querySelector(preTokenSelector.trim())
+        : this.doc;
+
+      const match = [
+        ...rootScope.querySelectorAll("#PlacesToolbarItems .bookmark-item"),
+      ].find(el => {
+        const node = el._placesNode;
+        return (
+          node &&
+          (node.uri === url ||
+            [this.browser.contentTitle, url].includes(node.title) ||
+            el.getAttribute("label") === label)
+        );
+      });
+
+      if (!match) {
+        lazy.log.debug(
+          `In ${this.location}: No bookmark matched. Tab URL: ${url}, Tab Title: ${this.browser.contentTitle}, History Title: ${this._cachedHistoryTitle?.title}`
+        );
+        return null;
+      }
+
+      if (!this._isElementVisible(match)) {
+        lazy.log.debug(
+          `In ${this.location}: Bookmark item is not visible or overflowed: ${selector}`
+        );
+        return null;
+      }
+
+      scope = match;
+      normalizedSelector = `:scope${postTokenSelector}`;
+    }
+
+    // ::%shadow%
+    if (normalizedSelector.includes("::%shadow%")) {
+      let parts = normalizedSelector.split("::%shadow%");
+      for (let i = 0; i < parts.length; i++) {
+        normalizedSelector = parts[i].trim();
+        if (i === parts.length - 1) {
+          break;
+        }
+        let el = scope.querySelector(normalizedSelector);
+        if (!el) {
+          break;
+        }
+        if (el.shadowRoot) {
+          scope = el.shadowRoot;
+        }
+      }
+    }
+
+    // Attempts to resolve the final element using the normalized selector and
+    // scope. If querySelector fails (e.g. when the selector is ":scope"), fall
+    // back to checking whether the scope itself matches the selector. This is
+    // necessary for cases like "%triggeredTabBookmark%" or "%triggerTab%",
+    // where the target element is the scope.
+    let element = scope.querySelector(normalizedSelector);
+    if (!element && scope.matches?.(normalizedSelector)) {
+      element = scope;
+    }
+    if (!element || !this._isElementVisible(element)) {
+      lazy.log.debug(
+        `In ${this.location}: Selector failed to resolve or is not visible: ${normalizedSelector}`
+      );
+      return null;
+    }
+
+    // Use the matched element as the anchor by returning it as scope,
+    // and ":scope" as the selector so it matches itself in _getAnchor().
+    return { scope: element, selector: ":scope" };
   }
 
   /** @see PopupAttachmentPoint */
@@ -2153,9 +2259,9 @@ export class FeatureCallout {
     "link-color-hover",
     "link-color-active",
     "icon-success-color",
-    "dismiss-button-bg",
-    "dismiss-button-bg-hover",
-    "dismiss-button-bg-active",
+    "dismiss-button-background",
+    "dismiss-button-background-hover",
+    "dismiss-button-background-active",
   ];
 
   /** @type {Object<String, FeatureCalloutTheme>} */
@@ -2203,11 +2309,11 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
-        "dismiss-button-bg":
+        "dismiss-button-background":
           "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
-        "dismiss-button-bg-hover":
+        "dismiss-button-background-hover":
           "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
-        "dismiss-button-bg-active":
+        "dismiss-button-background-active":
           "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
       },
       dark: {
@@ -2231,11 +2337,11 @@ export class FeatureCallout {
         "button-background-active": "ButtonText",
         "button-color-active": "ButtonFace",
         "button-border-active": "ButtonText",
-        "dismiss-button-bg": "-moz-dialog",
-        "dismiss-button-bg-hover":
-          "color-mix(in srgb, currentColor 14%, -moz-dialog)",
-        "dismiss-button-bg-active":
-          "color-mix(in srgb, currentColor 21%, -moz-dialog)",
+        "dismiss-button-background": "-moz-dialog",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, SelectedItem)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, SelectedItem)",
       },
     },
     // PDF.js colors are from toolkit/components/pdfjs/content/web/viewer.css
@@ -2259,9 +2365,10 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
-        "dismiss-button-bg": "#FFF",
-        "dismiss-button-bg-hover": "color-mix(in srgb, currentColor 14%, #FFF)",
-        "dismiss-button-bg-active":
+        "dismiss-button-background": "#FFF",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, #FFF)",
+        "dismiss-button-background-active":
           "color-mix(in srgb, currentColor 21%, #FFF)",
       },
       dark: {
@@ -2274,10 +2381,10 @@ export class FeatureCallout {
         "button-color-hover": "#F9F9FA",
         "button-background-active": "rgb(102, 102, 103)",
         "button-color-active": "#F9F9FA",
-        "dismiss-button-bg": "#1C1B22",
-        "dismiss-button-bg-hover":
+        "dismiss-button-background": "#1C1B22",
+        "dismiss-button-background-hover":
           "color-mix(in srgb, currentColor 14%, #1C1B22)",
-        "dismiss-button-bg-active":
+        "dismiss-button-background-active":
           "color-mix(in srgb, currentColor 21%, #1C1B22)",
       },
       hcm: {
@@ -2294,11 +2401,11 @@ export class FeatureCallout {
         "button-background-active": "Highlight",
         "button-color-active": "CanvasText",
         "button-border-active": "Highlight",
-        "dismiss-button-bg": "-moz-dialog",
-        "dismiss-button-bg-hover":
-          "color-mix(in srgb, currentColor 14%, -moz-dialog)",
-        "dismiss-button-bg-active":
-          "color-mix(in srgb, currentColor 21%, -moz-dialog)",
+        "dismiss-button-background": "-moz-dialog",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, SelectedItem)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, SelectedItem)",
       },
     },
     newtab: {
@@ -2324,11 +2431,11 @@ export class FeatureCallout {
         "link-color-active": "color-mix(in srgb, rgb(0, 97, 224) 80%, #000)",
         "link-color-visited": "rgb(0, 97, 224)",
         "icon-success-color": "#2AC3A2",
-        "dismiss-button-bg":
+        "dismiss-button-background":
           "var(--newtab-background-color, #F9F9FB) linear-gradient(var(--newtab-background-color-secondary, #FFF), var(--newtab-background-color-secondary, #FFF))",
-        "dismiss-button-bg-hover":
+        "dismiss-button-background-hover":
           "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)))",
-        "dismiss-button-bg-active":
+        "dismiss-button-background-active":
           "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)))",
       },
       dark: {
@@ -2345,11 +2452,11 @@ export class FeatureCallout {
         "link-color-active": "color-mix(in srgb, rgb(0, 221, 255) 60%, #FFF)",
         "link-color-visited": "rgb(0, 221, 255)",
         "icon-success-color": "#54FFBD",
-        "dismiss-button-bg":
+        "dismiss-button-background":
           "var(--newtab-background-color, #2B2A33) linear-gradient(var(--newtab-background-color-secondary, #42414D), var(--newtab-background-color-secondary, #42414D))",
-        "dismiss-button-bg-hover":
+        "dismiss-button-background-hover":
           "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)))",
-        "dismiss-button-bg-active":
+        "dismiss-button-background-active":
           "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D)))",
       },
       hcm: {
@@ -2370,11 +2477,11 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
-        "dismiss-button-bg": "-moz-dialog",
-        "dismiss-button-bg-hover":
-          "color-mix(in srgb, currentColor 14%, -moz-dialog)",
-        "dismiss-button-bg-active":
-          "color-mix(in srgb, currentColor 21%, -moz-dialog)",
+        "dismiss-button-background": "-moz-dialog",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, SelectedItem)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, SelectedItem)",
       },
     },
     // These colors are intended to inherit the user's theme properties from the
@@ -2435,20 +2542,20 @@ export class FeatureCallout {
         "link-color-visited": "VisitedText",
         "icon-success-color": "var(--attention-dot-color)",
         // Dismiss Button
-        "dismiss-button-bg":
+        "dismiss-button-background":
           "Menu linear-gradient(var(--arrowpanel-background), var(--arrowpanel-background))",
-        "dismiss-button-bg-hover":
+        "dismiss-button-background-hover":
           "Menu linear-gradient(color-mix(in srgb, currentColor 14%, var(--arrowpanel-background)))",
-        "dismiss-button-bg-active":
+        "dismiss-button-background-active":
           "Menu linear-gradient(color-mix(in srgb, currentColor 21%, var(--arrowpanel-background)))",
       },
       hcm: {
         background: "var(--arrowpanel-background)",
-        "dismiss-button-bg": "var(--arrowpanel-background)",
-        "dismiss-button-bg-hover":
-          "color-mix(in srgb, currentColor 14%, var(--arrowpanel-background))",
-        "dismiss-button-bg-active":
-          "color-mix(in srgb, currentColor 21%, var(--arrowpanel-background))",
+        "dismiss-button-background": "var(--arrowpanel-background)",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, SelectedItem)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, SelectedItem)",
       },
     },
   };

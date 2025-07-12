@@ -9,6 +9,7 @@ import { connect } from "react-redux";
 import { IS_NEWTAB } from "content-src/lib/constants";
 import { Logo } from "content-src/components/Logo/Logo";
 import React from "react";
+import { TrendingSearches } from "../DiscoveryStreamComponents/TrendingSearches/TrendingSearches";
 
 export class _Search extends React.PureComponent {
   constructor(props) {
@@ -99,21 +100,13 @@ export class _Search extends React.PureComponent {
       // (See github ticket #2348 for more details)
       const healthReportKey = IS_NEWTAB ? "newtab" : "abouthome";
 
-      // The "searchSource" needs to be "newtab" or "homepage" and is sent with
-      // the search data and acts as context for the search request (See
-      // nsISearchEngine.getSubmission). It is necessary so that search engine
-      // plugins can correctly atribute referrals. (See github ticket #3321 for
-      // more details)
-      const searchSource = IS_NEWTAB ? "newtab" : "homepage";
-
       // gContentSearchController needs to exist as a global so that tests for
       // the existing about:home can find it; and so it allows these tests to pass.
       // In the future, when activity stream is default about:home, this can be renamed
       window.gContentSearchController = new ContentSearchUIController(
         input,
         input.parentNode,
-        healthReportKey,
-        searchSource
+        healthReportKey
       );
       addEventListener("ContentSearchClient", this);
     } else {
@@ -148,55 +141,72 @@ export class _Search extends React.PureComponent {
     ]
       .filter(v => v)
       .join(" ");
+    const prefs = this.props.Prefs.values;
+
+    const trendingSearchEnabled =
+      prefs["trendingSearch.enabled"] &&
+      prefs["system.trendingSearch.enabled"] &&
+      prefs["trendingSearch.defaultSearchEngine"]?.toLowerCase() === "google";
+
+    const trendingSearchVariant =
+      this.props.Prefs.values["trendingSearch.variant"];
 
     return (
-      <div className={wrapperClassName}>
-        {this.props.showLogo && <Logo />}
-        {!this.props.handoffEnabled && (
-          <div className="search-inner-wrapper no-handoff">
-            <input
-              id="newtab-search-text"
-              data-l10n-id="newtab-search-box-input"
-              maxLength="256"
-              ref={this.onInputMount}
-              type="search"
-            />
-            <button
-              id="searchSubmit"
-              className="search-button"
-              data-l10n-id="newtab-search-box-search-button"
-              onClick={this.onSearchClick}
-            />
-          </div>
-        )}
-        {this.props.handoffEnabled && (
-          <div className="search-inner-wrapper">
-            <button
-              className="search-handoff-button"
-              ref={this.onSearchHandoffButtonMount}
-              onClick={this.onSearchHandoffClick}
-              tabIndex="-1"
-            >
-              <div className="fake-textbox" />
+      <>
+        <div className={wrapperClassName}>
+          {this.props.showLogo && <Logo />}
+          {!this.props.handoffEnabled && (
+            <div className="search-inner-wrapper no-handoff">
               <input
+                id="newtab-search-text"
+                data-l10n-id="newtab-search-box-input"
+                maxLength="256"
+                ref={this.onInputMount}
                 type="search"
-                className="fake-editable"
+              />
+              <button
+                id="searchSubmit"
+                className="search-button"
+                data-l10n-id="newtab-search-box-search-button"
+                onClick={this.onSearchClick}
+              />
+              {trendingSearchEnabled &&
+                (trendingSearchVariant === "a" ||
+                  trendingSearchVariant === "c") && <TrendingSearches />}
+            </div>
+          )}
+          {this.props.handoffEnabled && (
+            <div className="search-inner-wrapper">
+              <button
+                className="search-handoff-button"
+                ref={this.onSearchHandoffButtonMount}
+                onClick={this.onSearchHandoffClick}
                 tabIndex="-1"
-                aria-hidden="true"
-                onDrop={this.onSearchHandoffDrop}
-                onPaste={this.onSearchHandoffPaste}
-                ref={this.onInputMountHandoff}
-              />
-              <div
-                className="fake-caret"
-                ref={el => {
-                  this.fakeCaret = el;
-                }}
-              />
-            </button>
-          </div>
-        )}
-      </div>
+              >
+                <div className="fake-textbox" />
+                <input
+                  type="search"
+                  className="fake-editable"
+                  tabIndex="-1"
+                  aria-hidden="true"
+                  onDrop={this.onSearchHandoffDrop}
+                  onPaste={this.onSearchHandoffPaste}
+                  ref={this.onInputMountHandoff}
+                />
+                <div
+                  className="fake-caret"
+                  ref={el => {
+                    this.fakeCaret = el;
+                  }}
+                />
+              </button>
+              {trendingSearchEnabled &&
+                (trendingSearchVariant === "a" ||
+                  trendingSearchVariant === "c") && <TrendingSearches />}
+            </div>
+          )}
+        </div>
+      </>
     );
   }
 }

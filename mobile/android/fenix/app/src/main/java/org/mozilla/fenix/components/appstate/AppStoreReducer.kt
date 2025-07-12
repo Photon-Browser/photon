@@ -20,6 +20,7 @@ import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryGroup
 import org.mozilla.fenix.messaging.state.MessagingReducer
+import org.mozilla.fenix.reviewprompt.ReviewPromptReducer
 import org.mozilla.fenix.share.ShareActionReducer
 
 /**
@@ -63,7 +64,7 @@ internal object AppStoreReducer {
             state.copy(expandedCollections = newExpandedCollection)
         }
         is AppAction.CollectionsChange -> state.copy(collections = action.collections)
-        is AppAction.ModeChange -> state.copy(mode = action.mode)
+        is AppAction.BrowsingModeManagerModeChanged -> state.copy(mode = action.mode)
         is AppAction.OrientationChange -> state.copy(orientation = action.orientation)
         is AppAction.TopSitesChange -> state.copy(topSites = action.topSites)
         is AppAction.RemoveCollectionsPlaceholder -> {
@@ -150,7 +151,20 @@ internal object AppStoreReducer {
             wasLastTabClosedPrivate = action.private,
         )
 
-        is AppAction.UpdateSearchDialogVisibility -> state.copy(isSearchDialogVisible = action.isVisible)
+        is AppAction.UpdateSearchBeingActiveState -> state.copy(
+            isSearchActive = action.isSearchActive,
+            selectedSearchEngine = when (action.isSearchActive) {
+                true -> state.selectedSearchEngine
+                false -> null
+            },
+        )
+
+        is AppAction.SearchEngineSelected -> state.copy(
+            selectedSearchEngine = SelectedSearchEngine(
+                shortcutSearchEngine = action.searchEngine,
+                isUserSelected = action.isUserSelected,
+            ),
+        )
 
         is AppAction.TranslationsAction.TranslationStarted -> state.copy(
             snackbarState = SnackbarState.TranslationInProgress(sessionId = action.sessionId),
@@ -244,6 +258,8 @@ internal object AppStoreReducer {
         )
 
         is AppAction.PrivateBrowsingLockAction -> PrivateBrowsingLockReducer.reduce(state, action)
+
+        is AppAction.ReviewPromptAction -> ReviewPromptReducer.reduce(state, action)
     }
 }
 

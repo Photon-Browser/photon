@@ -13,6 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
+  GenAI: "resource:///modules/GenAI.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
@@ -164,7 +165,6 @@ export const SpecialMessageActions = {
           [
             "browser.newtabpage.activity-stream.section.highlights.rows",
             "browser.newtabpage.activity-stream.section.highlights.includeVisited",
-            "browser.newtabpage.activity-stream.section.highlights.includePocket",
             "browser.newtabpage.activity-stream.section.highlights.includeDownloads",
             "browser.newtabpage.activity-stream.section.highlights.includeBookmarks",
           ],
@@ -200,6 +200,7 @@ export const SpecialMessageActions = {
     // Array of prefs that are allowed to be edited by SET_PREF
     const allowedPrefs = [
       "browser.aboutwelcome.didSeeFinalScreen",
+      "browser.crashReports.unsubmittedCheck.autoSubmit2",
       "browser.dataFeatureRecommendations.enabled",
       "browser.migrate.content-modal.about-welcome-behavior",
       "browser.migrate.content-modal.import-all.enabled",
@@ -215,17 +216,16 @@ export const SpecialMessageActions = {
       "cookiebanners.service.mode",
       "cookiebanners.service.mode.privateBrowsing",
       "cookiebanners.service.detectOnly",
+      "datareporting.healthreport.uploadEnabled",
       "messaging-system.askForFeedback",
       "browser.toolbars.bookmarks.visibility",
       "sidebar.verticalTabs",
       "sidebar.revamp",
       "sidebar.visibility",
-      "browser.crashReports.unsubmittedCheck.autoSubmit2",
-      "datareporting.healthreport.uploadEnabled",
-      "datareporting.policy.currentPolicyVersion",
-      "datareporting.policy.dataSubmissionPolicyAcceptedVersion",
-      "datareporting.policy.dataSubmissionPolicyNotifiedTime",
-      "datareporting.policy.minimumPolicyVersion",
+      "termsofuse.acceptedVersion",
+      "termsofuse.acceptedDate",
+      "termsofuse.currentVersion",
+      "termsofuse.minimumVersion",
     ];
 
     if (
@@ -287,7 +287,6 @@ export const SpecialMessageActions = {
         triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
           {}
         ),
-        csp: null,
         resolveOnContentBrowserCreated: resolve,
         forceForeground: true,
       });
@@ -558,7 +557,6 @@ export const SpecialMessageActions = {
             private: false,
             triggeringPrincipal:
               Services.scriptSecurityManager.createNullPrincipal({}),
-            csp: null,
           }
         );
         break;
@@ -658,7 +656,6 @@ export const SpecialMessageActions = {
           private: false,
           triggeringPrincipal:
             Services.scriptSecurityManager.createNullPrincipal({}),
-          csp: null,
         });
         break;
       case "FXA_SIGNIN_FLOW":
@@ -741,11 +738,8 @@ export const SpecialMessageActions = {
       case "SET_BOOKMARKS_TOOLBAR_VISIBILITY":
         this.setBookmarksToolbarVisibility(window, action.data?.visibility);
         break;
-      case "DATAREPORTING_NOTIFY_DATA_POLICY_INTERACTED":
-        Services.obs.notifyObservers(
-          null,
-          "datareporting:notify-data-policy:interacted"
-        );
+      case "SET_TERMS_OF_USE_INTERACTED":
+        Services.obs.notifyObservers(null, "termsofuse:interacted");
         break;
       case "CREATE_NEW_SELECTABLE_PROFILE":
         this.createAndOpenProfile();
@@ -756,6 +750,10 @@ export const SpecialMessageActions = {
       case "SET_SEARCH_MODE":
         window.gURLBar.searchMode = action.data;
         window.gURLBar.focus();
+        break;
+      case "SUMMARIZE_PAGE":
+        const entry = action.data ?? "message";
+        await lazy.GenAI.summarizeCurrentPage(window, entry);
         break;
     }
     return undefined;

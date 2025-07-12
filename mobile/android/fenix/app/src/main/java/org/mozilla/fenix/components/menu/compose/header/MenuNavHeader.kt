@@ -10,15 +10,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Icon
-import androidx.compose.material.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,33 +28,74 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.MenuItemState
+import org.mozilla.fenix.components.menu.compose.SiteLoadingPreviewParameterProvider
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 
+@Suppress("LongParameterList")
 @Composable
 internal fun MenuNavHeader(
     state: MenuItemState = MenuItemState.ENABLED,
+    isSiteLoading: Boolean,
+    goBackState: MenuItemState = MenuItemState.ENABLED,
+    goForwardState: MenuItemState = MenuItemState.ENABLED,
     onBackButtonClick: (longPress: Boolean) -> Unit,
     onForwardButtonClick: (longPress: Boolean) -> Unit,
     onRefreshButtonClick: (longPress: Boolean) -> Unit,
+    onStopButtonClick: () -> Unit,
     onShareButtonClick: () -> Unit,
+    isExtensionsExpanded: Boolean,
+    isMoreMenuExpanded: Boolean,
 ) {
+    val navigationHeaderContentDescription =
+        stringResource(id = R.string.browser_main_menu_content_description_navigation_header)
+
+    Spacer(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(12.dp)
+            .background(
+                if (isExtensionsExpanded || isMoreMenuExpanded) {
+                    FirefoxTheme.colors.layerSearch
+                } else {
+                    Color.Transparent
+                },
+            ),
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .height(IntrinsicSize.Min)
+            .background(
+                color = if (isExtensionsExpanded || isMoreMenuExpanded) {
+                    FirefoxTheme.colors.layerSearch
+                } else {
+                    Color.Transparent
+                },
+            )
+            .padding(horizontal = 4.dp, vertical = 12.dp)
+            .verticalScroll(rememberScrollState())
+            .semantics(mergeDescendants = true) {
+                contentDescription = navigationHeaderContentDescription
+            },
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.Top,
     ) {
         MenuNavItem(
-            state = state,
+            state = goBackState,
             painter = painterResource(id = R.drawable.mozac_ic_back_24),
             label = stringResource(id = R.string.browser_menu_back),
             onClick = { onBackButtonClick(false) },
@@ -60,20 +103,29 @@ internal fun MenuNavHeader(
         )
 
         MenuNavItem(
-            state = state,
+            state = goForwardState,
             painter = painterResource(id = R.drawable.mozac_ic_forward_24),
             label = stringResource(id = R.string.browser_menu_forward),
             onClick = { onForwardButtonClick(false) },
             onLongClick = { onForwardButtonClick(true) },
         )
 
-        MenuNavItem(
-            state = state,
-            painter = painterResource(id = R.drawable.mozac_ic_arrow_clockwise_24),
-            label = stringResource(id = R.string.browser_menu_refresh),
-            onClick = { onRefreshButtonClick(false) },
-            onLongClick = { onRefreshButtonClick(true) },
-        )
+        if (isSiteLoading) {
+            MenuNavItem(
+                state = state,
+                painter = painterResource(id = R.drawable.mozac_ic_stop),
+                label = stringResource(id = R.string.browser_menu_stop),
+                onClick = onStopButtonClick,
+            )
+        } else {
+            MenuNavItem(
+                state = state,
+                painter = painterResource(id = R.drawable.mozac_ic_arrow_clockwise_24),
+                label = stringResource(id = R.string.browser_menu_refresh),
+                onClick = { onRefreshButtonClick(false) },
+                onLongClick = { onRefreshButtonClick(true) },
+            )
+        }
 
         MenuNavItem(
             state = state,
@@ -95,16 +147,16 @@ private fun MenuNavItem(
 ) {
     Column(
         modifier = Modifier
-            .width(64.dp)
-            .height(48.dp)
+            .fillMaxHeight()
             .combinedClickable(
                 interactionSource = null,
                 indication = LocalIndication.current,
                 enabled = state != MenuItemState.DISABLED,
                 onClick = onClick,
                 onLongClick = onLongClick,
+                role = Role.Button,
             ),
-        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
@@ -113,13 +165,18 @@ private fun MenuNavItem(
             tint = getIconTint(state = state),
         )
 
+        Spacer(modifier = Modifier.height(4.dp))
+
         Text(
             text = label,
-            color = getLabelTextColor(state = state),
-            maxLines = 2,
             style = FirefoxTheme.typography.caption.merge(
                 platformStyle = PlatformTextStyle(includeFontPadding = true),
-            ),
+            ).copy(hyphens = Hyphens.Auto),
+            color = getLabelTextColor(state = state),
+            maxLines = 2,
+            softWrap = true,
+            textAlign = TextAlign.Center,
+
         )
     }
 }
@@ -140,7 +197,7 @@ private fun getIconTint(state: MenuItemState): Color {
         MenuItemState.ACTIVE -> FirefoxTheme.colors.iconAccentViolet
         MenuItemState.WARNING -> FirefoxTheme.colors.iconCritical
         MenuItemState.DISABLED -> FirefoxTheme.colors.iconDisabled
-        else -> FirefoxTheme.colors.iconSecondary
+        else -> FirefoxTheme.colors.iconPrimary
     }
 }
 
@@ -153,10 +210,14 @@ private fun MenuHeaderPreview() {
                 .background(color = FirefoxTheme.colors.layer3),
         ) {
             MenuNavHeader(
+                isSiteLoading = false,
                 onBackButtonClick = {},
                 onForwardButtonClick = {},
                 onRefreshButtonClick = {},
+                onStopButtonClick = {},
                 onShareButtonClick = {},
+                isExtensionsExpanded = false,
+                isMoreMenuExpanded = false,
             )
         }
     }
@@ -164,17 +225,23 @@ private fun MenuHeaderPreview() {
 
 @Preview
 @Composable
-private fun MenuHeaderPrivatePreview() {
+private fun MenuHeaderPrivatePreview(
+    @PreviewParameter(SiteLoadingPreviewParameterProvider::class) isSiteLoading: Boolean,
+) {
     FirefoxTheme(theme = Theme.Private) {
         Column(
             modifier = Modifier
                 .background(color = FirefoxTheme.colors.layer3),
         ) {
             MenuNavHeader(
+                isSiteLoading = isSiteLoading,
                 onBackButtonClick = {},
                 onForwardButtonClick = {},
                 onRefreshButtonClick = {},
+                onStopButtonClick = {},
                 onShareButtonClick = {},
+                isExtensionsExpanded = false,
+                isMoreMenuExpanded = false,
             )
         }
     }

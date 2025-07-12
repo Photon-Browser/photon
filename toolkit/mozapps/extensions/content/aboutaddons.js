@@ -125,11 +125,23 @@ function getUpdateInstall(addon) {
 }
 
 function isManualUpdate(install) {
+  const isExistingHidden = install.existingAddon?.hidden;
+  // NOTE: some of the existing test cases are mocking an AddonInstall
+  // instance without an `install.addon` property set
+  // (e.g. browser_html_pending_updates.js).
+  const isNewHidden = install.addon?.hidden;
+  // Not a manual update installation if both the existing and old
+  // addon are hidden (which also ensures we are going to hide pending
+  // installations for hidden add-ons from both the category button
+  // badge counter and from the available updates view when the new
+  // addon is also hidden).
+  if (isExistingHidden && isNewHidden) {
+    return false;
+  }
   let isManual =
     install.existingAddon &&
     !AddonManager.shouldAutoUpdate(install.existingAddon);
-  let isExtension =
-    install.existingAddon && install.existingAddon.type == "extension";
+  let isExtension = install.existingAddon?.type == "extension";
   return (
     (isManual && isInState(install, "available")) ||
     (isExtension && isInState(install, "postponed"))
@@ -621,22 +633,36 @@ var DiscoveryAPI = {
 class SearchAddons extends HTMLElement {
   connectedCallback() {
     if (this.childElementCount === 0) {
-      this.input = document.createXULElement("search-textbox");
-      this.input.setAttribute("searchbutton", true);
+      this.input = document.createElement("moz-input-search");
       this.input.setAttribute("maxlength", 100);
       this.input.setAttribute("data-l10n-attrs", "placeholder");
+      this.input.setAttribute("iconsrc", "");
       document.l10n.setAttributes(this.input, "addons-heading-search-input");
       this.append(this.input);
+
+      this.button = document.createElement("moz-button");
+      this.button.setAttribute("type", "ghost");
+      this.button.setAttribute(
+        "iconsrc",
+        "chrome://global/skin/icons/search-textbox.svg"
+      );
+      document.l10n.setAttributes(this.button, "addons-heading-search-button");
+      this.append(this.button);
     }
-    this.input.addEventListener("command", this);
+    this.input.addEventListener("keypress", this);
+    this.button.addEventListener("click", this);
   }
 
   disconnectedCallback() {
-    this.input.removeEventListener("command", this);
+    this.input.removeEventListener("keypress", this);
+    this.button.removeEventListener("click", this);
   }
 
   handleEvent(e) {
-    if (e.type === "command") {
+    if (
+      e.type == "click" ||
+      (e.type === "keypress" && e.keyCode == KeyEvent.DOM_VK_RETURN)
+    ) {
       this.searchAddons(this.value);
     }
   }

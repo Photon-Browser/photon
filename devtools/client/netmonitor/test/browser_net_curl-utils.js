@@ -269,7 +269,14 @@ function testEscapeStringPosix() {
   const escapeChar = "'!ls:q:gs|ls|;ping 8.8.8.8;|";
   is(
     CurlUtils.escapeStringPosix(escapeChar),
-    "$'\\'\\041ls:q:gs^|ls^|;ping 8.8.8.8;^|'",
+    "$'\\'\\041ls:q:gs|ls|;ping 8.8.8.8;|'",
+    "'!' should be escaped."
+  );
+
+  const escapeBangOnlyChar = "!";
+  is(
+    CurlUtils.escapeStringPosix(escapeBangOnlyChar),
+    "$'\\041'",
     "'!' should be escaped."
   );
 
@@ -294,21 +301,6 @@ function testEscapeStringPosix() {
     CurlUtils.escapeStringPosix(extendedAsciiChars),
     "$'\\xc3\\xa6 \\xc3\\xb8 \\xc3\\xbc \\xc3\\x9f \\xc3\\xb6 \\xc3\\xa9'",
     "Character codes outside of the decimal range 32 - 126 should be escaped."
-  );
-
-  // Assert that ampersands are correctly escaped in case its tried to run on Windows
-  const evilCommand = `query=evil\n\ncmd & calc.exe\n\n`;
-  is(
-    CurlUtils.escapeStringPosix(evilCommand),
-    "$'query=evil\\n\\ncmd ^& calc.exe\\n\\n'",
-    "The evil command is escaped properly"
-  );
-
-  const str = "EvilHeader: &calc.exe&";
-  is(
-    CurlUtils.escapeStringPosix(str),
-    "'EvilHeader: ^&calc.exe^&'",
-    "The evil command is escaped properly"
   );
 }
 
@@ -344,7 +336,7 @@ function testEscapeStringWin() {
   const newLines = "line1\r\nline2\r\rline3\n\nline4";
   is(
     CurlUtils.escapeStringWin(newLines),
-    '^"line1^\n\nline2\r\rline3^\n\n^\n\nline4^"',
+    '^\"line1^\n\nline2^\n\n^\n\nline3^\n\n^\n\nline4^\"',
     "Newlines should be escaped."
   );
 
@@ -365,7 +357,7 @@ function testEscapeStringWin() {
   const evilCommand = `query=evil\r\rcmd" /c timeout /t 3 & calc.exe\r\r`;
   is(
     CurlUtils.escapeStringWin(evilCommand),
-    '^"query=evil\r\rcmd\\" /c timeout /t 3 & calc.exe\r\r^"',
+    '^\"query=evil^\n\n^\n\ncmd\\\" /c timeout /t 3 & calc.exe^\n\n^\n\n^\"',
     "The evil command is escaped properly"
   );
 }

@@ -18,8 +18,10 @@
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/WebRenderCanvasRenderer.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "ipc/WebGPUChild.h"
 #include "Utility.h"
 
@@ -133,30 +135,52 @@ void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aConfig,
 
   mConfiguration.reset(new dom::GPUCanvasConfiguration(aConfig));
   mRemoteTextureOwnerId = Some(layers::RemoteTextureOwnerId::GetNext());
-  mUseExternalTextureInSwapChain =
-      aConfig.mDevice->mSupportExternalTextureInSwapChain &&
-      wgpu_client_use_external_texture_in_swapChain(
-          ConvertTextureFormat(aConfig.mFormat));
+  mUseSharedTextureInSwapChain =
+      aConfig.mDevice->mSupportSharedTextureInSwapChain;
+  if (mUseSharedTextureInSwapChain) {
+    bool client_can_use = wgpu_client_use_shared_texture_in_swapChain(
+        ConvertTextureFormat(aConfig.mFormat));
+    if (!client_can_use) {
+      gfxCriticalNote << "WebGPU: disabling SharedTexture swapchain: \n"
+                         "canvas configuration format not supported";
+      mUseSharedTextureInSwapChain = false;
+    }
+  }
   if (!gfx::gfxVars::AllowWebGPUPresentWithoutReadback()) {
-    mUseExternalTextureInSwapChain = false;
+    gfxCriticalNote
+        << "WebGPU: disabling SharedTexture swapchain: \n"
+           "`dom.webgpu.allow-present-without-readback` pref is false";
+    mUseSharedTextureInSwapChain = false;
   }
 #ifdef XP_WIN
-  // When WebRender does not use hardware acceleration, disable external texture
+  // When WebRender does not use hardware acceleration, disable shared texture
   // in swap chain. Since compositor device might not exist.
   if (gfx::gfxVars::UseSoftwareWebRender() &&
       !gfx::gfxVars::AllowSoftwareWebRenderD3D11()) {
-    mUseExternalTextureInSwapChain = false;
+    gfxCriticalNote << "WebGPU: disabling SharedTexture swapchain: \n"
+                       "WebRender is not using hardware acceleration";
+    mUseSharedTextureInSwapChain = false;
   }
 #elif defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
-  // When DMABufDevice is not enabled, disable external texture in swap chain.
+  // When DMABufDevice is not enabled, disable shared texture in swap chain.
   const auto& modifiers = gfx::gfxVars::DMABufModifiersARGB();
   if (modifiers.IsEmpty()) {
-    mUseExternalTextureInSwapChain = false;
+    gfxCriticalNote << "WebGPU: disabling SharedTexture swapchain: \n"
+                       "missing GBM_FORMAT_ARGB8888 dmabuf format";
+    mUseSharedTextureInSwapChain = false;
   }
 #endif
+
+  // buffer count doesn't matter much, will be created on demand
+  const size_t maxBufferCount = 10;
+  for (size_t i = 0; i < maxBufferCount; ++i) {
+    mBufferIds.AppendElement(ffi::wgpu_client_make_buffer_id(
+        aConfig.mDevice->GetBridge()->GetClient()));
+  }
+
   mCurrentTexture = aConfig.mDevice->InitSwapChain(
-      mConfiguration.get(), mRemoteTextureOwnerId.ref(),
-      mUseExternalTextureInSwapChain, mGfxFormat, mCanvasSize);
+      mConfiguration.get(), mRemoteTextureOwnerId.ref(), mBufferIds,
+      mUseSharedTextureInSwapChain, mGfxFormat, mCanvasSize);
   if (!mCurrentTexture) {
     Unconfigure();
     return;
@@ -173,11 +197,16 @@ void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aConfig,
 
 void CanvasContext::Unconfigure() {
   if (mBridge && mBridge->CanSend() && mRemoteTextureOwnerId) {
-    mBridge->SendSwapChainDrop(
-        *mRemoteTextureOwnerId,
-        layers::ToRemoteTextureTxnType(mFwdTransactionTracker),
-        layers::ToRemoteTextureTxnId(mFwdTransactionTracker));
+    auto txn_type = layers::ToRemoteTextureTxnType(mFwdTransactionTracker);
+    auto txn_id = layers::ToRemoteTextureTxnId(mFwdTransactionTracker);
+    ffi::wgpu_client_swap_chain_drop(
+        mBridge->GetClient(), mRemoteTextureOwnerId->mId, txn_type, txn_id);
+
+    for (auto& id : mBufferIds) {
+      ffi::wgpu_client_free_buffer_id(mBridge->GetClient(), id);
+    }
   }
+  mBufferIds.Clear();
   mRemoteTextureOwnerId = Nothing();
   mFwdTransactionTracker = nullptr;
   mBridge = nullptr;
@@ -262,10 +291,14 @@ Maybe<layers::SurfaceDescriptor> CanvasContext::SwapChainPresent() {
   mLastRemoteTextureId = Some(layers::RemoteTextureId::GetNext());
   mBridge->SwapChainPresent(mCurrentTexture->mId, *mLastRemoteTextureId,
                             *mRemoteTextureOwnerId);
-  if (mUseExternalTextureInSwapChain) {
+  if (mUseSharedTextureInSwapChain) {
     mCurrentTexture->Destroy();
     mNewTextureRequested = true;
   }
+
+  PROFILER_MARKER_UNTYPED("WebGPU: SwapChainPresent", GRAPHICS_WebGPU);
+  mBridge->FlushQueuedMessages();
+
   return Some(layers::SurfaceDescriptorRemoteTexture(*mLastRemoteTextureId,
                                                      *mRemoteTextureOwnerId));
 }
@@ -326,9 +359,10 @@ mozilla::UniquePtr<uint8_t[]> CanvasContext::GetImageBuffer(
   *out_imageSize = dataSurface->GetSize();
 
   if (ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
-    gfxUtils::GetImageBufferWithRandomNoise(
-        dataSurface,
-        /* aIsAlphaPremultiplied */ true, GetCookieJarSettings(), &*out_format);
+    gfxUtils::GetImageBufferWithRandomNoise(dataSurface,
+                                            /* aIsAlphaPremultiplied */ true,
+                                            GetCookieJarSettings(),
+                                            PrincipalOrNull(), &*out_format);
   }
 
   return gfxUtils::GetImageBuffer(dataSurface, /* aIsAlphaPremultiplied */ true,
@@ -347,9 +381,9 @@ NS_IMETHODIMP CanvasContext::GetInputStream(const char* aMimeType,
   RefPtr<gfx::DataSourceSurface> dataSurface = snapshot->GetDataSurface();
 
   if (ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
-    gfxUtils::GetInputStreamWithRandomNoise(
+    return gfxUtils::GetInputStreamWithRandomNoise(
         dataSurface, /* aIsAlphaPremultiplied */ true, aMimeType,
-        aEncoderOptions, GetCookieJarSettings(), aStream);
+        aEncoderOptions, GetCookieJarSettings(), PrincipalOrNull(), aStream);
   }
 
   return gfxUtils::GetInputStream(dataSurface, /* aIsAlphaPremultiplied */ true,

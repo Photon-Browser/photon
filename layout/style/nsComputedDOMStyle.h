@@ -10,21 +10,21 @@
 #define nsComputedDOMStyle_h__
 
 #include "mozilla/Attributes.h"
+#include "mozilla/ComputedStyle.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/StyleColorInlines.h"
 #include "mozilla/UniquePtr.h"
-#include "nsCOMPtr.h"
-#include "nsContentUtils.h"
-#include "nscore.h"
-#include "nsDOMCSSDeclaration.h"
-#include "mozilla/ComputedStyle.h"
-#include "nsIWeakReferenceUtils.h"
+#include "mozilla/WritingModes.h"
 #include "mozilla/gfx/Types.h"
-#include "nsCoord.h"
+#include "nsCOMPtr.h"
 #include "nsColor.h"
+#include "nsContentUtils.h"
+#include "nsCoord.h"
+#include "nsDOMCSSDeclaration.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsStubMutationObserver.h"
 #include "nsStyleStruct.h"
-#include "mozilla/WritingModes.h"
+#include "nscore.h"
 
 // XXX Avoid including this here by moving function bodies to the cpp file
 #include "mozilla/dom/Element.h"
@@ -175,9 +175,9 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
       const Element*, const PseudoStyleRequest&, mozilla::PresShell*,
       StyleType);
 
-#define STYLE_STRUCT(name_)                \
-  const nsStyle##name_* Style##name_() {   \
-    return mComputedStyle->Style##name_(); \
+#define STYLE_STRUCT(name_)                    \
+  const nsStyle##name_* Style##name_() const { \
+    return mComputedStyle->Style##name_();     \
   }
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
@@ -397,11 +397,19 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 #endif
 
   friend struct ComputedStyleMap;
+  friend AnchorPosResolutionParams AnchorPosResolutionParams::From(
+      const nsComputedDOMStyle*);
 };
 
 already_AddRefed<nsComputedDOMStyle> NS_NewComputedDOMStyle(
     mozilla::dom::Element*, const nsAString& aPseudoElt,
     mozilla::dom::Document*, nsComputedDOMStyle::StyleType,
     mozilla::ErrorResult&);
+
+inline AnchorPosResolutionParams AnchorPosResolutionParams::From(
+    const nsComputedDOMStyle* aComputedDOMStyle) {
+  return {aComputedDOMStyle->mOuterFrame,
+          aComputedDOMStyle->StyleDisplay()->mPosition};
+}
 
 #endif /* nsComputedDOMStyle_h__ */

@@ -18,7 +18,14 @@
       <menupopup id="context_moveTabToGroupPopupMenu">
         <menuitem id="context_moveTabToGroupNewGroup"
                   data-lazy-l10n-id="tab-context-new-group"/>
-        <menuseparator/>
+        <menuseparator id="open-tab-groups-separator-upper" />
+        <menuseparator id="open-tab-groups-separator-lower" />
+
+        <menu id="context_moveTabToSavedGroup"
+          data-lazy-l10n-id="tab-context-move-tab-to-group-saved-groups">
+          <menupopup id="context_moveTabToSavedGroupPopupMenu">
+          </menupopup>
+        </menu>
       </menupopup>
     </menu>
     <menuitem id="context_ungroupTab"
@@ -41,6 +48,8 @@
               data-l10n-args='{"tabCount": 1}'/>
     <menuitem id="context_duplicateTab" data-lazy-l10n-id="duplicate-tab"/>
     <menuitem id="context_duplicateTabs" data-lazy-l10n-id="duplicate-tabs"/>
+    <menuseparator/>
+    <menu id="context_askChat"/>
     <menuseparator/>
     <menuitem id="context_bookmarkSelectedTabs"
               hidden="true"
@@ -125,6 +134,19 @@
 
   <tabgroup-menu id="tab-group-editor"></tabgroup-menu>
 
+  <!-- Starting point for sidebar tools overflow -->
+  <panel id="sidebar-tools-overflow"
+       class="panel-no-padding"
+       role="group"
+       type="arrow"
+       noautofocus="true">
+    <html:button-group id="tools-overflow-list"
+      class="tools-and-extensions actions-list overflow-list"
+      orientation="vertical"
+      role="tablist">
+    </html:button-group>
+  </panel>
+
   <panel is="autocomplete-richlistbox-popup"
          type="autocomplete-richlistbox"
          id="PopupAutoComplete"
@@ -143,21 +165,6 @@
          role="group"
          noautofocus="true"
          hidden="true" />
-
-  <menupopup id="searchmode-switcher-popup"
-             class="toolbar-menupopup"
-             consumeoutsideclicks="false">
-    <label id="searchmode-switcher-popup-description"
-           data-l10n-id="urlbar-searchmode-popup-description"
-           role="heading" />
-    <menuseparator/>
-    <menuseparator id="searchmode-switcher-popup-footer-separator"/>
-    <menuitem id="searchmode-switcher-popup-search-settings-button"
-              class="menuitem-iconic"
-              data-action="openpreferences"
-              image="chrome://global/skin/icons/settings.svg"
-              data-l10n-id="urlbar-searchmode-popup-search-settings-menuitem"/>
-  </menupopup>
 
   <!-- Starting point for selection actions -->
   <panel class="panel-no-padding"
@@ -304,7 +311,7 @@
     <menuitem data-l10n-id="sidebar-context-menu-manage-extension"
               id="sidebar-context-menu-manage-extension"
               contexttype="extension-action"/>
-    <menuitem data-l10n-id="sidebar-context-menu-remove-extension"
+    <menuitem data-l10n-id="sidebar-context-menu-remove-extension2"
               id="sidebar-context-menu-remove-extension"
               contexttype="extension-action"/>
     <menuitem data-l10n-id="sidebar-context-menu-report-extension"

@@ -403,19 +403,42 @@ export const storybookTables = {
       name: "--font-size-root",
     },
     {
-      value: { brand: { default: "0.867rem" }, platform: { default: "unset" } },
+      value: {
+        brand: {
+          default: "0.733rem",
+          comment:
+            "11px / Note this token is to be used in rare cases because its hard to read. Please consult with the Design Systems and A11y teams for case-by-case feedback.",
+        },
+        platform: { default: "unset" },
+      },
+      name: "--font-size-xsmall",
+    },
+    {
+      value: {
+        brand: { default: "0.867rem", comment: "13px" },
+        platform: { default: "unset" },
+      },
       name: "--font-size-small",
     },
     {
-      value: { brand: { default: "1.133rem" }, platform: { default: "unset" } },
+      value: {
+        brand: { default: "1.133rem", comment: "17px" },
+        platform: { default: "unset" },
+      },
       name: "--font-size-large",
     },
     {
-      value: { brand: { default: "1.467rem" }, platform: { default: "unset" } },
+      value: {
+        brand: { default: "1.467rem", comment: "22px" },
+        platform: { default: "unset" },
+      },
       name: "--font-size-xlarge",
     },
     {
-      value: { brand: { default: "1.6rem" }, platform: { default: "unset" } },
+      value: {
+        brand: { default: "1.6rem", comment: "24px" },
+        platform: { default: "unset" },
+      },
       name: "--font-size-xxlarge",
     },
   ],
@@ -805,6 +828,12 @@ export const storybookTables = {
       name: "--outline-color-error",
     },
   ],
+  "heading-font": [
+    { value: "var(--font-size-xxlarge)", name: "--heading-font-size-xlarge" },
+    { value: "var(--font-size-xlarge)", name: "--heading-font-size-large" },
+    { value: "var(--font-size-large)", name: "--heading-font-size-medium" },
+    { value: "var(--font-weight-bold)", name: "--heading-font-weight" },
+  ],
   "icon-color": [
     {
       value: {
@@ -854,6 +883,7 @@ export const storybookTables = {
   ],
   "icon-size": [
     { value: "var(--icon-size-small)", name: "--icon-size-default" },
+    { value: "12px", name: "--icon-size-xsmall" },
     { value: "var(--size-item-small)", name: "--icon-size-small" },
     { value: "20px", name: "--icon-size-medium" },
     { value: "24px", name: "--icon-size-large" },
@@ -1451,24 +1481,36 @@ export const variableLookupTable = {
     brand: { default: "15px" },
     platform: { default: "unset" },
   },
+  "font-size-xsmall": {
+    brand: {
+      default: "0.733rem",
+      comment:
+        "11px / Note this token is to be used in rare cases because its hard to read. Please consult with the Design Systems and A11y teams for case-by-case feedback.",
+    },
+    platform: { default: "unset" },
+  },
   "font-size-small": {
-    brand: { default: "0.867rem" },
+    brand: { default: "0.867rem", comment: "13px" },
     platform: { default: "unset" },
   },
   "font-size-large": {
-    brand: { default: "1.133rem" },
+    brand: { default: "1.133rem", comment: "17px" },
     platform: { default: "unset" },
   },
   "font-size-xlarge": {
-    brand: { default: "1.467rem" },
+    brand: { default: "1.467rem", comment: "22px" },
     platform: { default: "unset" },
   },
   "font-size-xxlarge": {
-    brand: { default: "1.6rem" },
+    brand: { default: "1.6rem", comment: "24px" },
     platform: { default: "unset" },
   },
   "font-weight": "normal",
   "font-weight-bold": 600,
+  "heading-font-size-xlarge": "var(--font-size-xxlarge)",
+  "heading-font-size-large": "var(--font-size-xlarge)",
+  "heading-font-size-medium": "var(--font-size-large)",
+  "heading-font-weight": "var(--font-weight-bold)",
   "icon-color": {
     light: "var(--color-gray-70)",
     dark: "var(--color-gray-05)",
@@ -1500,6 +1542,7 @@ export const variableLookupTable = {
     default: "light-dark(var(--color-red-60), var(--color-red-20))",
   },
   "icon-size-default": "var(--icon-size-small)",
+  "icon-size-xsmall": "12px",
   "icon-size-small": "var(--size-item-small)",
   "icon-size-medium": "20px",
   "icon-size-large": "24px",

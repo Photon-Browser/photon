@@ -365,6 +365,11 @@ data class Metadata(
     val requiredOrigins: List<String>,
 
     /**
+     * Required data collection permissions.
+     */
+    val requiredDataCollectionPermissions: List<String>,
+
+    /**
      * Optional API permissions for this extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_permissions
      */
@@ -387,6 +392,16 @@ data class Metadata(
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_permissions
      */
     val grantedOptionalOrigins: List<String>,
+
+    /**
+     * Optional data collection permissions.
+     */
+    val optionalDataCollectionPermissions: List<String>,
+
+    /**
+     * Optional data collection granted to this extension.
+     */
+    val grantedOptionalDataCollectionPermissions: List<String>,
 
     /**
      * Name of the extension:
@@ -526,6 +541,7 @@ enum class EnableSource(val id: Int) {
 data class PermissionPromptResponse(
     val isPermissionsGranted: Boolean,
     val isPrivateModeGranted: Boolean = false,
+    val isTechnicalAndInteractionDataGranted: Boolean = false,
 )
 
 /**
@@ -645,7 +661,6 @@ sealed class WebExtensionInstallException(
     open val extensionName: String? = null,
     open val extensionVersion: String? = null,
     throwable: Throwable,
-    override val isRecoverable: Boolean = true,
 ) : WebExtensionException(throwable) {
     /**
      * The extension install was canceled by the user.

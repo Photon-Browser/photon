@@ -8,6 +8,8 @@ skip-if = [
   "verify",
 ]
 
+["browser_EventUtils.js"]
+
 ["browser_SpecialPowersForProcessSpawn.js"]
 support-files = ["../Harness_sanity/file_xorigin_frames.html"]
 
@@ -92,6 +94,8 @@ disabled = "Disabled beacuse it takes too long (bug 1178959)"
 ["browser_setup_runs_first.js"]
 
 ["browser_setup_runs_for_only_tests.js"]
+
+["browser_signal.js"]
 
 ["browser_tasks_skip.js"]
 

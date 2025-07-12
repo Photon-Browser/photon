@@ -25,12 +25,14 @@ namespace mozilla::dom::quota {
 template <typename UninitChecker, typename PromiseArrayIter>
 RefPtr<UniversalDirectoryLock> CreateDirectoryLockForInitialization(
     QuotaManager& aQuotaManager, const PersistenceScope& aPersistenceScope,
-    const OriginScope& aOriginScope, const bool aAlreadyInitialized,
-    UninitChecker&& aUninitChecker, PromiseArrayIter&& aPromiseArrayIter) {
+    const OriginScope& aOriginScope,
+    const ClientStorageScope& aClientStorageScope,
+    const bool aAlreadyInitialized, UninitChecker&& aUninitChecker,
+    PromiseArrayIter&& aPromiseArrayIter) {
   RefPtr<UniversalDirectoryLock> directoryLock =
-      aQuotaManager.CreateDirectoryLockInternal(
-          aPersistenceScope, aOriginScope, ClientStorageScope::CreateFromNull(),
-          /* aExclusive */ false);
+      aQuotaManager.CreateDirectoryLockInternal(aPersistenceScope, aOriginScope,
+                                                aClientStorageScope,
+                                                /* aExclusive */ false);
 
   auto prepareInfo = directoryLock->Prepare();
 
@@ -99,14 +101,20 @@ template <typename Callable>
 class MaybeFinalizeHelper final {
  public:
   MaybeFinalizeHelper(RefPtr<ClientDirectoryLock> aClientDirectoryLock,
+                      RefPtr<UniversalDirectoryLock> aFirstAccessDirectoryLock,
+                      RefPtr<UniversalDirectoryLock> aLastAccessDirectoryLock,
                       Callable&& aCallable)
       : mClientDirectoryLock(std::move(aClientDirectoryLock)),
+        mFirstAccessDirectoryLock(std::move(aFirstAccessDirectoryLock)),
+        mLastAccessDirectoryLock(std::move(aLastAccessDirectoryLock)),
         mCallable(std::move(aCallable)) {}
 
   RefPtr<QuotaManager::ClientDirectoryLockHandlePromise> operator()(
       const BoolPromise::ResolveOrRejectValue& aValue) {
     if (aValue.IsReject()) {
       DropDirectoryLockIfNotDropped(mClientDirectoryLock);
+      DropDirectoryLockIfNotDropped(mFirstAccessDirectoryLock);
+      DropDirectoryLockIfNotDropped(mLastAccessDirectoryLock);
 
       return QuotaManager::ClientDirectoryLockHandlePromise::CreateAndReject(
           aValue.RejectValue(), __func__);
@@ -116,24 +124,33 @@ class MaybeFinalizeHelper final {
                nsIQuotaArtificialFailure::CATEGORY_OPEN_CLIENT_DIRECTORY),
            [this](nsresult rv) {
              DropDirectoryLock(mClientDirectoryLock);
+             DropDirectoryLock(mFirstAccessDirectoryLock);
+             DropDirectoryLock(mLastAccessDirectoryLock);
 
              return QuotaManager::ClientDirectoryLockHandlePromise::
                  CreateAndReject(rv, __func__);
            });
 
-    return mCallable(std::move(mClientDirectoryLock));
+    return mCallable(std::move(mClientDirectoryLock),
+                     std::move(mFirstAccessDirectoryLock),
+                     std::move(mLastAccessDirectoryLock));
   }
 
  private:
   RefPtr<ClientDirectoryLock> mClientDirectoryLock;
+  RefPtr<UniversalDirectoryLock> mFirstAccessDirectoryLock;
+  RefPtr<UniversalDirectoryLock> mLastAccessDirectoryLock;
   Callable mCallable;
 };
 
 template <typename Callable>
 auto MaybeFinalize(RefPtr<ClientDirectoryLock> aClientDirectoryLock,
+                   RefPtr<UniversalDirectoryLock> aFirstAccessDirectoryLock,
+                   RefPtr<UniversalDirectoryLock> aLastAccessDirectoryLock,
                    Callable&& aCallable) {
-  return MaybeFinalizeHelper(std::move(aClientDirectoryLock),
-                             std::forward<Callable>(aCallable));
+  return MaybeFinalizeHelper(
+      std::move(aClientDirectoryLock), std::move(aFirstAccessDirectoryLock),
+      std::move(aLastAccessDirectoryLock), std::forward<Callable>(aCallable));
 }
 
 }  // namespace mozilla::dom::quota

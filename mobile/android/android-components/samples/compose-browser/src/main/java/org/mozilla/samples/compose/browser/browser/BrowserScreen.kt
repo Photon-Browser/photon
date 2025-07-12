@@ -11,16 +11,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.Button
-import androidx.compose.material.ContentAlpha
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.navigation.NavController
@@ -52,7 +50,6 @@ import org.mozilla.samples.compose.browser.components
 @Suppress("LongMethod")
 @Composable
 fun BrowserScreen(navController: NavController) {
-    val target = Target.SelectedTab
     val context = LocalContext.current
 
     val store = composableStore<BrowserScreenState, BrowserScreenAction> { restoredState ->
@@ -75,8 +72,6 @@ fun BrowserScreen(navController: NavController) {
     val toolbarState by toolbarStore.observeAsState(initialValue = toolbarStore.state) { it }
     val showTabs = store.observeAsComposableState { state -> state.showTabs }
 
-    val loadUrl = components().sessionUseCases.loadUrl
-
     BackHandler(enabled = toolbarState.isEditMode()) {
         toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(false))
     }
@@ -85,15 +80,6 @@ fun BrowserScreen(navController: NavController) {
             Column {
                 BrowserToolbar(
                     store = toolbarStore,
-                    browserStore = components().store,
-                    target = target,
-                    onTextCommit = { text ->
-                        toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(false))
-                        loadUrl(text)
-                    },
-                    onTextEdit = { text ->
-                        toolbarStore.dispatch(BrowserEditToolbarAction.UpdateEditText(text))
-                    },
                 )
 
                 Box {
@@ -103,8 +89,8 @@ fun BrowserScreen(navController: NavController) {
                         Target.SelectedTab,
                     )
 
-                    val url = toolbarState.editState.editText
-                    if (toolbarState.isEditMode() && url != null) {
+                    val url = toolbarState.editState.query
+                    if (toolbarState.isEditMode() && url.isNotEmpty()) {
                         Suggestions(
                             url,
                             onSuggestionClicked = { suggestion ->
@@ -113,7 +99,7 @@ fun BrowserScreen(navController: NavController) {
                             },
                             onAutoComplete = { suggestion ->
                                 toolbarStore.dispatch(
-                                    BrowserEditToolbarAction.UpdateEditText(
+                                    BrowserEditToolbarAction.SearchQueryUpdated(
                                         suggestion.editSuggestion!!,
                                     ),
                                 )
@@ -149,7 +135,7 @@ fun TabsTray(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight()
-            .background(Color.Black.copy(alpha = ContentAlpha.medium))
+            .background(color = MaterialTheme.colorScheme.onSurfaceVariant)
             .clickable {
                 store.dispatch(BrowserScreenAction.HideTabs)
             },
@@ -186,7 +172,6 @@ fun TabsTray(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun Suggestions(
     url: String,
@@ -198,9 +183,11 @@ private fun Suggestions(
 
     val sessionSuggestionProvider = remember(context) {
         SessionSuggestionProvider(
-            context.resources,
             components.store,
             components.tabsUseCases.selectTab,
+            switchToTabDescription = context.getString(
+                mozilla.components.feature.awesomebar.R.string.switch_to_tab_description,
+            ),
         )
     }
 
@@ -210,16 +197,17 @@ private fun Suggestions(
 
     val fxSuggestSuggestionProvider = remember(context) {
         FxSuggestSuggestionProvider(
-            context.resources,
             loadUrlUseCase = components.sessionUseCases.loadUrl,
             includeSponsoredSuggestions = false,
             includeNonSponsoredSuggestions = true,
+            sponsoredSuggestionDescription = context.getString(
+                mozilla.components.feature.fxsuggest.R.string.sponsored_suggestion_description,
+            ),
         )
     }
 
     val searchSuggestionProvider = remember(context) {
         SearchSuggestionProvider(
-            context,
             components.store,
             components.searchUseCases.defaultSearch,
             components.client,

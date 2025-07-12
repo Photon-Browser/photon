@@ -6,7 +6,15 @@
 
 #include "DisplayPortUtils.h"
 
+#include <ostream>
+
 #include "FrameMetrics.h"
+#include "RetainedDisplayListBuilder.h"
+#include "WindowRenderer.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/gfx/Point.h"
@@ -14,17 +22,9 @@
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/layers/PAPZ.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_layers.h"
-#include "mozilla/StaticPrefs_layout.h"
 #include "nsLayoutUtils.h"
 #include "nsPlaceholderFrame.h"
 #include "nsSubDocumentFrame.h"
-#include "RetainedDisplayListBuilder.h"
-#include "WindowRenderer.h"
-
-#include <ostream>
 
 namespace mozilla {
 
@@ -702,15 +702,30 @@ void DisplayPortUtils::SetDisplayPortBase(nsIContent* aContent,
             ("Setting base rect %s for scrollId=%" PRIu64 "\n",
              ToString(aBase).c_str(), viewId));
   }
+  if (nsRect* baseData = static_cast<nsRect*>(
+          aContent->GetProperty(nsGkAtoms::DisplayPortBase))) {
+    *baseData = aBase;
+    return;
+  }
+
   aContent->SetProperty(nsGkAtoms::DisplayPortBase, new nsRect(aBase),
                         nsINode::DeleteProperty<nsRect>);
 }
 
 void DisplayPortUtils::SetDisplayPortBaseIfNotSet(nsIContent* aContent,
                                                   const nsRect& aBase) {
-  if (!aContent->GetProperty(nsGkAtoms::DisplayPortBase)) {
-    SetDisplayPortBase(aContent, aBase);
+  if (aContent->GetProperty(nsGkAtoms::DisplayPortBase)) {
+    return;
   }
+  if (MOZ_LOG_TEST(sDisplayportLog, LogLevel::Verbose)) {
+    ViewID viewId = nsLayoutUtils::FindOrCreateIDFor(aContent);
+    MOZ_LOG(sDisplayportLog, LogLevel::Verbose,
+            ("Setting base rect %s for scrollId=%" PRIu64 "\n",
+             ToString(aBase).c_str(), viewId));
+  }
+
+  aContent->SetProperty(nsGkAtoms::DisplayPortBase, new nsRect(aBase),
+                        nsINode::DeleteProperty<nsRect>);
 }
 
 void DisplayPortUtils::RemoveDisplayPort(nsIContent* aContent) {

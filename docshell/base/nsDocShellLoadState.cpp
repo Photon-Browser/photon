@@ -93,10 +93,11 @@ nsDocShellLoadState::nsDocShellLoadState(
   mTriggeringSandboxFlags = aLoadState.TriggeringSandboxFlags();
   mTriggeringWindowId = aLoadState.TriggeringWindowId();
   mTriggeringStorageAccess = aLoadState.TriggeringStorageAccess();
+  mTriggeringClassificationFlags = aLoadState.TriggeringClassificationFlags();
   mTriggeringRemoteType = aLoadState.TriggeringRemoteType();
   mSchemelessInput = aLoadState.SchemelessInput();
   mHttpsUpgradeTelemetry = aLoadState.HttpsUpgradeTelemetry();
-  mCsp = aLoadState.Csp();
+  mPolicyContainer = aLoadState.PolicyContainer();
   mOriginalURIString = aLoadState.OriginalURIString();
   mCancelContentJSEpoch = aLoadState.CancelContentJSEpoch();
   mPostDataStream = aLoadState.PostDataStream();
@@ -161,7 +162,8 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mTriggeringSandboxFlags(aOther.mTriggeringSandboxFlags),
       mTriggeringWindowId(aOther.mTriggeringWindowId),
       mTriggeringStorageAccess(aOther.mTriggeringStorageAccess),
-      mCsp(aOther.mCsp),
+      mTriggeringClassificationFlags(aOther.mTriggeringClassificationFlags),
+      mPolicyContainer(aOther.mPolicyContainer),
       mKeepResultPrincipalURIIfSet(aOther.mKeepResultPrincipalURIIfSet),
       mLoadReplace(aOther.mLoadReplace),
       mInheritPrincipal(aOther.mInheritPrincipal),
@@ -222,6 +224,7 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
       mTriggeringSandboxFlags(0),
       mTriggeringWindowId(0),
       mTriggeringStorageAccess(false),
+      mTriggeringClassificationFlags({0, 0}),
       mKeepResultPrincipalURIIfSet(false),
       mLoadReplace(false),
       mInheritPrincipal(false),
@@ -480,11 +483,14 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
   loadState->SetTriggeringWindowId(aLoadURIOptions.mTriggeringWindowId);
   loadState->SetTriggeringStorageAccess(
       aLoadURIOptions.mTriggeringStorageAccess);
+  // The load is assumed to be first-party, so the triggering classification
+  // should be both zero.
+  loadState->SetTriggeringClassificationFlags({0, 0});
   loadState->SetPostDataStream(postData);
   loadState->SetHeadersStream(aLoadURIOptions.mHeaders);
   loadState->SetBaseURI(aLoadURIOptions.mBaseURI);
   loadState->SetTriggeringPrincipal(aLoadURIOptions.mTriggeringPrincipal);
-  loadState->SetCsp(aLoadURIOptions.mCsp);
+  loadState->SetPolicyContainer(aLoadURIOptions.mPolicyContainer);
   loadState->SetForceAllowDataURI(forceAllowDataURI);
   if (aLoadURIOptions.mCancelContentJSEpoch) {
     loadState->SetCancelContentJSEpoch(aLoadURIOptions.mCancelContentJSEpoch);
@@ -588,11 +594,14 @@ void nsDocShellLoadState::SetPartitionedPrincipalToInherit(
   mPartitionedPrincipalToInherit = aPartitionedPrincipalToInherit;
 }
 
-void nsDocShellLoadState::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  mCsp = aCsp;
+void nsDocShellLoadState::SetPolicyContainer(
+    nsIPolicyContainer* aPolicyContainer) {
+  mPolicyContainer = aPolicyContainer;
 }
 
-nsIContentSecurityPolicy* nsDocShellLoadState::Csp() const { return mCsp; }
+nsIPolicyContainer* nsDocShellLoadState::PolicyContainer() const {
+  return mPolicyContainer;
+}
 
 void nsDocShellLoadState::SetTriggeringSandboxFlags(uint32_t flags) {
   mTriggeringSandboxFlags = flags;
@@ -617,6 +626,16 @@ void nsDocShellLoadState::SetTriggeringStorageAccess(
 
 bool nsDocShellLoadState::TriggeringStorageAccess() const {
   return mTriggeringStorageAccess;
+}
+
+mozilla::net::ClassificationFlags
+nsDocShellLoadState::TriggeringClassificationFlags() const {
+  return mTriggeringClassificationFlags;
+}
+
+void nsDocShellLoadState::SetTriggeringClassificationFlags(
+    mozilla::net::ClassificationFlags aFlags) {
+  mTriggeringClassificationFlags = aFlags;
 }
 
 bool nsDocShellLoadState::InheritPrincipal() const { return mInheritPrincipal; }
@@ -1364,10 +1383,11 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.TriggeringSandboxFlags() = mTriggeringSandboxFlags;
   loadState.TriggeringWindowId() = mTriggeringWindowId;
   loadState.TriggeringStorageAccess() = mTriggeringStorageAccess;
+  loadState.TriggeringClassificationFlags() = mTriggeringClassificationFlags;
   loadState.TriggeringRemoteType() = mTriggeringRemoteType;
   loadState.SchemelessInput() = mSchemelessInput;
   loadState.HttpsUpgradeTelemetry() = mHttpsUpgradeTelemetry;
-  loadState.Csp() = mCsp;
+  loadState.PolicyContainer() = mPolicyContainer;
   loadState.OriginalURIString() = mOriginalURIString;
   loadState.CancelContentJSEpoch() = mCancelContentJSEpoch;
   loadState.ReferrerInfo() = mReferrerInfo;
@@ -1427,7 +1447,7 @@ NavigationType nsDocShellLoadState::GetNavigationType() const {
 }
 
 mozilla::dom::FormData* nsDocShellLoadState::GetFormDataEntryList() {
-  return nullptr;
+  return mFormDataEntryList;
 }
 
 void nsDocShellLoadState::SetFormDataEntryList(

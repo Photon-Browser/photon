@@ -4,6 +4,7 @@
 
 package org.mozilla.geckoview.test
 
+import androidx.annotation.OptIn
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import junit.framework.TestCase.assertEquals
@@ -13,6 +14,7 @@ import junit.framework.TestCase.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.gecko.EventDispatcher.QueryException
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoPreferenceController
 import org.mozilla.geckoview.GeckoPreferenceController.GeckoPreference
 import org.mozilla.geckoview.GeckoPreferenceController.PREF_BRANCH_DEFAULT
@@ -24,6 +26,7 @@ import org.mozilla.geckoview.GeckoPreferenceController.PREF_TYPE_STRING
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
+@OptIn(ExperimentalGeckoViewApi::class)
 class PreferencesTest : BaseSessionTest() {
     /**
      * Checking if delegate getter and setter behave as expected.
@@ -495,6 +498,73 @@ class PreferencesTest : BaseSessionTest() {
 
         val unknownPref = "pref.unknown.does.not.exist"
         val unknownActual = sessionRule.waitForResult(GeckoPreferenceController.getGeckoPref(unknownPref))
+        assertEquals("Getting unknown pref worked as expected.", null, unknownActual.value)
+        assertEquals("Default value is as expected.", null, unknownActual.defaultValue)
+        assertEquals("User value is as expected.", null, unknownActual.userValue)
+        assertFalse("User and default value have not diverged.", unknownActual.hasUserChangedValue)
+        assertEquals("Correct name for unknown pref.", unknownPref, unknownActual.pref)
+        assertEquals("Correct type for unknown pref.", PREF_TYPE_INVALID, unknownActual.type)
+    }
+
+    /**
+     * Checks if getting multiple prefs from the user branch behaves as expected.
+     */
+    @Test
+    fun gettingMultipleUserGeckoPreference() {
+        // Arbitrary preferences selected from StaticPrefList.yaml
+        val intPref = "dom.user_activation.transient.timeout"
+        val intExpected = sessionRule.getPrefs(intPref)[0]
+
+        val stringPref = "editor.background_color"
+        val stringExpected = sessionRule.getPrefs(stringPref)[0]
+
+        val floatPref = "dom.media.silence_duration_for_audibility"
+        val floatExpected = sessionRule.getPrefs(floatPref)[0]
+
+        val boolPref = "dom.allow_cut_copy"
+        val boolExpected = sessionRule.getPrefs(boolPref)[0]
+
+        val unknownPref = "pref.unknown.does.not.exist"
+
+        val prefsList =
+            sessionRule.waitForResult(
+                GeckoPreferenceController.getGeckoPrefs(listOf(intPref, stringPref, floatPref, boolPref, unknownPref)),
+            )
+
+        val prefsMap = prefsList.associateBy { it.pref }
+        val intActual = prefsMap[intPref]!!
+        assertEquals("Getting int worked as expected.", intExpected, intActual.value)
+        assertEquals("Default value is as expected.", intExpected, intActual.defaultValue)
+        assertEquals("User value is as expected.", null, intActual.userValue)
+        assertFalse("User and default value have not diverged.", intActual.hasUserChangedValue)
+        assertEquals("Correct name for int.", intPref, intActual.pref)
+        assertEquals("Correct type for int.", PREF_TYPE_INT, intActual.type)
+
+        val stringActual = prefsMap[stringPref]!!
+        assertEquals("Getting string worked as expected.", stringExpected, stringActual.value)
+        assertEquals("Default value is as expected.", stringExpected, stringActual.defaultValue)
+        assertEquals("User value is as expected.", null, stringActual.userValue)
+        assertFalse("User and default value have not diverged.", stringActual.hasUserChangedValue)
+        assertEquals("Correct name for string.", stringPref, stringActual.pref)
+        assertEquals("Correct type for string.", PREF_TYPE_STRING, stringActual.type)
+
+        val floatActual = prefsMap[floatPref]!!
+        assertEquals("Getting float worked as expected.", floatExpected, floatActual.value)
+        assertEquals("Default value is as expected.", floatExpected, floatActual.defaultValue)
+        assertEquals("User value is as expected.", null, floatActual.userValue)
+        assertFalse("User and default value have not diverged.", floatActual.hasUserChangedValue)
+        assertEquals("Correct name for float.", floatPref, floatActual.pref)
+        assertEquals("Correct type for float.", PREF_TYPE_STRING, floatActual.type)
+
+        val boolActual = prefsMap[boolPref]!!
+        assertEquals("Getting bool worked as expected.", boolExpected, boolActual.value)
+        assertEquals("Default value is as expected.", boolExpected, boolActual.defaultValue)
+        assertEquals("User value is as expected.", null, boolActual.userValue)
+        assertFalse("User and default value have not diverged.", boolActual.hasUserChangedValue)
+        assertEquals("Correct name for bool.", boolPref, boolActual.pref)
+        assertEquals("Correct type for bool.", PREF_TYPE_BOOL, boolActual.type)
+
+        val unknownActual = prefsMap[unknownPref]!!
         assertEquals("Getting unknown pref worked as expected.", null, unknownActual.value)
         assertEquals("Default value is as expected.", null, unknownActual.defaultValue)
         assertEquals("User value is as expected.", null, unknownActual.userValue)

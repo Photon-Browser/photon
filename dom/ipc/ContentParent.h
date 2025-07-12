@@ -292,7 +292,7 @@ class ContentParent final : public PContentParent,
   static void BroadcastThemeUpdate(widget::ThemeChangeKind);
 
   static void BroadcastMediaCodecsSupportedUpdate(
-      RemoteDecodeIn aLocation, const media::MediaCodecsSupported& aSupported);
+      RemoteMediaIn aLocation, const media::MediaCodecsSupported& aSupported);
 
   const nsACString& GetRemoteType() const override;
 
@@ -550,7 +550,7 @@ class ContentParent final : public PContentParent,
       const bool& aForWindowDotPrint, const bool& aTopLevelCreatedByWebContent,
       nsIURI* aURIToLoad, const nsACString& aFeatures,
       const UserActivation::Modifiers& aModifiers,
-      nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
+      nsIPrincipal* aTriggeringPrincipal, nsIPolicyContainer* aPolicyContainer,
       nsIReferrerInfo* aReferrerInfo, const OriginAttributes& aOriginAttributes,
       bool aUserActivation, bool aTextDirectiveUserActivation,
       CreateWindowResolver&& aResolve);
@@ -561,7 +561,7 @@ class ContentParent final : public PContentParent,
       const bool& aTopLevelCreatedByWebContent, nsIURI* aURIToLoad,
       const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
       const nsAString& aName, nsIPrincipal* aTriggeringPrincipal,
-      nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
+      nsIPolicyContainer* aPolicyContainer, nsIReferrerInfo* aReferrerInfo,
       const OriginAttributes& aOriginAttributes, bool aUserActivation,
       bool aTextDirectiveUserActivation);
 
@@ -784,7 +784,7 @@ class ContentParent final : public PContentParent,
       nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewRemoteTab,
       bool* aWindowIsNew, int32_t& aOpenLocation,
       nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo* aReferrerInfo,
-      bool aLoadUri, nsIContentSecurityPolicy* aCsp,
+      bool aLoadUri, nsIPolicyContainer* aPolicyContainer,
       const OriginAttributes& aOriginAttributes, bool aUserActivation,
       bool aTextDirectiveUserActivation);
 
@@ -1302,9 +1302,9 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvHistoryCommit(
       const MaybeDiscarded<BrowsingContext>& aContext, const uint64_t& aLoadID,
-      const nsID& aChangeID, const uint32_t& aLoadType, const bool& aPersist,
+      const nsID& aChangeID, const uint32_t& aLoadType,
       const bool& aCloneEntryChildren, const bool& aChannelExpired,
-      const uint32_t& aCacheKey, nsIPrincipal* aPartitionedPrincipal);
+      const uint32_t& aCacheKey);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvHistoryGo(
@@ -1344,7 +1344,6 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvGetContiguousSessionHistoryInfos(
       const MaybeDiscarded<BrowsingContext>& aContext,
-      SessionHistoryInfo&& aInfo,
       GetContiguousSessionHistoryInfosResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvRemoveFromBFCache(
@@ -1469,7 +1468,6 @@ class ContentParent final : public PContentParent,
   GeckoChildProcessHost* mSubprocess;
   const TimeStamp mLaunchTS;  // used to calculate time to start content process
   TimeStamp mLaunchYieldTS;   // used to calculate async launch main thread time
-  TimeStamp mActivateTS;
 
   bool mIsAPreallocBlocker;  // We called AddBlocker for this ContentParent
 

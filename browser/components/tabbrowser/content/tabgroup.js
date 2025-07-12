@@ -17,6 +17,9 @@
         <label class="tab-group-label" role="button"/>
       </vbox>
       <html:slot/>
+      <vbox class="tab-group-overflow-count-container" pack="center">
+        <label class="tab-group-overflow-count" role="button" />
+      </vbox>
       `;
 
     /** @type {string} */
@@ -24,6 +27,12 @@
 
     /** @type {MozTextLabel} */
     #labelElement;
+
+    /** @type {MozTextLabel} */
+    #overflowCountLabel;
+
+    /** @type {MozXULElement} */
+    #overflowContainer;
 
     /** @type {string} */
     #colorCode;
@@ -52,6 +61,10 @@
       // causes the component to be repositioned in the DOM.
       this.#observeTabChanges();
 
+      // Similar to above, always set up TabSelect listener, as this gets
+      // removed in disconnectedCallback
+      this.ownerGlobal.addEventListener("TabSelect", this);
+
       if (this._initialized) {
         return;
       }
@@ -63,12 +76,13 @@
       this.appendChild(this.constructor.fragment);
       this.initializeAttributeInheritance();
 
+      this.addEventListener("click", this);
+
       this.#labelElement = this.querySelector(".tab-group-label");
       // Mirroring MozTabbrowserTab
       this.#labelElement.container = gBrowser.tabContainer;
       this.#labelElement.group = this;
 
-      this.#labelElement.addEventListener("click", this);
       this.#labelElement.addEventListener("contextmenu", e => {
         e.preventDefault();
         gBrowser.tabGroupMenu.openEditModal(this);
@@ -78,7 +92,12 @@
       this.#updateLabelAriaAttributes();
       this.#updateCollapsedAriaAttributes();
 
-      this.addEventListener("TabSelect", this);
+      this.#overflowContainer = this.querySelector(
+        ".tab-group-overflow-count-container"
+      );
+      this.#overflowCountLabel = this.#overflowContainer.querySelector(
+        ".tab-group-overflow-count"
+      );
 
       let tabGroupCreateDetail = this.#wasCreatedByAdoption
         ? { isAdoptingGroup: true }
@@ -96,48 +115,17 @@
     }
 
     disconnectedCallback() {
+      this.ownerGlobal.removeEventListener("TabSelect", this);
       this.#tabChangeObserver?.disconnect();
+    }
+
+    appendChild(node) {
+      return this.insertBefore(node, this.#overflowContainer);
     }
 
     #observeTabChanges() {
       if (!this.#tabChangeObserver) {
-        this.#tabChangeObserver = new window.MutationObserver(mutationList => {
-          for (let mutation of mutationList) {
-            // TabGrouped and TabUngrouped events are triggered on the tab
-            // group, not the tab itself. This is a bit unorthodox, but fixes
-            // bug1964152 where tab group events are not fired correctly when
-            // tabs change windows (because the tab is detached from the DOM at
-            // time of the event).
-            mutation.addedNodes.forEach(node => {
-              if (node.tagName === "tab") {
-                this.dispatchEvent(
-                  new CustomEvent("TabGrouped", {
-                    bubbles: true,
-                    detail: node,
-                  })
-                );
-                node.setAttribute("aria-level", 2);
-              }
-            });
-            mutation.removedNodes.forEach(node => {
-              if (node.tagName === "tab") {
-                this.dispatchEvent(
-                  new CustomEvent("TabUngrouped", {
-                    bubbles: true,
-                    detail: node,
-                  })
-                );
-                // Tab could have moved to be ungrouped (level 1)
-                // or to a different group (level 2).
-                node.setAttribute("aria-level", node.group ? 2 : 1);
-                // `posinset` and `setsize` only need to be set explicitly
-                // on grouped tabs so that a11y tools can tell users that a
-                // given tab is "2 of 7" in the group, for example.
-                node.removeAttribute("aria-posinset");
-                node.removeAttribute("aria-setsize");
-              }
-            });
-          }
+        this.#tabChangeObserver = new window.MutationObserver(() => {
           if (!this.tabs.length) {
             this.dispatchEvent(
               new CustomEvent("TabGroupRemoved", { bubbles: true })
@@ -148,14 +136,32 @@
               "browser-tabgroup-removed-from-dom"
             );
           } else {
-            // Renumber tabs so that a11y tools can tell users that a given
-            // tab is "2 of 7" in the group, for example.
             let tabs = this.tabs;
             let tabCount = tabs.length;
             tabs.forEach((tab, index) => {
+              if (tab.selected) {
+                this.hasActiveTab = true;
+              }
+
+              // Renumber tabs so that a11y tools can tell users that a given
+              // tab is "2 of 7" in the group, for example.
               tab.setAttribute("aria-posinset", index + 1);
               tab.setAttribute("aria-setsize", tabCount);
             });
+
+            // When a group containing the active tab is collapsed,
+            // the overflow count displays the number of additional tabs
+            // in the group adjacent to the active tab.
+            let overflowCountLabel = this.#overflowContainer.querySelector(
+              ".tab-group-overflow-count"
+            );
+            if (tabCount > 1) {
+              overflowCountLabel.textContent = `+${tabCount - 1}`;
+              this.toggleAttribute("hasmultipletabs", true);
+            } else {
+              overflowCountLabel.textContent = "";
+              this.toggleAttribute("hasmultipletabs", false);
+            }
           }
         });
       }
@@ -194,6 +200,14 @@
 
     set id(val) {
       this.setAttribute("id", val);
+    }
+
+    get hasActiveTab() {
+      return this.hasAttribute("hasactivetab");
+    }
+
+    set hasActiveTab(val) {
+      this.toggleAttribute("hasactivetab", val);
     }
 
     get label() {
@@ -369,7 +383,10 @@
      * @param {PointerEvent} event
      */
     on_click(event) {
-      if (event.target === this.#labelElement && event.button === 0) {
+      let isToggleElement =
+        event.target === this.#labelElement ||
+        event.target === this.#overflowCountLabel;
+      if (isToggleElement && event.button === 0) {
         event.preventDefault();
         this.collapsed = !this.collapsed;
         gBrowser.tabGroupMenu.close();
@@ -382,8 +399,8 @@
       }
     }
 
-    on_TabSelect() {
-      this.collapsed = false;
+    on_TabSelect(event) {
+      this.hasActiveTab = event.target.group === this;
     }
 
     /**

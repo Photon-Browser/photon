@@ -16,6 +16,7 @@
 #include "nsAHttpConnection.h"
 #include "nsAHttpTransaction.h"
 #include "nsCOMPtr.h"
+#include "nsContentPermissionHelper.h"
 #include "nsHttp.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIClassOfService.h"
@@ -478,6 +479,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   uint64_t mBrowserId{0};
 
+  // IP address space of the browsing context that triggered this request
+  nsILoadInfo::IPAddressSpace mParentIPAddressSpace{
+      nsILoadInfo::IPAddressSpace::Unknown};
+  struct LNAPerms mLnaPermissionStatus{};
+
   // For Rate Pacing via an EventTokenBucket
  public:
   // called by the connection manager to run this transaction through the
@@ -506,6 +512,9 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // class has been set while Leader, Unblocked, DontThrottle has not.
   bool EligibleForThrottling() const;
 
+  bool AllowedToConnectToIpAddressSpace(
+      nsILoadInfo::IPAddressSpace aTargetIpAddressSpace) override;
+
  private:
   bool mSubmittedRatePacing{false};
   bool mPassedRatePacing{false};
@@ -532,6 +541,8 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   TransactionObserverFunc mTransactionObserver;
   NetAddr mSelfAddr;
   NetAddr mPeerAddr;
+  nsILoadInfo::IPAddressSpace mTargetIpAddressSpace{
+      nsILoadInfo::IPAddressSpace::Unknown};
   bool mResolvedByTRR{false};
   Atomic<nsIRequest::TRRMode, Relaxed> mEffectiveTRRMode{
       nsIRequest::TRR_DEFAULT_MODE};

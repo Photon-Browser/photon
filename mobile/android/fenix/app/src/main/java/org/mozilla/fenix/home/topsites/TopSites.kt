@@ -9,13 +9,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,10 +23,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Card
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,8 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -60,7 +60,6 @@ import org.mozilla.fenix.compose.PagerIndicator
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.sessioncontrol.TopSiteInteractor
 import org.mozilla.fenix.home.topsites.TopSitesTestTag.TOP_SITE_CARD_FAVICON
-import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.wallpapers.WallpaperState
 import kotlin.math.ceil
@@ -199,7 +198,9 @@ fun TopSites(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        if (items != topSitesWindows.last()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
                     }
 
                     if (needsInvisibleRow && page > 0) {
@@ -210,8 +211,6 @@ fun TopSites(
         }
 
         if (pagerState.pageCount > 1) {
-            Spacer(modifier = Modifier.height(8.dp))
-
             PagerIndicator(
                 pagerState = pagerState,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -278,20 +277,10 @@ data class TopSiteColors(
                 Color(textColor) to Color(textColor)
             }
 
-            var faviconCardBackgroundColor = FirefoxTheme.colors.layer2
-
-            wallpaperState.ComposeRunIfWallpaperCardColorsAreAvailable { cardColorLight, cardColorDark ->
-                faviconCardBackgroundColor = if (isSystemInDarkTheme()) {
-                    cardColorDark
-                } else {
-                    cardColorLight
-                }
-            }
-
             return TopSiteColors(
                 titleTextColor = titleTextColor,
                 sponsoredTextColor = sponsoredTextColor,
-                faviconCardBackgroundColor = faviconCardBackgroundColor,
+                faviconCardBackgroundColor = FirefoxTheme.colors.layer2,
             )
         }
     }
@@ -439,11 +428,14 @@ private fun TopSiteFaviconCard(
                 testTag = TOP_SITE_CARD_FAVICON
             }
             .size(TOP_SITES_FAVICON_CARD_SIZE.dp),
-        shape = RoundedCornerShape(8.dp),
-        backgroundColor = backgroundColor,
-        elevation = 6.dp,
+        shape = CircleShape,
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
             Surface(
                 modifier = Modifier.size(TOP_SITES_FAVICON_SIZE.dp),
                 color = backgroundColor,
@@ -460,22 +452,8 @@ private fun TopSiteFaviconCard(
 }
 
 @Composable
-private fun FaviconImage(painter: Painter) {
-    Image(
-        painter = painter,
-        contentDescription = null,
-        modifier = Modifier
-            .size(TOP_SITES_FAVICON_SIZE.dp),
-        contentScale = ContentScale.Crop,
-    )
-}
-
-@Composable
 private fun TopSiteFavicon(url: String, imageUrl: String? = null) {
-    when (url) {
-        SupportUtils.POCKET_TRENDING_URL -> FaviconImage(painterResource(R.drawable.ic_pocket))
-        else -> Favicon(url = url, size = TOP_SITES_FAVICON_SIZE.dp, imageUrl = imageUrl)
-    }
+    Favicon(url = url, size = TOP_SITES_FAVICON_SIZE.dp, imageUrl = imageUrl)
 }
 
 @Composable
@@ -553,7 +531,7 @@ private fun getMenuItems(
 @PreviewLightDark
 private fun TopSitesPreview() {
     FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
+        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1).padding(16.dp)) {
             TopSites(
                 topSites = FakeHomepagePreview.topSites(),
                 onTopSiteClick = {},

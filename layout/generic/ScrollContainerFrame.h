@@ -10,12 +10,13 @@
 #define mozilla_ScrollContainerFrame_h_
 
 #include "FrameMetrics.h"
+#include "ScrollVelocityQueue.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/WindowBinding.h"  // for mozilla::dom::ScrollBehavior
-#include "mozilla/layout/ScrollAnchorContainer.h"
 #include "mozilla/ScrollOrigin.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/dom/WindowBinding.h"  // for mozilla::dom::ScrollBehavior
+#include "mozilla/layout/ScrollAnchorContainer.h"
 #include "nsContainerFrame.h"
 #include "nsExpirationTracker.h"
 #include "nsIAnonymousContentCreator.h"
@@ -24,7 +25,6 @@
 #include "nsIStatefulFrame.h"
 #include "nsQueryFrame.h"
 #include "nsThreadUtils.h"
-#include "ScrollVelocityQueue.h"
 
 class nsPresContext;
 class nsIContent;
@@ -74,6 +74,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                              public nsIReflowCallback,
                              public nsIStatefulFrame {
  public:
+  using CSSPoint = mozilla::CSSPoint;
   using Element = dom::Element;
   using ScrollAnchorContainer = layout::ScrollAnchorContainer;
   using SnapTargetSet = nsTHashSet<RefPtr<nsIContent>>;
@@ -433,7 +434,7 @@ class ScrollContainerFrame : public nsContainerFrame,
    * will be exactly aScrollPosition at the end of the scroll animation unless
    * the SMOOTH_MSD animation is interrupted.
    */
-  void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
+  void ScrollToCSSPixels(const CSSPoint& aScrollPosition,
                          ScrollMode aMode = ScrollMode::Instant);
 
   /**
@@ -452,6 +453,13 @@ class ScrollContainerFrame : public nsContainerFrame,
    * pixel.
    */
   CSSIntPoint GetRoundedScrollPositionCSSPixels();
+
+  /**
+   * Returns the scroll position in CSS pixels.
+   */
+  CSSPoint GetScrollPositionCSSPixels() const {
+    return CSSPoint::FromAppUnits(GetScrollPosition());
+  }
 
   /**
    * Some platforms (OSX) may generate additional scrolling events even
@@ -479,7 +487,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                 ScrollMomentum aMomentum = NOT_MOMENTUM,
                 ScrollSnapFlags aSnapFlags = ScrollSnapFlags::Disabled);
 
-  void ScrollByCSSPixels(const CSSIntPoint& aDelta,
+  void ScrollByCSSPixels(const CSSPoint& aDelta,
                          ScrollMode aMode = ScrollMode::Instant) {
     return ScrollByCSSPixelsInternal(aDelta, aMode);
   }
@@ -855,7 +863,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                                             StyleScrollbarWidth);
 
   void ScrollByCSSPixelsInternal(
-      const CSSIntPoint& aDelta, ScrollMode aMode = ScrollMode::Instant,
+      const CSSPoint& aDelta, ScrollMode aMode = ScrollMode::Instant,
       // This ScrollByCSSPixels is mainly used for Element.scrollBy and
       // Window.scrollBy. An exception is the transmogrification of
       // ScrollToCSSPixels.
@@ -1100,6 +1108,7 @@ class ScrollContainerFrame : public nsContainerFrame,
   // top-layer items handle setting up their own ASRs.
   void MaybeCreateTopLayerAndWrapRootItems(
       nsDisplayListBuilder*, nsDisplayListCollection&, bool aCreateAsyncZoom,
+      bool aCapturedByViewTransition,
       AutoContainsBlendModeCapturer* aAsyncZoomBlendCapture,
       const nsRect& aAsyncZoomClipRect, nscoord* aRadii);
 
@@ -1311,10 +1320,6 @@ class ScrollContainerFrame : public nsContainerFrame,
     }
     ScheduleScrollAnimations();
     mMayScheduleScrollAnimations = false;
-  }
-
-  CSSPoint GetScrollPositionCSSPixels() const {
-    return CSSPoint::FromAppUnits(GetScrollPosition());
   }
 
   static void RemoveDisplayPortCallback(nsITimer* aTimer, void* aClosure);

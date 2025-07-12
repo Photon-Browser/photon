@@ -22,6 +22,8 @@ static const char* SameSiteToString(uint32_t aSameSite) {
       return "lax";
     case nsICookie::SAMESITE_STRICT:
       return "strict";
+    case nsICookie::SAMESITE_UNSET:
+      return "unset";
     default:
       MOZ_CRASH("Invalid nsICookie sameSite value");
       return "";
@@ -111,7 +113,7 @@ void CookieLogging::LogCookie(Cookie* aCookie) {
              aCookie->Host().get()));
     MOZ_LOG(gCookieLog, LogLevel::Debug, ("path: %s\n", aCookie->Path().get()));
 
-    PR_ExplodeTime(aCookie->Expiry() * int64_t(PR_USEC_PER_SEC),
+    PR_ExplodeTime(aCookie->Expiry() * int64_t(PR_USEC_PER_MSEC),
                    PR_GMTParameters, &explodedTime);
     PR_FormatTimeUSEnglish(timeString, TIME_STRING_LENGTH, "%c GMT",
                            &explodedTime);

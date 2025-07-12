@@ -107,6 +107,7 @@
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/PointerEventHandler.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Sanitizer.h"
 #include "mozilla/dom/SVGElement.h"
@@ -170,6 +171,7 @@
 #include "nsIDocShell.h"
 #include "nsIFocusManager.h"
 #include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsIGlobalObject.h"
 #include "nsIIOService.h"
 #include "nsIInterfaceRequestor.h"
@@ -326,8 +328,7 @@ void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
   // XXX If pointerInfo->mIsSynthesizedForTests does not match the last
   // WidgetPointerEvent's mFlags.mIsSynthesizedForTests, should we treat it
   // as unknown pointerId?
-  if (!pointerInfo->mActiveState ||
-      pointerInfo->mActiveDocument != OwnerDoc()) {
+  if (!pointerInfo->mIsActive || pointerInfo->mActiveDocument != OwnerDoc()) {
     return;
   }
   PointerEventHandler::RequestPointerCaptureById(aPointerId, this);
@@ -849,14 +850,15 @@ void Element::ScrollTo(const ScrollToOptions& aOptions) {
   if (!sf) {
     return;
   }
-  CSSIntPoint scrollPos = sf->GetRoundedScrollPositionCSSPixels();
+
+  CSSPoint scrollPos = sf->GetScrollPositionCSSPixels();
   if (aOptions.mLeft.WasPassed()) {
-    scrollPos.x = int32_t(mozilla::ToZeroIfNonfinite(
-        frame->Style()->EffectiveZoom().Zoom(aOptions.mLeft.Value())));
+    scrollPos.x = ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mLeft.Value()));
   }
   if (aOptions.mTop.WasPassed()) {
-    scrollPos.y = int32_t(mozilla::ToZeroIfNonfinite(
-        frame->Style()->EffectiveZoom().Zoom(aOptions.mTop.Value())));
+    scrollPos.y = ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mTop.Value()));
   }
   ScrollMode scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
                               ? ScrollMode::SmoothMsd
@@ -878,15 +880,15 @@ void Element::ScrollBy(const ScrollToOptions& aOptions) {
     return;
   }
 
-  CSSIntPoint scrollDelta;
+  CSSPoint scrollDelta;
   if (aOptions.mLeft.WasPassed()) {
-    scrollDelta.x = int32_t(mozilla::ToZeroIfNonfinite(
-        frame->Style()->EffectiveZoom().Zoom(aOptions.mLeft.Value())));
+    scrollDelta.x = ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mLeft.Value()));
   }
 
   if (aOptions.mTop.WasPassed()) {
-    scrollDelta.y = int32_t(mozilla::ToZeroIfNonfinite(
-        frame->Style()->EffectiveZoom().Zoom(aOptions.mTop.Value())));
+    scrollDelta.y = ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mTop.Value()));
   }
 
   auto scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
@@ -895,21 +897,21 @@ void Element::ScrollBy(const ScrollToOptions& aOptions) {
   sf->ScrollByCSSPixels(scrollDelta, scrollMode);
 }
 
-int32_t Element::ScrollTop() {
-  return CSSPixel::FromAppUnitsRounded(GetScrollOrigin().y);
+double Element::ScrollTop() {
+  return CSSPixel::FromAppUnits(GetScrollOrigin().y);
 }
 
-void Element::SetScrollTop(int32_t aScrollTop) {
+void Element::SetScrollTop(double aScrollTop) {
   ScrollToOptions options;
   options.mTop.Construct(aScrollTop);
   ScrollTo(options);
 }
 
-int32_t Element::ScrollLeft() {
-  return CSSPixel::FromAppUnitsRounded(GetScrollOrigin().x);
+double Element::ScrollLeft() {
+  return CSSPixel::FromAppUnits(GetScrollOrigin().x);
 }
 
-void Element::SetScrollLeft(int32_t aScrollLeft) {
+void Element::SetScrollLeft(double aScrollLeft) {
   ScrollToOptions options;
   options.mLeft.Construct(aScrollLeft);
   ScrollTo(options);
@@ -931,20 +933,20 @@ nsRect Element::GetScrollRange() {
   return frame->Style()->EffectiveZoom().Unzoom(sf->GetScrollRange());
 }
 
-int32_t Element::ScrollTopMin() {
-  return CSSPixel::FromAppUnitsRounded(GetScrollRange().Y());
+double Element::ScrollTopMin() {
+  return CSSPixel::FromAppUnits(GetScrollRange().Y());
 }
 
-int32_t Element::ScrollTopMax() {
-  return CSSPixel::FromAppUnitsRounded(GetScrollRange().YMost());
+double Element::ScrollTopMax() {
+  return CSSPixel::FromAppUnits(GetScrollRange().YMost());
 }
 
-int32_t Element::ScrollLeftMin() {
-  return CSSPixel::FromAppUnitsRounded(GetScrollRange().X());
+double Element::ScrollLeftMin() {
+  return CSSPixel::FromAppUnits(GetScrollRange().X());
 }
 
-int32_t Element::ScrollLeftMax() {
-  return CSSPixel::FromAppUnitsRounded(GetScrollRange().XMost());
+double Element::ScrollLeftMax() {
+  return CSSPixel::FromAppUnits(GetScrollRange().XMost());
 }
 
 static nsSize GetScrollRectSizeForOverflowVisibleFrame(nsIFrame* aFrame) {
@@ -1699,12 +1701,15 @@ already_AddRefed<nsIPrincipal> Element::CreateDevtoolsPrincipal() {
   RefPtr<ExpandedPrincipal> dtPrincipal = ExpandedPrincipal::Create(
       allowList, NodePrincipal()->OriginAttributesRef());
 
-  if (nsIContentSecurityPolicy* csp = GetCsp()) {
-    RefPtr<nsCSPContext> dtCsp = new nsCSPContext();
-    dtCsp->InitFromOther(static_cast<nsCSPContext*>(csp));
-    dtCsp->SetSkipAllowInlineStyleCheck(true);
+  if (nsIPolicyContainer* policyContainer = GetPolicyContainer()) {
+    if (nsIContentSecurityPolicy* csp =
+            PolicyContainer::Cast(policyContainer)->CSP()) {
+      RefPtr<nsCSPContext> dtCsp = new nsCSPContext();
+      dtCsp->InitFromOther(static_cast<nsCSPContext*>(csp));
+      dtCsp->SetSkipAllowInlineStyleCheck(true);
 
-    dtPrincipal->SetCsp(dtCsp);
+      dtPrincipal->SetCsp(dtCsp);
+    }
   }
 
   return dtPrincipal.forget();
@@ -5404,6 +5409,158 @@ bool Element::BlockingContainsRender() const {
   MOZ_ASSERT(attrValue->Type() == nsAttrValue::eAtomArray,
              "Checking blocking attribute on element that doesn't parse it?");
   return attrValue->Contains(nsGkAtoms::render, eIgnoreCase);
+}
+
+static bool IsOffsetParent(nsIFrame* aFrame) {
+  LayoutFrameType frameType = aFrame->Type();
+
+  if (frameType == LayoutFrameType::TableCell ||
+      frameType == LayoutFrameType::TableWrapper) {
+    // Per the IDL for Element, only td, th, and table are acceptable
+    // offsetParents apart from body or positioned elements; we need to check
+    // the content type as well as the frame type so we ignore anonymous tables
+    // created by an element with display: table-cell with no actual table
+    nsIContent* content = aFrame->GetContent();
+
+    return content->IsAnyOfHTMLElements(nsGkAtoms::table, nsGkAtoms::td,
+                                        nsGkAtoms::th);
+  }
+  return false;
+}
+
+struct OffsetResult {
+  Element* mParent = nullptr;
+  nsRect mRect;
+};
+
+static OffsetResult GetUnretargetedOffsetsFor(const Element& aElement) {
+  nsIFrame* frame = aElement.GetPrimaryFrame();
+  if (!frame) {
+    return {};
+  }
+
+  nsIFrame* styleFrame = nsLayoutUtils::GetStyleFrame(frame);
+
+  nsIFrame* parent = frame->GetParent();
+  nsPoint origin(0, 0);
+
+  nsIContent* offsetParent = nullptr;
+  Element* docElement = aElement.GetComposedDoc()->GetRootElement();
+  nsIContent* content = frame->GetContent();
+  const auto effectiveZoom = frame->Style()->EffectiveZoom();
+
+  if (content &&
+      (content->IsHTMLElement(nsGkAtoms::body) || content == docElement)) {
+    parent = frame;
+  } else {
+    const bool isPositioned = styleFrame->IsAbsPosContainingBlock();
+    const bool isAbsolutelyPositioned = frame->IsAbsolutelyPositioned();
+    origin += frame->GetPositionIgnoringScrolling();
+
+    for (; parent; parent = parent->GetParent()) {
+      content = parent->GetContent();
+
+      // Stop at the first ancestor that is positioned.
+      if (parent->IsAbsPosContainingBlock()) {
+        offsetParent = content;
+        break;
+      }
+
+      // WebKit-ism: offsetParent stops at zoom changes.
+      // See https://github.com/w3c/csswg-drafts/issues/10252
+      if (effectiveZoom != parent->Style()->EffectiveZoom()) {
+        offsetParent = content;
+        break;
+      }
+
+      // Add the parent's origin to our own to get to the
+      // right coordinate system.
+      const bool isOffsetParent = !isPositioned && IsOffsetParent(parent);
+      if (!isOffsetParent) {
+        origin += parent->GetPositionIgnoringScrolling();
+      }
+
+      if (content) {
+        // If we've hit the document element, break here.
+        if (content == docElement) {
+          break;
+        }
+
+        // Break if the ancestor frame type makes it suitable as offset parent
+        // and this element is *not* positioned or if we found the body element.
+        if (isOffsetParent || content->IsHTMLElement(nsGkAtoms::body)) {
+          offsetParent = content;
+          break;
+        }
+      }
+    }
+
+    if (isAbsolutelyPositioned && !offsetParent) {
+      // If this element is absolutely positioned, but we don't have
+      // an offset parent it means this element is an absolutely
+      // positioned child that's not nested inside another positioned
+      // element, in this case the element's frame's parent is the
+      // frame for the HTML element so we fail to find the body in the
+      // parent chain. We want the offset parent in this case to be
+      // the body, so we just get the body element from the document.
+      //
+      // We use GetBodyElement() here, not GetBody(), because we don't want to
+      // end up with framesets here.
+      offsetParent = aElement.GetComposedDoc()->GetBodyElement();
+    }
+  }
+
+  // Make the position relative to the padding edge.
+  if (parent) {
+    const nsStyleBorder* border = parent->StyleBorder();
+    origin.x -= border->GetComputedBorderWidth(eSideLeft);
+    origin.y -= border->GetComputedBorderWidth(eSideTop);
+  }
+
+  // Get the union of all rectangles in this and continuation frames.
+  // It doesn't really matter what we use as aRelativeTo here, since
+  // we only care about the size. We just have to use something non-null.
+  nsRect rcFrame = nsLayoutUtils::GetAllInFlowRectsUnion(frame, frame);
+  rcFrame.MoveTo(origin);
+  return {Element::FromNodeOrNull(offsetParent), rcFrame};
+}
+
+static bool ShouldBeRetargeted(const Element& aReferenceElement,
+                               const Element& aElementToMaybeRetarget) {
+  ShadowRoot* shadow = aElementToMaybeRetarget.GetContainingShadow();
+  if (!shadow) {
+    return false;
+  }
+  for (ShadowRoot* scope = aReferenceElement.GetContainingShadow(); scope;
+       scope = scope->Host()->GetContainingShadow()) {
+    if (scope == shadow) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+Element* Element::GetOffsetRect(CSSIntRect& aRect) {
+  aRect = CSSIntRect();
+
+  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
+  if (!frame) {
+    return nullptr;
+  }
+
+  OffsetResult thisResult = GetUnretargetedOffsetsFor(*this);
+  nsRect rect = thisResult.mRect;
+  Element* parent = thisResult.mParent;
+  while (parent && ShouldBeRetargeted(*this, *parent)) {
+    OffsetResult result = GetUnretargetedOffsetsFor(*parent);
+    rect += result.mRect.TopLeft();
+    parent = result.mParent;
+  }
+
+  aRect = CSSIntRect::FromAppUnitsRounded(
+      frame->Style()->EffectiveZoom().Unzoom(rect));
+  return parent;
 }
 
 }  // namespace mozilla::dom

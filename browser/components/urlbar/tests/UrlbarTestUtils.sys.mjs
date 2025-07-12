@@ -271,7 +271,11 @@ export var UrlbarTestUtils = {
     } = {}
   ) {
     this.Assert?.ok(win.gURLBar.view.isOpen, "view should be open");
-    let menuButton = this.getButtonForResultIndex(win, "menu", resultIndex);
+    let menuButton = this.getButtonForResultIndex(
+      win,
+      "result-menu",
+      resultIndex
+    );
     this.Assert?.ok(
       menuButton,
       `found the menu button at result index ${resultIndex}`
@@ -843,9 +847,20 @@ export var UrlbarTestUtils = {
         "browser.urlbar.placeholderName" +
         (lazy.PrivateBrowsingUtils.isWindowPrivate(window) ? ".private" : "");
       let engineName = Services.prefs.getStringPref(prefName, "");
-      let expectedPlaceholder = engineName
-        ? { id: "urlbar-placeholder-with-name", args: { name: engineName } }
-        : { id: "urlbar-placeholder", args: null };
+      let keywordEnabled = Services.prefs.getBoolPref("keyword.enabled");
+
+      let expectedPlaceholder;
+      if (keywordEnabled && engineName) {
+        expectedPlaceholder = {
+          id: "urlbar-placeholder-with-name",
+          args: { name: engineName },
+        };
+      } else if (keywordEnabled && !engineName) {
+        expectedPlaceholder = { id: "urlbar-placeholder" };
+      } else {
+        expectedPlaceholder = { id: "urlbar-placeholder-keyword-disabled" };
+      }
+
       await lazy.BrowserTestUtils.waitForCondition(() => {
         let l10nAttributes = window.document.l10n.getAttributes(
           window.gURLBar.inputField
@@ -1384,15 +1399,18 @@ export var UrlbarTestUtils = {
 
   async openSearchModeSwitcher(win) {
     let popup = this.searchModeSwitcherPopup(win);
+    let button = win.document.getElementById("urlbar-searchmode-switcher");
+    this.Assert.ok(lazy.BrowserTestUtils.isVisible(button));
+    await this.EventUtils.promiseElementReadyForUserInput(button, win);
+
     let promiseMenuOpen = lazy.BrowserTestUtils.waitForPopupEvent(
       popup,
       "shown"
     );
-    let button = win.document.getElementById("urlbar-searchmode-switcher");
-    this.Assert.ok(lazy.BrowserTestUtils.isVisible(button));
-    await this.EventUtils.promiseElementReadyForUserInput(button, win);
+    let rebuildPromise = lazy.BrowserTestUtils.waitForEvent(popup, "rebuild");
     this.EventUtils.synthesizeMouseAtCenter(button, {}, win);
-    await promiseMenuOpen;
+    await Promise.all([promiseMenuOpen, rebuildPromise]);
+
     return popup;
   },
 

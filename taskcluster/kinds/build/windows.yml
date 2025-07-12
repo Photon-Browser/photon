@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
+    worker-type: b-linux-amd
     run:
         using: mozharness
     fetches:
@@ -21,7 +22,6 @@ win32/debug:
         platform: windows2012-32/debug
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -55,6 +55,7 @@ win32/debug:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -70,7 +71,6 @@ win32/opt:
         platform: windows2012-32/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -104,6 +104,7 @@ win32/opt:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -118,7 +119,6 @@ win32-fuzzing/debug:
         platform: windows2012-32/debug
         symbol: Bf
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -154,6 +154,7 @@ win32-fuzzing/debug:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -171,7 +172,6 @@ win64/debug:
         platform: windows2012-64/debug
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -206,6 +206,7 @@ win64/debug:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -218,7 +219,6 @@ win64-non-unified/plain:
         platform: windows2012-64/debug
         symbol: Bp-nu
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -253,6 +253,7 @@ win64-non-unified/plain:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -267,7 +268,6 @@ win64-fuzzing/debug:
         platform: windows2012-64/debug
         symbol: Bf
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -303,6 +303,7 @@ win64-fuzzing/debug:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -349,6 +350,7 @@ win64-plain/debug:
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -364,7 +366,6 @@ win64/opt:
         platform: windows2012-64/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -399,6 +400,7 @@ win64/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -443,6 +445,7 @@ win64-plain/opt:
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -474,7 +477,6 @@ win32-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 10800
         env:
@@ -506,6 +508,7 @@ win32-shippable/opt:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -526,7 +529,7 @@ win64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -560,6 +563,7 @@ win64-shippable/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -574,7 +578,7 @@ win64-nightlyasrelease/opt:
     treeherder:
         platform: win64-nightlyasrelease/opt
         symbol: Bpgo(Bnar)
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -611,6 +615,7 @@ win64-nightlyasrelease/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -623,7 +628,6 @@ win32-add-on-devel/opt:
         platform: windows2012-32-add-on-devel/opt
         symbol: B
         tier: 2
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 10800
     run:
@@ -656,6 +660,7 @@ win32-add-on-devel/opt:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -668,7 +673,6 @@ win64-add-on-devel/opt:
         platform: windows2012-64-add-on-devel/opt
         symbol: B
         tier: 2
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 10800
     run:
@@ -702,6 +706,7 @@ win64-add-on-devel/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -714,7 +719,6 @@ win64-noopt/debug:
         platform: windows2012-64-noopt/debug
         symbol: B
         tier: 2
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
     run:
@@ -748,6 +752,7 @@ win64-noopt/debug:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -760,7 +765,6 @@ win32-noopt/debug:
         platform: windows2012-32-noopt/debug
         symbol: B
         tier: 2
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
     run:
@@ -793,6 +797,7 @@ win32-noopt/debug:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1014,6 +1019,7 @@ win64-ccov/opt:
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
 
 win64-fuzzing-ccov/opt:
     description: "Win64 Fuzzing Opt w/ Coverage"
@@ -1065,6 +1071,7 @@ win64-fuzzing-ccov/opt:
             - nsis
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
 
 win64-asan/debug:
     description: "Win64 Debug ASAN"
@@ -1075,7 +1082,6 @@ win64-asan/debug:
         platform: windows2012-64/asan
         symbol: Bd
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -1111,6 +1117,7 @@ win64-asan/debug:
             - win64-llvm-symbolizer
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -1125,7 +1132,6 @@ win64-asan/opt:
         platform: windows2012-64/asan
         symbol: Bo
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -1162,6 +1168,7 @@ win64-asan/opt:
             - win64-llvm-symbolizer
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1180,7 +1187,7 @@ win64-asan-reporter-shippable/opt:
     treeherder:
         platform: win64-asan-reporter/opt
         symbol: BoR
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 7200
         env:
@@ -1223,6 +1230,7 @@ win64-asan-reporter-shippable/opt:
             - win64-llvm-symbolizer
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1234,7 +1242,6 @@ win64-asan-fuzzing/opt:
     treeherder:
         platform: windows2012-64/asan
         symbol: Bof
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -1270,6 +1277,7 @@ win64-asan-fuzzing/opt:
             - win64-llvm-symbolizer
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -1301,7 +1309,6 @@ win32-devedition/opt:
         platform: windows2012-32-devedition/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 10800
         env:
@@ -1335,6 +1342,7 @@ win32-devedition/opt:
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
             - vs
+            - onnxruntime-i686-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1354,7 +1362,7 @@ win64-devedition/opt:
         platform: windows2012-64-devedition/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1390,6 +1398,7 @@ win64-devedition/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - onnxruntime-x86_64-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1404,7 +1413,6 @@ win64-aarch64/debug:
         platform: windows2012-aarch64/debug
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -1456,7 +1464,6 @@ win64-aarch64/opt:
         platform: windows2012-aarch64/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
     worker:
         max-run-time: 7200
         env:
@@ -1513,7 +1520,7 @@ win64-aarch64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1566,7 +1573,7 @@ win64-aarch64-devedition/opt:
         platform: windows2012-aarch64-devedition/opt
         symbol: Bpgo(B)
         tier: 1
-    worker-type: b-linux-xlarge-gcp
+    worker-type: b-linux-xlarge-amd
     worker:
         max-run-time: 10800
         env:

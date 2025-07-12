@@ -20,6 +20,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration.Builder
 import androidx.work.Configuration.Provider
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -80,7 +81,6 @@ import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.GleanMetrics.PerfStartup
 import org.mozilla.fenix.GleanMetrics.Preferences
 import org.mozilla.fenix.GleanMetrics.SearchDefaultEngine
-import org.mozilla.fenix.GleanMetrics.TopSites
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.components.appstate.AppAction
@@ -112,7 +112,6 @@ import org.mozilla.fenix.session.VisibilityLifecycleCallback
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.isLargeScreenSize
 import org.mozilla.fenix.wallpapers.Wallpaper
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 
@@ -187,6 +186,12 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         if (components.fenixOnboarding.userHasBeenOnboarded() || !FeatureFlags.onboardingFeatureEnabled) {
             initializeGlean(this, logger, settings.isTelemetryEnabled, components.core.client)
         }
+
+        // We avoid blocking the main thread on startup by setting startup metrics on the background thread.
+        val store = components.core.store
+        GlobalScope.launch(IO) {
+            setStartupMetrics(store, settings)
+        }
     }
 
     @VisibleForTesting
@@ -210,9 +215,10 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         ProfilerMarkerFactProcessor.create { components.core.engine.profiler }.register()
 
         run {
-            // Make sure the engine and BrowserStore are initialized and ready to use.
-            components.core.engine.warmUp()
-            components.core.store
+            // Make sure the engine is initialized and ready to use.
+            components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+                components.core.engine.warmUp()
+            }
 
             initializeGlean()
 
@@ -267,7 +273,6 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         registerActivityLifecycleCallbacks(visibilityLifecycleCallback)
         registerActivityLifecycleCallbacks(MarkersActivityLifecycleCallbacks(components.core.engine))
 
-        components.performance.startupStateDetector.registerInAppOnCreate(this)
         components.appStartReasonProvider.registerInAppOnCreate(this)
         components.startupActivityLog.registerInAppOnCreate(this)
         initVisualCompletenessQueueAndQueueTasks()
@@ -281,6 +286,10 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         )
 
         components.analytics.metricsStorage.tryRegisterAsUsageRecorder(this)
+
+        CoroutineScope(IO).launch {
+            components.useCases.wallpaperUseCases.fetchCurrentWallpaperUseCase.invoke()
+        }
     }
 
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
@@ -311,7 +320,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
 
         @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
         fun queueInitStorageAndServices() {
-            components.performance.visualCompletenessQueue.queue.runIfReadyOrQueue {
+            queue.runIfReadyOrQueue {
                 GlobalScope.launch(IO) {
                     logger.info("Running post-visual completeness tasks...")
                     logElapsedTime(logger, "Storage initialization") {
@@ -374,27 +383,37 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         }
 
         fun queueMetrics() {
-            queue.runIfReadyOrQueue {
-                setStartupMetrics(components.core.store, settings())
-                // Because it may be slow to capture the storage stats, it might be preferred to
-                // create a WorkManager task for this metric, however, I ran out of
-                // implementation time and WorkManager is harder to test.
-                if (SDK_INT >= Build.VERSION_CODES.O) { // required by StorageStatsMetrics.
+            if (SDK_INT >= Build.VERSION_CODES.O) { // required by StorageStatsMetrics.
+                queue.runIfReadyOrQueue {
+                    // Because it may be slow to capture the storage stats, it might be preferred to
+                    // create a WorkManager task for this metric, however, I ran out of
+                    // implementation time and WorkManager is harder to test.
                     StorageStatsMetrics.report(this.applicationContext)
                 }
             }
         }
 
         @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+        fun queueIncrementNumberOfAppLaunches() {
+            queue.runIfReadyOrQueue {
+                GlobalScope.launch(IO) {
+                    settings().numberOfAppLaunches += 1
+                }
+            }
+        }
+
+        @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
         fun queueReviewPrompt() {
-            GlobalScope.launch(IO) {
-                components.reviewPromptController.trackApplicationLaunch()
+            queue.runIfReadyOrQueue {
+                GlobalScope.launch(IO) {
+                    components.reviewPromptController.trackApplicationLaunch()
+                }
             }
         }
 
         @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
         fun queueRestoreLocale() {
-            components.performance.visualCompletenessQueue.queue.runIfReadyOrQueue {
+            queue.runIfReadyOrQueue {
                 GlobalScope.launch(IO) {
                     components.useCases.localeUseCases.restore()
                 }
@@ -443,6 +462,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         // startup path, before the UI finishes drawing (i.e. visual completeness).
         queueInitStorageAndServices()
         queueMetrics()
+        queueIncrementNumberOfAppLaunches()
         queueReviewPrompt()
         queueRestoreLocale()
         queueStorageMaintenance()
@@ -714,13 +734,12 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
      */
     @Suppress("ComplexMethod", "LongMethod")
     @VisibleForTesting
-    @OptIn(DelicateCoroutinesApi::class)
     internal fun setStartupMetrics(
         browserStore: BrowserStore,
         settings: Settings,
         browsersCache: BrowsersCache = BrowsersCache,
         mozillaProductDetector: MozillaProductDetector = MozillaProductDetector,
-    ) = GlobalScope.launch(Dispatchers.IO) {
+    ) {
         setPreferenceMetrics(settings)
         with(Metrics) {
             // Set this early to guarantee it's in every ping from here on.
@@ -729,12 +748,6 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
             defaultBrowser.set(browsersCache.all(applicationContext).isDefaultBrowser)
             mozillaProductDetector.getMozillaBrowserDefault(applicationContext)?.also {
                 defaultMozBrowser.set(it)
-            }
-
-            if (settings.contileContextId.isEmpty()) {
-                settings.contileContextId = TopSites.contextId.generateAndSet().toString()
-            } else {
-                TopSites.contextId.set(UUID.fromString(settings.contileContextId))
             }
 
             mozillaProducts.set(

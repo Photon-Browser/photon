@@ -47,17 +47,18 @@ class SessionHistoryInfo {
   SessionHistoryInfo(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal,
                      nsIPrincipal* aPrincipalToInherit,
                      nsIPrincipal* aPartitionedPrincipalToInherit,
-                     nsIContentSecurityPolicy* aCsp,
+                     nsIPolicyContainer* aPolicyContainer,
                      const nsACString& aContentType);
   SessionHistoryInfo(nsIChannel* aChannel, uint32_t aLoadType,
                      nsIPrincipal* aPartitionedPrincipalToInherit,
-                     nsIContentSecurityPolicy* aCsp);
+                     nsIPolicyContainer* aPolicyContainer);
 
   void Reset(nsIURI* aURI, const nsID& aDocShellID, bool aDynamicCreation,
              nsIPrincipal* aTriggeringPrincipal,
              nsIPrincipal* aPrincipalToInherit,
              nsIPrincipal* aPartitionedPrincipalToInherit,
-             nsIContentSecurityPolicy* aCsp, const nsACString& aContentType);
+             nsIPolicyContainer* aPolicyContainer,
+             const nsACString& aContentType);
 
   bool operator==(const SessionHistoryInfo& aInfo) const {
     return false;  // FIXME
@@ -143,7 +144,7 @@ class SessionHistoryInfo {
   nsIPrincipal* GetPartitionedPrincipalToInherit() const;
   void SetPartitionedPrincipalToInherit(nsIPrincipal* aPrincipal);
 
-  nsIContentSecurityPolicy* GetCsp() const;
+  nsIPolicyContainer* GetPolicyContainer() const;
 
   uint32_t GetCacheKey() const;
   void SetCacheKey(uint32_t aCacheKey);
@@ -160,7 +161,8 @@ class SessionHistoryInfo {
 
   void SetSaveLayoutStateFlag(bool aSaveLayoutStateFlag);
 
-  bool GetPersist() const { return mPersist; }
+  bool IsTransient() { return mTransient; }
+  void SetTransient() { mTransient = true; }
 
   nsID& NavigationKey() { return mNavigationKey; }
   const nsID& NavigationKey() const { return mNavigationKey; }
@@ -196,7 +198,7 @@ class SessionHistoryInfo {
   bool mLoadReplace = false;
   bool mURIWasModified = false;
   bool mScrollRestorationIsManual = false;
-  bool mPersist = true;
+  bool mTransient = false;
   bool mHasUserInteraction = false;
   bool mHasUserActivation = false;
 
@@ -217,7 +219,7 @@ class SessionHistoryInfo {
     static SharedState Create(nsIPrincipal* aTriggeringPrincipal,
                               nsIPrincipal* aPrincipalToInherit,
                               nsIPrincipal* aPartitionedPrincipalToInherit,
-                              nsIContentSecurityPolicy* aCsp,
+                              nsIPolicyContainer* aPolicyContainer,
                               const nsACString& aContentType);
 
    private:
@@ -367,7 +369,10 @@ class HistoryEntryCounterForBrowsingContext {
 #define NS_SESSIONHISTORYENTRY_IID \
   {0x5b66a244, 0x8cec, 0x4caa, {0xaa, 0x0a, 0x78, 0x92, 0xfd, 0x17, 0xa6, 0x67}}
 
-class SessionHistoryEntry : public nsISHEntry, public nsSupportsWeakReference {
+class SessionHistoryEntry
+    : public nsISHEntry,
+      public nsSupportsWeakReference,
+      public LinkedListElement<RefPtr<SessionHistoryEntry>> {
  public:
   SessionHistoryEntry(nsDocShellLoadState* aLoadState, nsIChannel* aChannel);
   SessionHistoryEntry();

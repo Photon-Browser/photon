@@ -17,6 +17,7 @@
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -29,6 +30,7 @@
 #include "mozilla/StaticPrefs_security.h"
 #include "mozIThirdPartyUtil.h"
 #include "ThirdPartyUtil.h"
+#include "nsContentSecurityManager.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIContentPolicy.h"
@@ -586,8 +588,10 @@ LoadInfo::LoadInfo(dom::WindowGlobalParent* aParentWGP,
 
   mBrowsingContextID = parentBC->Id();
 
-  // Special treatment for resources injected by add-ons.
-  if (aTriggeringPrincipal &&
+  // Special treatment for resources injected by add-ons if not document,
+  // iframe, workers.
+  if (!nsContentUtils::IsNonSubresourceInternalPolicyType(aContentPolicyType) &&
+      aTriggeringPrincipal &&
       StaticPrefs::privacy_antitracking_isolateContentScriptResources() &&
       nsContentUtils::IsExpandedPrincipal(aTriggeringPrincipal)) {
     bool shouldResistFingerprinting =
@@ -700,7 +704,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mResultPrincipalURI(rhs.mResultPrincipalURI),
       mChannelCreationOriginalURI(rhs.mChannelCreationOriginalURI),
       mCookieJarSettings(rhs.mCookieJarSettings),
-      mCspToInherit(rhs.mCspToInherit),
+      mPolicyContainerToInherit(rhs.mPolicyContainerToInherit),
       mContainerFeaturePolicyInfo(rhs.mContainerFeaturePolicyInfo),
       mTriggeringRemoteType(rhs.mTriggeringRemoteType),
       mSandboxedNullPrincipalID(rhs.mSandboxedNullPrincipalID),
@@ -717,6 +721,10 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mTriggeringSandboxFlags(rhs.mTriggeringSandboxFlags),
       mTriggeringWindowId(rhs.mTriggeringWindowId),
       mTriggeringStorageAccess(rhs.mTriggeringStorageAccess),
+      mTriggeringFirstPartyClassificationFlags(
+          rhs.mTriggeringFirstPartyClassificationFlags),
+      mTriggeringThirdPartyClassificationFlags(
+          rhs.mTriggeringThirdPartyClassificationFlags),
       mInternalContentPolicyType(rhs.mInternalContentPolicyType),
       mTainting(rhs.mTainting),
       mBlockAllMixedContent(rhs.mBlockAllMixedContent),
@@ -770,6 +778,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mAllowDeprecatedSystemRequests(rhs.mAllowDeprecatedSystemRequests),
       mIsInDevToolsContext(rhs.mIsInDevToolsContext),
       mParserCreatedScript(rhs.mParserCreatedScript),
+      mRequestMode(rhs.mRequestMode),
       mStoragePermission(rhs.mStoragePermission),
       mParentIPAddressSpace(rhs.mParentIPAddressSpace),
       mIPAddressSpace(rhs.mIPAddressSpace),
@@ -799,7 +808,7 @@ LoadInfo::LoadInfo(
     nsIPrincipal* aLoadingPrincipal, nsIPrincipal* aTriggeringPrincipal,
     nsIPrincipal* aPrincipalToInherit, nsIPrincipal* aTopLevelPrincipal,
     nsIURI* aResultPrincipalURI, nsICookieJarSettings* aCookieJarSettings,
-    nsIContentSecurityPolicy* aCspToInherit,
+    nsIPolicyContainer* aPolicyContainerToInherit,
     const nsACString& aTriggeringRemoteType,
     const nsID& aSandboxedNullPrincipalID, const Maybe<ClientInfo>& aClientInfo,
     const Maybe<ClientInfo>& aReservedClientInfo,
@@ -807,9 +816,12 @@ LoadInfo::LoadInfo(
     const Maybe<ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags,
     uint32_t aTriggeringSandboxFlags, uint64_t aTriggeringWindowId,
-    bool aTriggeringStorageAccess, nsContentPolicyType aContentPolicyType,
-    LoadTainting aTainting, bool aBlockAllMixedContent,
-    bool aUpgradeInsecureRequests, bool aBrowserUpgradeInsecureRequests,
+    bool aTriggeringStorageAccess,
+    uint32_t aTriggeringFirstPartyClassificationFlags,
+    uint32_t aTriggeringThirdPartyClassificationFlags,
+    nsContentPolicyType aContentPolicyType, LoadTainting aTainting,
+    bool aBlockAllMixedContent, bool aUpgradeInsecureRequests,
+    bool aBrowserUpgradeInsecureRequests,
     bool aBrowserDidUpgradeInsecureRequests,
     bool aBrowserWouldUpgradeInsecureRequests, bool aForceAllowDataURI,
     bool aAllowInsecureRedirectToDataURI,
@@ -834,6 +846,7 @@ LoadInfo::LoadInfo(
     bool aHasValidUserGestureActivation, bool aTextDirectiveUserActivation,
     bool aIsSameDocumentNavigation, bool aAllowDeprecatedSystemRequests,
     bool aIsInDevToolsContext, bool aParserCreatedScript,
+    Maybe<RequestMode> aRequestMode,
     nsILoadInfo::StoragePermissionState aStoragePermission,
     nsILoadInfo::IPAddressSpace aParentIPAddressSpace,
     nsILoadInfo::IPAddressSpace aIPAddressSpace,
@@ -854,7 +867,7 @@ LoadInfo::LoadInfo(
       mTopLevelPrincipal(aTopLevelPrincipal),
       mResultPrincipalURI(aResultPrincipalURI),
       mCookieJarSettings(aCookieJarSettings),
-      mCspToInherit(aCspToInherit),
+      mPolicyContainerToInherit(aPolicyContainerToInherit),
       mTriggeringRemoteType(aTriggeringRemoteType),
       mSandboxedNullPrincipalID(aSandboxedNullPrincipalID),
       mClientInfo(aClientInfo),
@@ -867,6 +880,10 @@ LoadInfo::LoadInfo(
       mTriggeringSandboxFlags(aTriggeringSandboxFlags),
       mTriggeringWindowId(aTriggeringWindowId),
       mTriggeringStorageAccess(aTriggeringStorageAccess),
+      mTriggeringFirstPartyClassificationFlags(
+          aTriggeringFirstPartyClassificationFlags),
+      mTriggeringThirdPartyClassificationFlags(
+          aTriggeringThirdPartyClassificationFlags),
       mInternalContentPolicyType(aContentPolicyType),
       mTainting(aTainting),
       mBlockAllMixedContent(aBlockAllMixedContent),
@@ -919,6 +936,7 @@ LoadInfo::LoadInfo(
       mAllowDeprecatedSystemRequests(aAllowDeprecatedSystemRequests),
       mIsInDevToolsContext(aIsInDevToolsContext),
       mParserCreatedScript(aParserCreatedScript),
+      mRequestMode(aRequestMode),
       mStoragePermission(aStoragePermission),
       mParentIPAddressSpace(aParentIPAddressSpace),
       mIPAddressSpace(aIPAddressSpace),
@@ -1033,6 +1051,12 @@ nsIPrincipal* LoadInfo::VirtualGetLoadingPrincipal() {
 NS_IMETHODIMP
 LoadInfo::GetTriggeringPrincipal(nsIPrincipal** aTriggeringPrincipal) {
   *aTriggeringPrincipal = do_AddRef(mTriggeringPrincipal).take();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetTriggeringPrincipalForTesting(nsIPrincipal* aTriggeringPrincipal) {
+  mTriggeringPrincipal = aTriggeringPrincipal;
   return NS_OK;
 }
 
@@ -1192,13 +1216,33 @@ LoadInfo::SetTriggeringStorageAccess(bool aFlags) {
 }
 
 NS_IMETHODIMP
+LoadInfo::GetTriggeringFirstPartyClassificationFlags(uint32_t* aResult) {
+  *aResult = mTriggeringFirstPartyClassificationFlags;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetTriggeringFirstPartyClassificationFlags(uint32_t aFlags) {
+  mTriggeringFirstPartyClassificationFlags = aFlags;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetTriggeringThirdPartyClassificationFlags(uint32_t* aResult) {
+  *aResult = mTriggeringThirdPartyClassificationFlags;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetTriggeringThirdPartyClassificationFlags(uint32_t aFlags) {
+  mTriggeringThirdPartyClassificationFlags = aFlags;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 LoadInfo::GetSecurityMode(uint32_t* aFlags) {
-  *aFlags = (mSecurityFlags &
-             (nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT |
-              nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED |
-              nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT |
-              nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL |
-              nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT));
+  *aFlags = nsContentSecurityManager::ComputeSecurityMode(mSecurityFlags);
+
   return NS_OK;
 }
 
@@ -1263,8 +1307,10 @@ namespace {
 already_AddRefed<nsICookieJarSettings> CreateCookieJarSettings(
     nsIPrincipal* aTriggeringPrincipal, nsContentPolicyType aContentPolicyType,
     bool aIsPrivate, bool aShouldResistFingerprinting) {
-  // Special treatment for resources injected by add-ons.
-  if (aTriggeringPrincipal &&
+  // Special treatment for resources injected by add-ons if not document,
+  // iframe, workers.
+  if (!nsContentUtils::IsNonSubresourceInternalPolicyType(aContentPolicyType) &&
+      aTriggeringPrincipal &&
       StaticPrefs::privacy_antitracking_isolateContentScriptResources() &&
       nsContentUtils::IsExpandedPrincipal(aTriggeringPrincipal)) {
     return CookieJarSettings::Create(
@@ -2252,6 +2298,18 @@ LoadInfo::SetParserCreatedScript(bool aParserCreatedScript) {
 }
 
 NS_IMETHODIMP
+LoadInfo::GetRequestMode(Maybe<RequestMode>* aRequestMode) {
+  *aRequestMode = mRequestMode;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetRequestMode(Maybe<RequestMode> aRequestMode) {
+  mRequestMode = aRequestMode;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 LoadInfo::GetIsTopLevelLoad(bool* aResult) {
   RefPtr<dom::BrowsingContext> bc;
   GetTargetBrowsingContext(getter_AddRefs(bc));
@@ -2522,44 +2580,6 @@ LoadInfo::SetIsOriginTrialCoepCredentiallessEnabledForTopLevel(
   return NS_OK;
 }
 
-already_AddRefed<nsIContentSecurityPolicy> LoadInfo::GetCsp() {
-  // Before querying the CSP from the client we have to check if the
-  // triggeringPrincipal originates from an addon and potentially
-  // overrides the CSP stored within the client.
-  if (mLoadingPrincipal && BasePrincipal::Cast(mTriggeringPrincipal)
-                               ->OverridesCSP(mLoadingPrincipal)) {
-    nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(mTriggeringPrincipal);
-    nsCOMPtr<nsIContentSecurityPolicy> addonCSP;
-    if (ep) {
-      addonCSP = ep->GetCsp();
-    }
-    return addonCSP.forget();
-  }
-
-  if (mClientInfo.isNothing()) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsINode> node = do_QueryReferent(mLoadingContext);
-  RefPtr<Document> doc = node ? node->OwnerDoc() : nullptr;
-
-  // If the client is of type window, then we return the cached CSP
-  // stored on the document instead of having to deserialize the CSP
-  // from the ClientInfo.
-  if (doc && mClientInfo->Type() == ClientType::Window) {
-    nsCOMPtr<nsIContentSecurityPolicy> docCSP = doc->GetCsp();
-    return docCSP.forget();
-  }
-
-  Maybe<mozilla::ipc::CSPInfo> cspInfo = mClientInfo->GetCspInfo();
-  if (cspInfo.isNothing()) {
-    return nullptr;
-  }
-  nsCOMPtr<nsIContentSecurityPolicy> clientCSP =
-      CSPInfoToCSP(cspInfo.ref(), doc);
-  return clientCSP.forget();
-}
-
 already_AddRefed<nsIContentSecurityPolicy> LoadInfo::GetPreloadCsp() {
   if (mClientInfo.isNothing()) {
     return nullptr;
@@ -2585,9 +2605,62 @@ already_AddRefed<nsIContentSecurityPolicy> LoadInfo::GetPreloadCsp() {
   return preloadCSP.forget();
 }
 
-already_AddRefed<nsIContentSecurityPolicy> LoadInfo::GetCspToInherit() {
-  nsCOMPtr<nsIContentSecurityPolicy> cspToInherit = mCspToInherit;
-  return cspToInherit.forget();
+already_AddRefed<nsIPolicyContainer> LoadInfo::GetPolicyContainer() {
+  // Before querying the CSP from the client we have to check if the
+  // triggeringPrincipal originates from an addon and potentially
+  // overrides the CSP stored within the client.
+  if (mLoadingPrincipal && BasePrincipal::Cast(mTriggeringPrincipal)
+                               ->OverridesCSP(mLoadingPrincipal)) {
+    nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(mTriggeringPrincipal);
+    RefPtr<PolicyContainer> addonPolicyContainer;
+    if (ep) {
+      // Bug 1548468: Move CSP off ExpandedPrincipal
+      if (nsCOMPtr<nsIContentSecurityPolicy> addonCSP = ep->GetCsp()) {
+        // Extensions don't have anything other than CSP in the policy
+        // container. We need to return a PolicyContainer, so we just create one
+        // with the CSP from the ExpandedPrincipal.
+        addonPolicyContainer = new PolicyContainer();
+        addonPolicyContainer->SetCSP(addonCSP);
+      }
+    }
+    return addonPolicyContainer.forget();
+  }
+
+  if (mClientInfo.isNothing()) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsINode> node = do_QueryReferent(mLoadingContext);
+  RefPtr<Document> doc = node ? node->OwnerDoc() : nullptr;
+
+  // If the client is of type window, then we return the cached CSP
+  // stored on the document instead of having to deserialize the CSP
+  // from the ClientInfo.
+  if (doc && mClientInfo->Type() == ClientType::Window) {
+    nsCOMPtr<nsIPolicyContainer> docPolicyContainer = doc->GetPolicyContainer();
+    return docPolicyContainer.forget();
+  }
+
+  Maybe<mozilla::ipc::PolicyContainerArgs> policyContainerArgs =
+      mClientInfo->GetPolicyContainerArgs();
+  if (policyContainerArgs.isNothing()) {
+    return nullptr;
+  }
+  RefPtr<PolicyContainer> clientPolicyContainer;
+  PolicyContainer::FromArgs(policyContainerArgs.ref(), doc,
+                            getter_AddRefs(clientPolicyContainer));
+  return clientPolicyContainer.forget();
+}
+
+void LoadInfo::SetPolicyContainerToInherit(
+    nsIPolicyContainer* aPolicyContainerToInherit) {
+  mPolicyContainerToInherit = aPolicyContainerToInherit;
+}
+
+already_AddRefed<nsIPolicyContainer> LoadInfo::GetPolicyContainerToInherit() {
+  nsCOMPtr<nsIPolicyContainer> policyContainerToInherit =
+      mPolicyContainerToInherit;
+  return policyContainerToInherit.forget();
 }
 
 Maybe<FeaturePolicyInfo> LoadInfo::GetContainerFeaturePolicyInfo() {

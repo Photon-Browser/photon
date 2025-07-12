@@ -31,7 +31,7 @@
 #endif
 
 #include "opus.h"
-#include "celt/mathops.h"
+#include "mathops.h"
 #include "opus_private.h"
 
 #ifndef DISABLE_FLOAT_API
@@ -389,4 +389,3 @@ int opus_packet_parse(const unsigned char *data, opus_int32 len,
    return opus_packet_parse_impl(data, len, 0, out_toc,
                                  frames, size, payload_offset, NULL, NULL, NULL);
 }
-

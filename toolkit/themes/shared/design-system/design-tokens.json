@@ -1014,10 +1014,22 @@
           }
         }
       },
+      "xsmall": {
+        "value": {
+          "brand": {
+            "default": "0.733rem",
+            "comment": "11px / Note this token is to be used in rare cases because its hard to read. Please consult with the Design Systems and A11y teams for case-by-case feedback."
+          },
+          "platform": {
+            "default": "unset"
+          }
+        }
+      },
       "small": {
         "value": {
           "brand": {
-            "default": "0.867rem"
+            "default": "0.867rem",
+            "comment": "13px"
           },
           "platform": {
             "default": "unset"
@@ -1027,7 +1039,8 @@
       "large": {
         "value": {
           "brand": {
-            "default": "1.133rem"
+            "default": "1.133rem",
+            "comment": "17px"
           },
           "platform": {
             "default": "unset"
@@ -1037,7 +1050,8 @@
       "xlarge": {
         "value": {
           "brand": {
-            "default": "1.467rem"
+            "default": "1.467rem",
+            "comment": "22px"
           },
           "platform": {
             "default": "unset"
@@ -1047,7 +1061,8 @@
       "xxlarge": {
         "value": {
           "brand": {
-            "default": "1.6rem"
+            "default": "1.6rem",
+            "comment": "24px"
           },
           "platform": {
             "default": "unset"
@@ -1061,6 +1076,24 @@
       },
       "bold": {
         "value": 600
+      }
+    }
+  },
+  "heading": {
+    "font": {
+      "size": {
+        "xlarge": {
+          "value": "{font.size.xxlarge}"
+        },
+        "large": {
+          "value": "{font.size.xlarge}"
+        },
+        "medium": {
+          "value": "{font.size.large}"
+        }
+      },
+      "weight": {
+        "value": "{font.weight.bold}"
       }
     }
   },
@@ -1105,6 +1138,9 @@
     "size": {
       "default": {
         "value": "{icon.size.small}"
+      },
+      "xsmall": {
+        "value": "12px"
       },
       "small": {
         "value": "{size.item.small}"

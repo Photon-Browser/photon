@@ -9,9 +9,9 @@
 
 #include <ostream>
 
-#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/EnumSet.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "nsRect.h"
 #include "nsStyleStruct.h"
 
@@ -539,6 +539,58 @@ class WritingMode {
     NS_ASSERTION(myStartSide % 2 == otherWMStartSide % 2,
                  "Should end up with sides in the same physical axis");
     return myStartSide == otherWMStartSide;
+  }
+
+  /**
+   * Determine a writing mode for determining the line-over/line-under side of a
+   * box to use for baseline alignment, based on the container and item's
+   * writing modes and the alignment axis.
+   *
+   * See: https://drafts.csswg.org/css-align-3/#baseline-export
+   *
+   * @param aContainerWM writing mode of the container (alignment context).
+   * @param aItemWM writing mode of the item being aligned.
+   * @param aAlignmentAxis axis of alignment, in the container’s writing mode.
+   *        LogicalAxis::Inline (rows) for align-{items,self}:[last] baseline.
+   *        LogicalAxis::Block (columns) for justify-{items,self}:[last]
+   *        baseline.
+   */
+  static WritingMode DetermineWritingModeForBaselineSynthesis(
+      const WritingMode& aContainerWM, const WritingMode& aItemWM,
+      LogicalAxis aAlignmentAxis) {
+    // Use the physical alignment axis for comparison:
+    auto physicalAlignmentAxis = aContainerWM.PhysicalAxis(aAlignmentAxis);
+
+    // If the item's block flow direction is orthogonal to the alignment axis,
+    // use its writing mode.
+    auto itemAxis = aItemWM.PhysicalAxis(LogicalAxis::Block);
+    if (itemAxis != physicalAlignmentAxis) {
+      return aItemWM;
+    }
+
+    // If the container's block flow direction is orthogonal to the alignment
+    // axis, use its writing mode.
+    auto containerAxis = aContainerWM.PhysicalAxis(LogicalAxis::Block);
+    if (containerAxis != physicalAlignmentAxis) {
+      return aContainerWM;
+    }
+
+    // If not using the item or container writing mode, synthesize an
+    // axis-compatible writing mode based on the container's writing mode.
+    //
+    // From https://drafts.csswg.org/css-align-3/#baseline-export:
+    //
+    // - If the box’s own writing mode is vertical, assume `horizontal-tb`.
+    // - If the box’s own writing mode is horizontal, assume `vertical-lr` if
+    //   direction is `ltr` and `vertical-rl` if direction is `rtl`.
+
+    if (aContainerWM.IsVertical()) {
+      return WritingMode{StyleWritingMode::WRITING_MODE_HORIZONTAL_TB._0};
+    }
+
+    return (aContainerWM.IsBidiLTR())
+               ? WritingMode{StyleWritingMode::WRITING_MODE_VERTICAL_LR._0}
+               : WritingMode{StyleWritingMode::WRITING_MODE_VERTICAL_RL._0};
   }
 
   uint8_t GetBits() const { return mWritingMode._0; }
@@ -2133,7 +2185,7 @@ inline bool StyleMaxSize::BehavesLikeInitialValue(LogicalAxis aAxis) const {
 // nsStyleStruct.h but not defined there because they need WritingMode.
 inline AnchorResolvedInset nsStylePosition::GetAnchorResolvedInset(
     mozilla::LogicalSide aSide, WritingMode aWM,
-    const AnchorPosResolutionParams& aParams) const {
+    const AnchorPosOffsetResolutionParams& aParams) const {
   return GetAnchorResolvedInset(aWM.PhysicalSide(aSide), aParams);
 }
 

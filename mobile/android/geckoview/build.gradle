@@ -215,6 +215,7 @@ configurations {
 
 dependencies {
     implementation libs.androidx.annotation
+    implementation libs.androidx.annotation.experimental
     implementation libs.androidx.collection
     implementation libs.androidx.core
 
@@ -228,7 +229,10 @@ dependencies {
         implementation project(":exoplayer2")
     }
 
-    testImplementation libs.junit.vintage
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit4
+    testRuntimeOnly libs.junit.vintage
+    testRuntimeOnly libs.junit.platform.launcher
     testImplementation libs.testing.robolectric
 
     androidTestImplementation libs.testing.coroutines

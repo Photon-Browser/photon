@@ -14,7 +14,6 @@
 #include "nsContentCreatorFunctions.h"
 #include "nsStyledElement.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/HTMLElementBinding.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ValidityState.h"
@@ -40,9 +39,13 @@ class EventChainVisitor;
 class EventListenerManager;
 class PresState;
 namespace dom {
+class BooleanOrUnrestrictedDoubleOrString;
 class ElementInternals;
 class HTMLFormElement;
+class OwningBooleanOrUnrestrictedDoubleOrString;
+class TogglePopoverOptionsOrBoolean;
 enum class FetchPriority : uint8_t;
+struct ShowPopoverOptions;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -54,9 +57,9 @@ using nsGenericHTMLElementBase = nsStyledElement;
 class nsGenericHTMLElement : public nsGenericHTMLElementBase {
  public:
   using ContentEditableState = mozilla::ContentEditableState;
+  using Element::Command;
   using Element::Focus;
   using Element::SetTabIndex;
-  using InvokeAction = mozilla::dom::InvokeAction;
 
   explicit nsGenericHTMLElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -206,7 +209,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   MOZ_CAN_RUN_SCRIPT void RunPopoverToggleEventTask(
       mozilla::dom::PopoverToggleEventTask* aTask,
       mozilla::dom::PopoverVisibilityState aOldState);
-  MOZ_CAN_RUN_SCRIPT void ShowPopover(ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void ShowPopover(
+      const mozilla::dom::ShowPopoverOptions& aOptions, ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void ShowPopoverInternal(Element* aInvoker,
                                               ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void HidePopoverWithoutRunningScript();
@@ -215,16 +219,17 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
                                               ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void HidePopover(ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT bool TogglePopover(
-      const mozilla::dom::Optional<bool>& aForce, ErrorResult& aRv);
+      const mozilla::dom::TogglePopoverOptionsOrBoolean& aOptions,
+      ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void FocusPopover();
   void ForgetPreviouslyFocusedElementAfterHidingPopover();
   MOZ_CAN_RUN_SCRIPT void FocusPreviousElementAfterHidingPopover();
 
-  bool IsValidInvokeAction(mozilla::dom::InvokeAction aAction) const override;
+  bool IsValidCommandAction(Command aCommand) const override;
 
-  MOZ_CAN_RUN_SCRIPT bool HandleInvokeInternal(
-      Element* aInvoker, mozilla::dom::InvokeAction aAction,
-      ErrorResult& aRv) override;
+  MOZ_CAN_RUN_SCRIPT bool HandleCommandInternal(Element* aSource,
+                                                Command aCommand,
+                                                ErrorResult& aRv) override;
 
   MOZ_CAN_RUN_SCRIPT void FocusCandidate(Element*, bool aClearUpFocus);
 
@@ -313,35 +318,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 #undef ERROR_EVENT
 #undef FORWARDED_EVENT
 #undef EVENT
-  mozilla::dom::Element* GetOffsetParent() {
-    mozilla::CSSIntRect rcFrame;
-    return GetOffsetRect(rcFrame);
-  }
-  int32_t OffsetTop() {
-    mozilla::CSSIntRect rcFrame;
-    GetOffsetRect(rcFrame);
-
-    return rcFrame.y;
-  }
-  int32_t OffsetLeft() {
-    mozilla::CSSIntRect rcFrame;
-    GetOffsetRect(rcFrame);
-
-    return rcFrame.x;
-  }
-  int32_t OffsetWidth() {
-    mozilla::CSSIntRect rcFrame;
-    GetOffsetRect(rcFrame);
-
-    return rcFrame.Width();
-  }
-  int32_t OffsetHeight() {
-    mozilla::CSSIntRect rcFrame;
-    GetOffsetRect(rcFrame);
-
-    return rcFrame.Height();
-  }
-
   // These methods are already implemented in nsIContent but we want something
   // faster for HTMLElements ignoring the namespace checking.
   // This is safe because we already know that we are in the HTML namespace.
@@ -362,7 +338,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
   mozilla::dom::ElementInternals* GetInternals() const;
 
-  bool IsFormAssociatedCustomElements() const;
+  bool IsFormAssociatedCustomElement() const;
 
   // Returns true if the event should not be handled from GetEventTargetParent.
   virtual bool IsDisabledForEvents(mozilla::WidgetEvent* aEvent) {
@@ -959,14 +935,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   virtual already_AddRefed<mozilla::EditorBase> GetAssociatedEditor();
 
   /**
-   * Get the frame's offset information for offsetTop/Left/Width/Height.
-   * Returns the parent the offset is relative to.
-   * @note This method flushes pending notifications (FlushType::Layout).
-   * @param aRect the offset information [OUT]
-   */
-  mozilla::dom::Element* GetOffsetRect(mozilla::CSSIntRect& aRect);
-
-  /**
    * Ensures all editors associated with a subtree are synced, for purposes of
    * spellchecking.
    */
@@ -1299,21 +1267,10 @@ class nsGenericHTMLFormControlElementWithState
     SetHTMLAttr(nsGkAtoms::popovertargetaction, aValue);
   }
 
-  // InvokerElement
-  mozilla::dom::Element* GetInvokeTargetElement() const;
-  void SetInvokeTargetElement(mozilla::dom::Element*);
-  void GetInvokeAction(nsAString& aValue) const;
-  InvokeAction GetInvokeAction(nsAtom* aAtom) const;
-  void SetInvokeAction(const nsAString& aValue) {
-    SetHTMLAttr(nsGkAtoms::invokeaction, aValue);
-  }
-
   /**
    * https://html.spec.whatwg.org/#popover-target-attribute-activation-behavior
    */
   MOZ_CAN_RUN_SCRIPT void HandlePopoverTargetAction();
-
-  MOZ_CAN_RUN_SCRIPT void HandleInvokeTargetAction();
 
   /**
    * Get the presentation state for a piece of content, or create it if it does

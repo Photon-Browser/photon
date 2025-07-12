@@ -13,11 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.LocalTextStyle
-import androidx.compose.material.Text
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -30,19 +31,20 @@ private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(8.dp)
  * middle of the homepage.
  *
  * @param url The URL to be displayed.
- * @param colors The color scheme to use in the browser display toolbar.
+ * @param modifier [Modifier] for the content.
  * @param textStyle [TextStyle] configuration for the URL text.
  * @param onUrlClicked Will be called when the user clicks on the URL.
  */
 @Composable
 fun HomepageDisplayToolbar(
     url: String,
+    modifier: Modifier = Modifier,
     textStyle: TextStyle = LocalTextStyle.current,
     onUrlClicked: () -> Unit = {},
 ) {
     Row(
-        modifier = Modifier
-            .background(color = AcornTheme.colors.layer1)
+        modifier = modifier
+            .background(color = Color.Transparent)
             .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {

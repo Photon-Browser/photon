@@ -7,6 +7,7 @@
 #include "mozilla/dom/LocationBase.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIScriptContext.h"
+#include "nsIClassifiedChannel.h"
 #include "nsDocShellLoadState.h"
 #include "nsIWebNavigation.h"
 #include "nsNetUtil.h"
@@ -18,6 +19,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/PolicyContainer.h"
 
 namespace mozilla::dom {
 
@@ -101,7 +103,7 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
   }
   loadState->SetTriggeringPrincipal(triggeringPrincipal);
   loadState->SetTriggeringSandboxFlags(doc->GetSandboxFlags());
-  loadState->SetCsp(doc->GetCsp());
+  loadState->SetPolicyContainer(doc->GetPolicyContainer());
   if (referrerInfo) {
     loadState->SetReferrerInfo(referrerInfo);
   }
@@ -113,6 +115,7 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
       loadState->HasValidUserGestureActivation());
   loadState->SetTriggeringWindowId(doc->InnerWindowID());
   loadState->SetTriggeringStorageAccess(doc->UsingStorageAccess());
+  loadState->SetTriggeringClassificationFlags(doc->GetScriptTrackingFlags());
 
   return loadState.forget();
 }

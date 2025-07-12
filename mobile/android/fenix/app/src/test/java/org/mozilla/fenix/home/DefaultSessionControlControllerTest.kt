@@ -49,7 +49,6 @@ import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Collections
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeBookmarks
-import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.GleanMetrics.RecentTabs
 import org.mozilla.fenix.GleanMetrics.TopSites
@@ -70,15 +69,18 @@ import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.mars.MARSUseCases
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.sessioncontrol.DefaultSessionControlController
+import org.mozilla.fenix.home.sessioncontrol.SessionControlControllerCallback
 import org.mozilla.fenix.messaging.MessageController
 import org.mozilla.fenix.onboarding.WallpaperOnboardingDialogFragment.Companion.THUMBNAILS_SELECTION_COUNT
 import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.tabstray.TabManagementFeatureHelper
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.maybeShowAddSearchWidgetPrompt
 import org.mozilla.fenix.wallpapers.Wallpaper
 import org.mozilla.fenix.wallpapers.WallpaperState
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.lang.ref.WeakReference
 import mozilla.components.feature.tab.collections.Tab as ComponentTab
 
 @RunWith(RobolectricTestRunner::class) // For gleanTestRule
@@ -179,23 +181,6 @@ class DefaultSessionControlControllerTest {
             navController.navigate(
                 match<NavDirections> {
                     it.actionId == R.id.action_global_collectionCreationFragment
-                },
-                null,
-            )
-        }
-    }
-
-    @Test
-    fun handleCustomizeHomeTapped() {
-        assertNull(HomeScreen.customizeHomeClicked.testGetValue())
-
-        createController().handleCustomizeHomeTapped()
-
-        assertNotNull(HomeScreen.customizeHomeClicked.testGetValue())
-        verify {
-            navController.navigate(
-                match<NavDirections> {
-                    it.actionId == R.id.action_global_homeSettingsFragment
                 },
                 null,
             )
@@ -997,51 +982,7 @@ class DefaultSessionControlControllerTest {
     }
 
     @Test
-    fun `GIVEN a provided top site WHEN the provided top site is clicked THEN submit a top site impression ping`() {
-        val controller = spyk(createController())
-        val topSite = TopSite.Provided(
-            id = 3,
-            title = "Mozilla",
-            url = "https://mozilla.com",
-            clickUrl = "https://mozilla.com/click",
-            imageUrl = "https://test.com/image2.jpg",
-            impressionUrl = "https://example.com",
-            createdAt = 3,
-        )
-        val position = 0
-        assertNull(TopSites.contileImpression.testGetValue())
-
-        var topSiteImpressionPinged = false
-        Pings.topsitesImpression.testBeforeNextSubmit {
-            assertNotNull(TopSites.contileTileId.testGetValue())
-            assertEquals(3L, TopSites.contileTileId.testGetValue())
-
-            assertNotNull(TopSites.contileAdvertiser.testGetValue())
-            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
-
-            assertNotNull(TopSites.contileReportingUrl.testGetValue())
-            assertEquals(topSite.clickUrl, TopSites.contileReportingUrl.testGetValue())
-
-            topSiteImpressionPinged = true
-        }
-
-        controller.recordTopSitesClickTelemetry(topSite, position)
-
-        assertNotNull(TopSites.contileClick.testGetValue())
-
-        val event = TopSites.contileClick.testGetValue()!!
-
-        assertEquals(1, event.size)
-        assertEquals("top_sites", event[0].category)
-        assertEquals("contile_click", event[0].name)
-        assertEquals("1", event[0].extra!!["position"])
-        assertEquals("newtab", event[0].extra!!["source"])
-
-        assertTrue(topSiteImpressionPinged)
-    }
-
-    @Test
-    fun `GIVEN MARS API integration is enabled WHEN the provided top site is clicked THEN send a click callback request`() {
+    fun `WHEN the provided top site is clicked THEN send a click callback request`() {
         val controller = spyk(createController())
         val topSite = TopSite.Provided(
             id = 3,
@@ -1055,9 +996,8 @@ class DefaultSessionControlControllerTest {
         val position = 0
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
-        every { settings.marsAPIEnabled } returns true
 
-        assertNull(TopSites.contileImpression.testGetValue())
+        assertNull(TopSites.contileClick.testGetValue())
 
         var topSiteImpressionPinged = false
         Pings.topsitesImpression.testBeforeNextSubmit {
@@ -1084,7 +1024,7 @@ class DefaultSessionControlControllerTest {
     }
 
     @Test
-    fun `GIVEN MARS API integration is enabled WHEN the provided top site is seen THEN send a impression callback request`() {
+    fun `WHEN the provided top site is seen THEN send a impression callback request`() {
         val controller = spyk(createController())
         val topSite = TopSite.Provided(
             id = 3,
@@ -1098,7 +1038,6 @@ class DefaultSessionControlControllerTest {
         val position = 0
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
-        every { settings.marsAPIEnabled } returns true
 
         assertNull(TopSites.contileImpression.testGetValue())
 
@@ -1114,51 +1053,6 @@ class DefaultSessionControlControllerTest {
         controller.handleTopSiteImpression(topSite, position)
 
         verify { marsUseCases.recordInteraction(topSite.impressionUrl) }
-
-        val event = TopSites.contileImpression.testGetValue()!!
-
-        assertEquals(1, event.size)
-        assertEquals("top_sites", event[0].category)
-        assertEquals("contile_impression", event[0].name)
-        assertEquals("1", event[0].extra!!["position"])
-        assertEquals("newtab", event[0].extra!!["source"])
-
-        assertTrue(topSiteImpressionSubmitted)
-    }
-
-    @Test
-    fun `GIVEN a provided top site WHEN the provided top site has an impression THEN submit a top site impression ping`() {
-        val controller = spyk(createController())
-        val topSite = TopSite.Provided(
-            id = 3,
-            title = "Mozilla",
-            url = "https://mozilla.com",
-            clickUrl = "https://mozilla.com/click",
-            imageUrl = "https://test.com/image2.jpg",
-            impressionUrl = "https://example.com",
-            createdAt = 3,
-        )
-        val position = 0
-
-        assertNull(TopSites.contileImpression.testGetValue())
-
-        var topSiteImpressionSubmitted = false
-        Pings.topsitesImpression.testBeforeNextSubmit {
-            assertNotNull(TopSites.contileTileId.testGetValue())
-            assertEquals(3L, TopSites.contileTileId.testGetValue())
-
-            assertNotNull(TopSites.contileAdvertiser.testGetValue())
-            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
-
-            assertNotNull(TopSites.contileReportingUrl.testGetValue())
-            assertEquals(topSite.impressionUrl, TopSites.contileReportingUrl.testGetValue())
-
-            topSiteImpressionSubmitted = true
-        }
-
-        controller.handleTopSiteImpression(topSite, position)
-
-        assertNotNull(TopSites.contileImpression.testGetValue())
 
         val event = TopSites.contileImpression.testGetValue()!!
 
@@ -1669,7 +1563,7 @@ class DefaultSessionControlControllerTest {
         showUndoSnackbarForTopSite: (topSite: TopSite) -> Unit = { },
     ): DefaultSessionControlController {
         return DefaultSessionControlController(
-            activity = activity,
+            activityRef = WeakReference(activity),
             settings = settings,
             engine = engine,
             store = store,
@@ -1682,13 +1576,37 @@ class DefaultSessionControlControllerTest {
             topSitesUseCases = topSitesUseCases,
             marsUseCases = marsUseCases,
             appStore = appStore,
-            navController = navController,
+            navControllerRef = WeakReference(navController),
             viewLifecycleScope = scope,
-            registerCollectionStorageObserver = registerCollectionStorageObserver,
-            removeCollectionWithUndo = removeCollectionWithUndo,
-            showUndoSnackbarForTopSite = showUndoSnackbarForTopSite,
-            showTabTray = showTabTray,
-        )
+            tabManagementFeatureHelper = object : TabManagementFeatureHelper {
+                override val enhancementsEnabledNightly: Boolean
+                    get() = false
+                override val enhancementsEnabledBeta: Boolean
+                    get() = false
+                override val enhancementsEnabledRelease: Boolean
+                    get() = false
+                override val enhancementsEnabled: Boolean
+                    get() = false
+            },
+        ).apply {
+            registerCallback(object : SessionControlControllerCallback {
+                override fun registerCollectionStorageObserver() {
+                    registerCollectionStorageObserver()
+                }
+
+                override fun removeCollectionWithUndo(tabCollection: TabCollection) {
+                    removeCollectionWithUndo(tabCollection)
+                }
+
+                override fun showUndoSnackbarForTopSite(topSite: TopSite) {
+                    showUndoSnackbarForTopSite(topSite)
+                }
+
+                override fun showTabTray() {
+                    showTabTray()
+                }
+            })
+        }
     }
 
     private fun makeFakeRemoteWallpapers(size: Int, hasError: Boolean): List<Wallpaper> {

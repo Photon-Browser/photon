@@ -330,11 +330,10 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const uint64_t& aInputBlockId);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  mozilla::ipc::IPCResult RecvRealDragEvent(const WidgetDragEvent& aEvent,
-                                            const uint32_t& aDragAction,
-                                            const uint32_t& aDropEffect,
-                                            nsIPrincipal* aPrincipal,
-                                            nsIContentSecurityPolicy* aCsp);
+  mozilla::ipc::IPCResult RecvRealDragEvent(
+      const WidgetDragEvent& aEvent, const uint32_t& aDragAction,
+      const uint32_t& aDropEffect, nsIPrincipal* aPrincipal,
+      nsIPolicyContainer* aPolicyContainer);
 
   mozilla::ipc::IPCResult RecvRealKeyEvent(
       const mozilla::WidgetKeyboardEvent& aEvent, const nsID& aUUID);
@@ -382,8 +381,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvUpdateSHistory();
 
-  mozilla::ipc::IPCResult RecvNativeSynthesisResponse(
-      const uint64_t& aObserverId, const nsCString& aResponse);
+  mozilla::ipc::IPCResult RecvSynthesizedEventResponse(
+      const uint64_t& aCallbackId);
 
   mozilla::ipc::IPCResult RecvCompositionEvent(
       const mozilla::WidgetCompositionEvent& aEvent);
@@ -727,7 +726,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvStoreDropTargetAndDelayEndDragSession(
       const LayoutDeviceIntPoint& aPt, uint32_t aDropEffect,
       uint32_t aDragAction, nsIPrincipal* aPrincipal,
-      nsIContentSecurityPolicy* aCsp);
+      nsIPolicyContainer* aPolicyContainer);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvDispatchToDropTargetAndResumeEndDragSession(

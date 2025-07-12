@@ -37,7 +37,6 @@
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/StorageEventBinding.h"
-#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
 #include "nsWrapperCacheInlines.h"
@@ -102,7 +101,6 @@ class IntlUtils;
 class Location;
 class MediaQueryList;
 class Navigator;
-class OwningExternalOrWindowProxy;
 class Promise;
 class PostMessageData;
 class PostMessageEvent;
@@ -290,7 +288,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   // Outer windows only.
   virtual void SetInitialPrincipal(
-      nsIPrincipal* aNewWindowPrincipal, nsIContentSecurityPolicy* aCSP,
+      nsIPrincipal* aNewWindowPrincipal, nsIPolicyContainer* aPolicyContainer,
       const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCoep)
       override;
 

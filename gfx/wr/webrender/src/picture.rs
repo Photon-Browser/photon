@@ -117,7 +117,7 @@ use crate::internal_types::{FastHashMap, FastHashSet, PlaneSplitter, FilterGraph
 use crate::internal_types::{PlaneSplitterIndex, PlaneSplitAnchor, TextureSource};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureState, PictureContext};
 use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
-use crate::gpu_types::{UvRectKind, ZBufferId};
+use crate::gpu_types::{UvRectKind, ZBufferId, BlurEdgeMode};
 use peek_poke::{PeekPoke, poke_into_vec, peek_from_slice, ensure_red_zone};
 use plane_split::{Clipper, Polygon};
 use crate::prim_store::{PrimitiveTemplateKind, PictureIndex, PrimitiveInstance, PrimitiveInstanceKind};
@@ -597,6 +597,7 @@ impl PrimitiveDependencyInfo {
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Ord, Eq)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Hash)]
 pub struct TileId(pub usize);
 
 /// Uniquely identifies a tile within a picture cache slice
@@ -2210,66 +2211,66 @@ impl TileCacheInstance {
 
             if let Some(clip_chain) = clip_chain_instance {
                 self.local_clip_rect = clip_chain.pic_coverage_rect;
+                self.compositor_clip = None;
 
-                self.compositor_clip = if clip_chain.needs_mask {
-                    let clip_instance = frame_state
-                        .clip_store
-                        .get_instance_from_range(&clip_chain.clips_range, 0);
-                    let clip_node = &frame_state.data_stores.clip[clip_instance.handle];
+                if clip_chain.needs_mask {
+                    for i in 0 .. clip_chain.clips_range.count {
+                        let clip_instance = frame_state
+                            .clip_store
+                            .get_instance_from_range(&clip_chain.clips_range, i);
+                        let clip_node = &frame_state.data_stores.clip[clip_instance.handle];
 
-                    let index = match clip_node.item.kind {
-                        ClipItemKind::RoundedRectangle { rect, radius, mode } => {
-                            assert_eq!(mode, ClipMode::Clip);
+                        match clip_node.item.kind {
+                            ClipItemKind::RoundedRectangle { rect, radius, mode } => {
+                                assert_eq!(mode, ClipMode::Clip);
 
-                            // Map the clip in to device space. We know from the shared
-                            // clip creation logic it's in root coord system, so only a
-                            // 2d axis-aligned transform can apply. For example, in the
-                            // case of a pinch-zoom effect.
-                            let map = ClipSpaceConversion::new(
-                                frame_context.root_spatial_node_index,
-                                clip_node.item.spatial_node_index,
-                                frame_context.root_spatial_node_index,                   
-                                frame_context.spatial_tree,
-                            );
+                                // Map the clip in to device space. We know from the shared
+                                // clip creation logic it's in root coord system, so only a
+                                // 2d axis-aligned transform can apply. For example, in the
+                                // case of a pinch-zoom effect.
+                                let map = ClipSpaceConversion::new(
+                                    frame_context.root_spatial_node_index,
+                                    clip_node.item.spatial_node_index,
+                                    frame_context.root_spatial_node_index,
+                                    frame_context.spatial_tree,
+                                );
 
-                            let (rect, radius) = match map {
-                                ClipSpaceConversion::Local => {
-                                    (rect.cast_unit(), radius)
-                                }
-                                ClipSpaceConversion::ScaleOffset(scale_offset) => {
-                                    (
-                                        scale_offset.map_rect(&rect),
-                                        BorderRadius {
-                                            top_left: scale_offset.map_size(&radius.top_left),
-                                            top_right: scale_offset.map_size(&radius.top_right),
-                                            bottom_left: scale_offset.map_size(&radius.bottom_left),
-                                            bottom_right: scale_offset.map_size(&radius.bottom_right),
-                                        },
-                                    )
-                                }
-                                ClipSpaceConversion::Transform(..) => {
-                                    unreachable!();                                    
-                                }
-                            };
+                                let (rect, radius) = match map {
+                                    ClipSpaceConversion::Local => {
+                                        (rect.cast_unit(), radius)
+                                    }
+                                    ClipSpaceConversion::ScaleOffset(scale_offset) => {
+                                        (
+                                            scale_offset.map_rect(&rect),
+                                            BorderRadius {
+                                                top_left: scale_offset.map_size(&radius.top_left),
+                                                top_right: scale_offset.map_size(&radius.top_right),
+                                                bottom_left: scale_offset.map_size(&radius.bottom_left),
+                                                bottom_right: scale_offset.map_size(&radius.bottom_right),
+                                            },
+                                        )
+                                    }
+                                    ClipSpaceConversion::Transform(..) => {
+                                        unreachable!();
+                                    }
+                                };
 
-                            frame_state.composite_state.register_clip(
-                                rect,
-                                radius,
-                            )
+                                self.compositor_clip = Some(frame_state.composite_state.register_clip(
+                                    rect,
+                                    radius,
+                                ));
+
+                                break;
+                            }
+                            _ => {
+                                // The logic to check for shared clips excludes other mask
+                                // clip types (box-shadow, image-mask) and ensures that the
+                                // clip is in the root coord system (so rect clips can't
+                                // produce a mask).
+                            }
                         }
-                        _ => {
-                            // The logic to check for shared clips excludes other mask
-                            // clip types (box-shadow, image-mask) and ensures that the
-                            // clip is in the root coord system (so rect clips can't
-                            // produce a mask).
-                            unreachable!();
-                        }
-                    };
-
-                    Some(index)
-                } else {
-                    None
-                };
+                    }
+                }
             }
         }
 
@@ -2699,13 +2700,10 @@ impl TileCacheInstance {
         let transform = mapper.get_transform();
         if !transform.is_2d_scale_translation() {
             let result = Err(ComplexTransform);
-            // If we aren't forcing, give up and return Err.
-            if !force {
-                return result;
-            }
-
-            // Log this but don't return an error.
-            self.report_promotion_failure(result, pic_coverage_rect, true);
+            // Unfortunately, ComplexTransform absolutely prevents proper
+				    // functioning of surface promotion. Treating this as a warning
+            // instead of an error will cause a crash in get_relative_scale_offset.
+            return result;
         }
 
         if self.slice_flags.contains(SliceFlags::IS_ATOMIC) {
@@ -4235,6 +4233,47 @@ impl SurfaceInfo {
         }
     }
 
+    pub fn update_culling_rect(
+        &mut self,
+        parent_culling_rect: VisRect,
+        composite_mode: &PictureCompositeMode,
+        frame_context: &FrameVisibilityContext,
+    ) {
+        // Set the default culling rect to be the parent, in case we fail
+        // any mappings below due to weird perspective or invalid transforms.
+        self.culling_rect = parent_culling_rect;
+
+        if let PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate, .. }) = composite_mode {
+            if *should_inflate {
+                // Space mapping vis <-> picture space
+                let map_surface_to_vis = SpaceMapper::new_with_target(
+                    // TODO: switch from root to raster space.
+                    frame_context.root_spatial_node_index,
+                    self.surface_spatial_node_index,
+                    parent_culling_rect,
+                    frame_context.spatial_tree,
+                );
+
+                // Unmap the parent culling rect to surface space. Note that this may be
+                // quite conservative in the case of a complex transform, especially perspective.
+                if let Some(local_parent_culling_rect) = map_surface_to_vis.unmap(&parent_culling_rect) {
+                    let (width_factor, height_factor) = self.clamp_blur_radius(*width, *height);
+
+                    // Inflate by the local-space amount this surface extends.
+                    let expanded_rect: PictureBox2D = local_parent_culling_rect.inflate(
+                        width_factor.ceil() * BLUR_SAMPLE_SCALE,
+                        height_factor.ceil() * BLUR_SAMPLE_SCALE,
+                    );
+
+                    // Map back to the expected vis-space culling rect
+                    if let Some(rect) = map_surface_to_vis.map(&expanded_rect) {
+                        self.culling_rect = rect;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn map_to_device_rect(
         &self,
         picture_rect: &PictureRect,
@@ -4390,7 +4429,7 @@ impl PictureCompositeMode {
         };
 
         match self {
-            PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate }) => {
+            PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate, .. }) => {
                 if *should_inflate {
                     let (width_factor, height_factor) = surface.clamp_blur_radius(*width, *height);
 
@@ -4486,7 +4525,7 @@ impl PictureCompositeMode {
         };
 
         match self {
-            PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate }) => {
+            PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate, .. }) => {
                 if *should_inflate {
                     let (width_factor, height_factor) = surface.clamp_blur_radius(*width, *height);
 
@@ -5726,6 +5765,7 @@ impl PicturePrimitive {
                                                 Some(clear_color),
                                                 cmd_buffer_index,
                                                 false,
+                                                None,
                                             )
                                         ),
                                     );
@@ -5777,6 +5817,7 @@ impl PicturePrimitive {
                                                 Some(clear_color),
                                                 cmd_buffer_index,
                                                 false,
+                                                None,
                                             )
                                         ),
                                     );
@@ -5843,6 +5884,7 @@ impl PicturePrimitive {
                             z_id: tile.z_id,
                             transform_index: tile_cache.transform_index,
                             clip_index: tile_cache.compositor_clip,
+                            tile_id: Some(tile.id),
                         };
 
                         sub_slice.composite_tiles.push(composite_tile);
@@ -6021,7 +6063,7 @@ impl PicturePrimitive {
                     PictureCompositeMode::TileCache { .. } => {
                         unreachable!("handled above");
                     }
-                    PictureCompositeMode::Filter(Filter::Blur { width, height, .. }) => {
+                    PictureCompositeMode::Filter(Filter::Blur { width, height, edge_mode, .. }) => {
                         let surface = &frame_state.surfaces[raster_config.surface_index.0];
                         let (width, height) = surface.clamp_blur_radius(width, height);
 
@@ -6042,7 +6084,18 @@ impl PicturePrimitive {
                             blur_std_deviation,
                         );
 
+                        // If we have extended the size of the picture for blurring downscaling
+                        // accuracy, ensure we clear it so that any stray pixels don't affect the
+                        // downscaling passes. If not, the picture / resolve consumes the full
+                        // task size anyway, so we will clamp as usual to the task rect.
+                        let clear_color = if adjusted_size == original_size {
+                            None
+                        } else {
+                            Some(ColorF::TRANSPARENT)
+                        };
+
                         let cmd_buffer_index = frame_state.cmd_buffers.create_cmd_buffer();
+                        let adjusted_size = adjusted_size.to_i32();
 
                         // Since we (may have) adjusted the render task size for downscaling accuracy
                         // above, recalculate the uv rect for tasks that may sample from this blur output
@@ -6063,9 +6116,10 @@ impl PicturePrimitive {
                                     device_pixel_scale,
                                     None,
                                     None,
-                                    None,
+                                    clear_color,
                                     cmd_buffer_index,
                                     can_use_shared_surface,
+                                    Some(original_size.round().to_i32()),
                                 )
                             ).with_uv_rect_kind(uv_rect_kind)
                         );
@@ -6084,6 +6138,7 @@ impl PicturePrimitive {
                                     RenderTargetKind::Color,
                                     None,
                                     original_size.to_i32(),
+                                    edge_mode,
                                 )
                             }
                         );
@@ -6117,6 +6172,7 @@ impl PicturePrimitive {
                                     None,
                                     cmd_buffer_index,
                                     can_use_shared_surface,
+                                    None,
                                 ),
                             ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
@@ -6142,6 +6198,7 @@ impl PicturePrimitive {
                                 RenderTargetKind::Color,
                                 Some(&mut blur_tasks),
                                 device_rect.size().to_i32(),
+                                BlurEdgeMode::Duplicate,
                             );
                         }
 
@@ -6266,6 +6323,7 @@ impl PicturePrimitive {
                                             None,
                                             cmd_buffer_index,
                                             can_use_shared_surface,
+                                            None,
                                         )
                                     ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                                 )
@@ -6304,6 +6362,7 @@ impl PicturePrimitive {
                                             None,
                                             cmd_buffer_index,
                                             can_use_shared_surface,
+                                            None,
                                         )
                                     ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                                 )
@@ -6342,6 +6401,7 @@ impl PicturePrimitive {
                                             None,
                                             cmd_buffer_index,
                                             can_use_shared_surface,
+                                            None,
                                         )
                                     ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                                 )
@@ -6381,6 +6441,7 @@ impl PicturePrimitive {
                                             None,
                                             cmd_buffer_index,
                                             can_use_shared_surface,
+                                            None,
                                         )
                                     ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                                 )
@@ -6425,6 +6486,7 @@ impl PicturePrimitive {
                                             None,
                                             cmd_buffer_index,
                                             can_use_shared_surface,
+                                            None,
                                         )
                                     ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                                 )
@@ -6456,6 +6518,7 @@ impl PicturePrimitive {
                                     None,
                                     cmd_buffer_index,
                                     can_use_shared_surface,
+                                    None,
                                 )
                             ).with_uv_rect_kind(surface_rects.uv_rect_kind)
                         );
@@ -6521,6 +6584,7 @@ impl PicturePrimitive {
                                     None,
                                     cmd_buffer_index,
                                     can_use_shared_surface,
+                                    None,
                                 )
                             )
                         );

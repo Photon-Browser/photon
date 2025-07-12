@@ -31,6 +31,7 @@ const EnrollmentStatusReason = Object.freeze({
   NAME_CONFLICT: "NameConflict",
   PREF_FLIPS_CONFLICT: "PrefFlipsConflict",
   ERROR: "Error",
+  UNENROLLED_IN_ANOTHER_PROFILE: "UnenrolledInAnotherProfile",
 });
 
 const EnrollmentFailureReason = Object.freeze({
@@ -72,6 +73,7 @@ const UnenrollReason = Object.freeze({
   RECIPE_NOT_SEEN: "recipe-not-seen",
   STUDIES_OPT_OUT: "studies-opt-out",
   TARGETING_MISMATCH: "targeting-mismatch",
+  UNENROLLED_IN_ANOTHER_PROFILE: "unenrolled-in-another-profile",
   UNKNOWN: "unknown",
 
   // Validation failure can cause unenrollment.
@@ -174,6 +176,33 @@ export const NimbusTelemetry = {
     );
   },
 
+  recordRemoteSettingsSync(forceSync, experiments, secureExperiments, trigger) {
+    // Do not record when all collections succeed and experiments isn't empty.
+    if (
+      secureExperiments !== null &&
+      experiments !== null &&
+      experiments.length !== 0
+    ) {
+      return;
+    }
+
+    const event = {
+      force_sync: forceSync,
+      experiments_success: experiments !== null,
+      secure_experiments_success: secureExperiments !== null,
+    };
+    if (experiments !== null) {
+      event.experiments_empty = experiments.length === 0;
+    }
+    if (secureExperiments !== null) {
+      event.secure_experiments_empty = secureExperiments.length === 0;
+    }
+    if (trigger != null) {
+      event.trigger = trigger;
+    }
+    Glean.nimbusEvents.remoteSettingsSync.record(event);
+  },
+
   recordUnenrollment(enrollment, cause) {
     lazy.TelemetryEnvironment.setExperimentInactive(enrollment.slug);
     Services.fog.setExperimentInactive(enrollment.slug);
@@ -255,6 +284,12 @@ export const NimbusTelemetry = {
         enrollmentStatus.conflict_slug = cause.conflictingSlug;
         break;
 
+      case UnenrollReason.UNENROLLED_IN_ANOTHER_PROFILE:
+        enrollmentStatus.status = EnrollmentStatus.DISQUALIFIED;
+        enrollmentStatus.reason =
+          EnrollmentStatusReason.UNENROLLED_IN_ANOTHER_PROFILE;
+        break;
+
       default:
         enrollmentStatus.status = EnrollmentStatus.DISQUALIFIED;
         enrollmentStatus.reason = EnrollmentStatusReason.ERROR;
@@ -294,10 +329,15 @@ export const NimbusTelemetry = {
   recordValidationFailure(
     slug,
     reason,
-    { branch, locale, l10nIds: l10n_ids, featureIds: feature_ids } = {}
+    { branch, locale, l10nIds: l10n_ids } = {}
   ) {
     // Do not record invalid feature telemetry.
     if (reason === ValidationFailureReason.INVALID_FEATURE) {
+      return;
+    }
+
+    // Do not record unsupported feature telemetry.
+    if (reason === ValidationFailureReason.UNSUPPORTED_FEATURES) {
       return;
     }
 
@@ -307,10 +347,7 @@ export const NimbusTelemetry = {
       reason === ValidationFailureReason.L10N_MISSING_ENTRY
         ? { l10n_ids, locale }
         : {},
-      reason === ValidationFailureReason.L10N_MISSING_LOCALE ? { locale } : {},
-      reason === ValidationFailureReason.UNSUPPORTED_FEATURES
-        ? { feature_ids }
-        : {}
+      reason === ValidationFailureReason.L10N_MISSING_LOCALE ? { locale } : {}
     );
 
     Glean.normandy.validationFailedNimbusExperiment.record({

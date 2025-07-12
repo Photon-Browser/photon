@@ -57,9 +57,6 @@ document.addEventListener(
         case "context-savelink":
           gContextMenu.saveLink();
           break;
-        case "context-savelinktopocket":
-          Pocket.savePage(gContextMenu.browser, gContextMenu.linkURL);
-          break;
         case "context-copyemail":
           gContextMenu.copyEmail();
           break;
@@ -166,13 +163,6 @@ document.addEventListener(
         case "context-savepage":
           gContextMenu.savePageAs();
           break;
-        case "context-pocket":
-          Pocket.savePage(
-            gContextMenu.browser,
-            gContextMenu.browser.currentURI.spec,
-            gContextMenu.browser.contentTitle
-          );
-          break;
         case "fill-login-generated-password":
           gContextMenu.useGeneratedPassword();
           break;
@@ -228,25 +218,26 @@ document.addEventListener(
           gContextMenu.addSearchFieldAsEngine().catch(console.error);
           break;
         case "context-searchselect": {
-          let { searchTerms, usePrivate, principal, csp } = event.target;
+          let { searchTerms, usePrivate, principal, policyContainer } =
+            event.target;
           SearchUIUtils.loadSearchFromContext(
             window,
             searchTerms,
             usePrivate,
             principal,
-            csp,
+            policyContainer,
             event
           );
           break;
         }
         case "context-searchselect-private": {
-          let { searchTerms, principal, csp } = event.target;
+          let { searchTerms, principal, policyContainer } = event.target;
           SearchUIUtils.loadSearchFromContext(
             window,
             searchTerms,
             true,
             principal,
-            csp,
+            policyContainer,
             event
           );
           break;
@@ -312,7 +303,7 @@ document.addEventListener(
         case "context-copy-clean-link-to-highlight":
           gContextMenu.copyLinkToHighlight(/* stripSiteTracking */ true);
           break;
-        case "context-remove-all-highlights":
+        case "context-remove-highlight":
           gContextMenu.removeAllTextFragments();
           break;
       }

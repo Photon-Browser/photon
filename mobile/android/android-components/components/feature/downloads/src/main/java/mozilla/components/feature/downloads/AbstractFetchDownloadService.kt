@@ -111,7 +111,7 @@ abstract class AbstractFetchDownloadService : Service() {
     internal var downloadJobs = mutableMapOf<String, DownloadJobState>()
 
     protected abstract val fileSizeFormatter: FileSizeFormatter
-    protected abstract val dateTimeProvider: DateTimeProvider
+    protected abstract val downloadEstimator: DownloadEstimator
 
     // TODO Move this to browser store and make immutable:
     // https://github.com/mozilla-mobile/android-components/issues/7050
@@ -125,7 +125,6 @@ abstract class AbstractFetchDownloadService : Service() {
         var notifiedStopped: Boolean = false,
         var lastNotificationUpdate: Long = 0L,
         var createdTime: Long = System.currentTimeMillis(),
-        val downloadEstimator: DownloadEstimator? = null,
     ) {
         internal fun canUpdateNotification(): Boolean {
             return isUnderNotificationUpdateLimit() && !notifiedStopped
@@ -168,7 +167,7 @@ abstract class AbstractFetchDownloadService : Service() {
             @Suppress("LongMethod")
             override fun onReceive(context: Context, intent: Intent?) {
                 val downloadId =
-                    intent?.extras?.getString(DownloadNotification.EXTRA_DOWNLOAD_ID) ?: return
+                    intent?.extras?.getString(INTENT_EXTRA_DOWNLOAD_ID) ?: return
                 val currentDownloadJobState = downloadJobs[downloadId] ?: return
 
                 when (intent.action) {
@@ -305,14 +304,6 @@ abstract class AbstractFetchDownloadService : Service() {
             state = download.copy(status = actualStatus, notificationId = foregroundServiceId),
             foregroundServiceId = foregroundServiceId,
             status = actualStatus,
-            downloadEstimator = if (download.contentLength == null) {
-                null
-            } else {
-                DownloadEstimator(
-                    totalBytes = download.contentLength!!,
-                    dateTimeProvider = dateTimeProvider,
-                )
-            },
         )
 
         store.dispatch(DownloadAction.UpdateDownloadAction(downloadJobState.state))
@@ -388,8 +379,7 @@ abstract class AbstractFetchDownloadService : Service() {
      * @param notificationAccentColor accent color for all download notifications.
      */
     data class Style(
-        @ColorRes
-        val notificationAccentColor: Int = R.color.mozac_feature_downloads_notification,
+        @param:ColorRes val notificationAccentColor: Int = R.color.mozac_feature_downloads_notification,
     )
 
     /**
@@ -409,7 +399,7 @@ abstract class AbstractFetchDownloadService : Service() {
                 downloadState = download.state,
                 fileSizeFormatter = fileSizeFormatter,
                 notificationAccentColor = style.notificationAccentColor,
-                downloadEstimator = download.downloadEstimator,
+                downloadEstimator = downloadEstimator,
             )
             PAUSED -> DownloadNotification.createPausedDownloadNotification(
                 context,
@@ -640,7 +630,7 @@ abstract class AbstractFetchDownloadService : Service() {
                 downloadState = downloadJobState.state,
                 fileSizeFormatter = fileSizeFormatter,
                 notificationAccentColor = style.notificationAccentColor,
-                downloadEstimator = downloadJobState.downloadEstimator,
+                downloadEstimator = downloadEstimator,
             )
         compatForegroundNotificationId = downloadJobState.foregroundServiceId
 
@@ -1161,14 +1151,17 @@ abstract class AbstractFetchDownloadService : Service() {
                 while (cursor.moveToNext()) {
                     val relativePath =
                         cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH))
-                    if (!limitToDownloadsFolder || relativePath == "Downloads/") {
+                    if (!limitToDownloadsFolder || isPathInDownloadsDirectory(relativePath)) {
                         val idColumnIndex = cursor.getColumnIndex(MediaStore.Downloads._ID)
                         return ContentUris.withAppendedId(collection, cursor.getLong(idColumnIndex))
                     }
                 }
             }
-
             return null
+        }
+
+        private fun isPathInDownloadsDirectory(relativePath: String): Boolean {
+            return relativePath == "Downloads/" || relativePath == "Download/"
         }
 
         @VisibleForTesting

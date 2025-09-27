@@ -539,6 +539,10 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
   addon.optionalPermissions = extension.manifestOptionalPermissions;
   addon.requestedPermissions = extension.getRequestedPermissions();
   addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
+  // This property is exposed in the `AddonInstallWrapper` and only used in the
+  // update logic (in the prompt handler). We don't store it in the add-on DB.
+  addon.hasPreviousConsent =
+    extension.getDataCollectionPermissions().hasPreviousConsent;
 
   function getLocale(aLocale) {
     // Use the raw manifest, here, since we need values with their
@@ -1452,7 +1456,7 @@ class AddonInstall {
         this._callInstallListeners("onDownloadCancelled");
         this.removeTemporaryFile();
         break;
-      case AddonManager.STATE_POSTPONED:
+      case AddonManager.STATE_POSTPONED: {
         logger.debug(`Cancelling postponed install of ${this.addon.id}`);
         this.state = AddonManager.STATE_CANCELLED;
         this._cleanup();
@@ -1467,6 +1471,7 @@ class AddonInstall {
 
         this.unstageInstall(stagedAddon);
         break;
+      }
       default:
         throw new Error(
           "Cannot cancel install of " +
@@ -1802,6 +1807,11 @@ class AddonInstall {
             this._callInstallListeners("onInstallFailed");
           } else {
             logger.info(`Install of ${this.addon.id} cancelled by user`);
+            if (err) {
+              // promptHandler is expected to reject() without value to cancel.
+              // A non-void error is unexpected, so log it for visibility.
+              Cu.reportError(err);
+            }
             this.state = AddonManager.STATE_CANCELLED;
             this._cleanup();
             this._callInstallListeners(
@@ -2167,11 +2177,12 @@ class AddonInstall {
       case "onDownloadCancelled":
       case "onDownloadFailed":
       case "onInstallCancelled":
-      case "onInstallFailed":
+      case "onInstallFailed": {
         let rej = Promise.reject(new Error(`Install failed: ${event}`));
         rej.catch(() => {});
         this._resolveInstallPromise(rej);
         break;
+      }
       case "onInstallEnded":
         this._resolveInstallPromise(
           Promise.resolve(this._startupPromise).then(() => args[0])
@@ -2422,7 +2433,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    * Starts downloading the add-on's XPI file.
    */
   startDownload() {
-    this.downloadStartedAt = Cu.now();
+    this.downloadStartedAt = ChromeUtils.now();
 
     this.state = AddonManager.STATE_DOWNLOADING;
     if (!this._callInstallListeners("onDownloadStarted")) {
@@ -2647,9 +2658,8 @@ var DownloadAddonInstall = class extends AddonInstall {
       return;
     }
 
-    logger.debug("Download of " + this.sourceURI.spec + " completed.");
-
     if (Components.isSuccessCode(aStatus)) {
+      logger.debug(`Download of ${this.sourceURI.spec} completed.`);
       if (
         !(aRequest instanceof Ci.nsIHttpChannel) ||
         aRequest.requestSucceeded
@@ -2921,6 +2931,10 @@ AddonInstallWrapper.prototype = {
     return install.addon ? install.addon.wrapper : null;
   },
 
+  get addonHasPreviousConsent() {
+    return installFor(this).addon?.hasPreviousConsent;
+  },
+
   get sourceURI() {
     return installFor(this).sourceURI;
   },
@@ -3050,6 +3064,18 @@ export var UpdateChecker = function (
       updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_BACKGROUND_URL);
     } else {
       updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_URL);
+    }
+  } else {
+    // Ensure that add-ons from the China repack can update (bug 1990806).
+    const UPDATE_URL_CN_OLD =
+      "https://addons.firefox.com.cn/chinaedition/addons/updates.json";
+    const UPDATE_URL_CN_NEW =
+      "https://archive.mozilla.org/pub/cn_pack/addons.json";
+    if (updateURL.startsWith(UPDATE_URL_CN_OLD)) {
+      logger.warn(
+        `update_url changed for add-on ${aAddon.id} version ${aAddon.version}, from ${updateURL} to ${UPDATE_URL_CN_NEW}`
+      );
+      updateURL = UPDATE_URL_CN_NEW;
     }
   }
 

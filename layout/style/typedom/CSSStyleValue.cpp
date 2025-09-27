@@ -6,13 +6,23 @@
 
 #include "mozilla/dom/CSSStyleValue.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/CSSStyleValueBinding.h"
+#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {
 
 CSSStyleValue::CSSStyleValue(nsCOMPtr<nsISupports> aParent)
-    : mParent(std::move(aParent)) {}
+    : mParent(std::move(aParent)), mValueType(ValueType::Uninitialized) {
+  MOZ_ASSERT(mParent);
+}
+
+CSSStyleValue::CSSStyleValue(nsCOMPtr<nsISupports> aParent,
+                             ValueType aValueType)
+    : mParent(std::move(aParent)), mValueType(aValueType) {
+  MOZ_ASSERT(mParent);
+}
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CSSStyleValue)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(CSSStyleValue)
@@ -20,7 +30,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CSSStyleValue)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
-
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CSSStyleValue, mParent)
 
 nsISupports* CSSStyleValue::GetParentObject() const { return mParent; }
@@ -53,5 +62,13 @@ void CSSStyleValue::ParseAll(const GlobalObject& aGlobal,
 void CSSStyleValue::Stringify(nsAString& aRetVal) const {}
 
 // end of CSSStyleValue Web IDL implementation
+
+bool CSSStyleValue::IsCSSUnsupportedValue() const {
+  return mValueType == ValueType::Unsupported;
+}
+
+bool CSSStyleValue::IsCSSKeywordValue() const {
+  return mValueType == ValueType::Keyword;
+}
 
 }  // namespace mozilla::dom

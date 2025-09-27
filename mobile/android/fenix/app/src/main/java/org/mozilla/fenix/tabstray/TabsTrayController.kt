@@ -24,6 +24,7 @@ import mozilla.components.browser.storage.sync.Tab
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.mediasession.MediaSession.PlaybackState
 import mozilla.components.concept.engine.prompt.ShareData
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.storage.BookmarksStorage
 import mozilla.components.feature.accounts.push.CloseTabsUseCases
 import mozilla.components.feature.downloads.ui.DownloadCancelDialogFragment
@@ -44,7 +45,6 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
-import org.mozilla.fenix.components.usecases.FenixBrowserUseCases.Companion.ABOUT_HOME
 import org.mozilla.fenix.ext.DEFAULT_ACTIVE_DAYS
 import org.mozilla.fenix.ext.potentialInactiveTabs
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_NORMAL_TABS
@@ -260,11 +260,12 @@ class DefaultTabsTrayController(
             fenixBrowserUseCases.addNewHomepageTab(
                 private = isPrivate,
             )
+        } else {
+            navController.navigate(
+                TabsTrayFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
+            )
         }
 
-        navController.navigate(
-            TabsTrayFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
-        )
         navigationInteractor.onTabTrayDismissed()
         profiler?.addMarker(
             "DefaultTabTrayController.onNewTabTapped",
@@ -430,7 +431,7 @@ class DefaultTabsTrayController(
     override fun handleBookmarkSelectedTabsClicked() {
         val tabs = tabsTrayStore.state.mode.selectedTabs
 
-        TabsTray.bookmarkSelectedTabs.record(TabsTray.BookmarkSelectedTabsExtra(tabCount = tabs.size))
+        tabsTrayStore.dispatch(TabsTrayAction.BookmarkSelectedTabs(tabCount = tabs.size))
 
         // We don't combine the context with lifecycleScope so that our jobs are not cancelled
         // if we leave the fragment, i.e. we still want the bookmarks to be added if the
@@ -439,11 +440,12 @@ class DefaultTabsTrayController(
             Result.runCatching {
                 val parentGuid = bookmarksStorage
                     .getRecentBookmarks(1)
+                    .getOrDefault(listOf())
                     .firstOrNull()
                     ?.parentGuid
                     ?: BookmarkRoot.Mobile.id
 
-                val parentNode = bookmarksStorage.getBookmark(parentGuid)
+                val parentNode = bookmarksStorage.getBookmark(parentGuid).getOrNull()
 
                 tabs.forEach { tab ->
                     bookmarksStorage.addItem(
@@ -591,7 +593,7 @@ class DefaultTabsTrayController(
                 val mode = BrowsingMode.fromBoolean(tab.content.private)
                 browsingModeManager.mode = mode
 
-                if (tab.content.url == ABOUT_HOME) {
+                if (tab.content.url == ABOUT_HOME_URL) {
                     handleNavigateToHome()
                 } else {
                     handleNavigateToBrowser()

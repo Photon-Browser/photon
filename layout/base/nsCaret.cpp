@@ -18,6 +18,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_bidi.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
@@ -35,7 +36,6 @@
 #include "nsLayoutUtils.h"
 #include "nsMenuPopupFrame.h"
 #include "nsPresContext.h"
-#include "nsTextFragment.h"
 #include "nsTextFrame.h"
 #include "nsXULPopupManager.h"
 
@@ -76,14 +76,17 @@ nsresult nsCaret::Init(PresShell* aPresShell) {
 
 static bool DrawCJKCaret(nsIFrame* aFrame, int32_t aOffset) {
   nsIContent* content = aFrame->GetContent();
-  const nsTextFragment* frag = content->GetText();
-  if (!frag) {
+  const CharacterDataBuffer* characterDataBuffer =
+      content->GetCharacterDataBuffer();
+  if (!characterDataBuffer) {
     return false;
   }
-  if (aOffset < 0 || static_cast<uint32_t>(aOffset) >= frag->GetLength()) {
+  if (aOffset < 0 ||
+      static_cast<uint32_t>(aOffset) >= characterDataBuffer->GetLength()) {
     return false;
   }
-  const char16_t ch = frag->CharAt(AssertedCast<uint32_t>(aOffset));
+  const char16_t ch =
+      characterDataBuffer->CharAt(AssertedCast<uint32_t>(aOffset));
   return 0x2e80 <= ch && ch <= 0xd7ff;
 }
 
@@ -605,7 +608,7 @@ void nsCaret::ResetBlinking() {
   // blinking too often. 50 is not likely to be user observable in practice,
   // it's ~4 animation frames at 60fps.
   static const auto kBlinkTimerSlack = TimeDuration::FromMilliseconds(50);
-
+  const bool wasBlinkOn = mIsBlinkOn;
   mIsBlinkOn = true;
 
   if (mReadOnly || !IsVisible()) {
@@ -618,6 +621,10 @@ void nsCaret::ResetBlinking() {
   if (mBlinkTime <= 0) {
     StopBlinking();
     return;
+  }
+
+  if (!wasBlinkOn) {
+    SchedulePaint();
   }
 
   mBlinkCount = LookAndFeel::CaretBlinkCount();
@@ -636,7 +643,7 @@ void nsCaret::ResetBlinking() {
   mLastBlinkTimerReset = now;
   mBlinkTimer->InitWithNamedFuncCallback(CaretBlinkCallback, this, mBlinkTime,
                                          nsITimer::TYPE_REPEATING_SLACK,
-                                         "CaretBlinkCallback");
+                                         "CaretBlinkCallback"_ns);
 }
 
 void nsCaret::StopBlinking() {

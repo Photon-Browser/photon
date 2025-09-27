@@ -218,8 +218,7 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
 
   nsCOMPtr<nsISupports> container = rootDocument->GetContainer();
   if (nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(container)) {
-    nsCOMPtr<nsIWidget> mainWidget;
-    baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
+    nsCOMPtr<nsIWidget> mainWidget = baseWindow->GetMainWidget();
     if (mainWidget && mainWidget->SizeMode() == nsSizeMode_Fullscreen) {
       return StyleDisplayMode::Fullscreen;
     }
@@ -292,6 +291,11 @@ StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
                                      : StylePrefersColorScheme::Light;
 }
 
+bool Gecko_MediaFeatures_MacRTL(const Document* aDocument) {
+  auto* widget = nsContentUtils::WidgetForDocument(aDocument);
+  return widget && widget->IsMacTitlebarDirectionRTL();
+}
+
 // Neither Linux, Windows, nor Mac have a way to indicate that low contrast is
 // preferred so we use the presence of an accessibility theme or forced colors
 // as a signal.
@@ -349,6 +353,11 @@ StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
     return StyleDynamicRange::Standard;
   }
 #ifdef MOZ_WAYLAND
+  // Wayland compositors allow to process HDR content even without HDR monitor
+  // attached.
+  if (StaticPrefs::gfx_wayland_hdr_force_enabled_AtStartup()) {
+    return StyleDynamicRange::High;
+  }
   if (!StaticPrefs::gfx_wayland_hdr_AtStartup()) {
     return StyleDynamicRange::Standard;
   }

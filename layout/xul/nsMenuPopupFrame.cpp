@@ -110,7 +110,7 @@ class PopupExpirationTracker final
 
  public:
   PopupExpirationTracker()
-      : nsExpirationTracker(5000 /* ms */, "PopupExpirationTracker") {}
+      : nsExpirationTracker(5000 /* ms */, "PopupExpirationTracker"_ns) {}
   static PopupExpirationTracker* Get() { return sInstance.get(); }
   static PopupExpirationTracker& GetOrCreate() {
     if (!sInstance) {
@@ -298,9 +298,8 @@ already_AddRefed<nsIWidget> nsMenuPopupFrame::ComputeParentWidget() const {
       return nullptr;
     }
 
-    nsCOMPtr<nsIBaseWindow> baseWindow(do_QueryInterface(treeOwner));
-    if (baseWindow) {
-      baseWindow->GetMainWidget(getter_AddRefs(parentWidget));
+    if (nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(treeOwner)) {
+      parentWidget = baseWindow->GetMainWidget();
     }
   }
   if (!parentWidget && mView && mView->GetParent()) {
@@ -2087,7 +2086,7 @@ nsIWidget* nsMenuPopupFrame::GetWidget() const {
 
 nsresult nsMenuPopupFrame::AttributeChanged(int32_t aNameSpaceID,
                                             nsAtom* aAttribute,
-                                            int32_t aModType)
+                                            AttrModType aModType)
 
 {
   nsresult rv =

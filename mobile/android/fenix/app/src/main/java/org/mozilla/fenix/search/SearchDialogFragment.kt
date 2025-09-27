@@ -22,15 +22,14 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewStub
+import android.view.Window
 import android.view.WindowManager
-import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
 import androidx.activity.ComponentDialog
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDialogFragment
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -46,6 +45,7 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
@@ -71,7 +71,6 @@ import mozilla.components.support.ktx.android.content.isPermissionGranted
 import mozilla.components.support.ktx.android.content.res.getSpanned
 import mozilla.components.support.ktx.android.net.isHttpOrHttps
 import mozilla.components.support.ktx.android.view.ImeInsetsSynchronizer
-import mozilla.components.support.ktx.android.view.findViewInHierarchy
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.ktx.android.view.setupPersistentInsets
 import mozilla.components.support.ktx.android.view.showKeyboard
@@ -93,7 +92,6 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.databinding.FragmentSearchDialogBinding
 import org.mozilla.fenix.databinding.SearchSuggestionsHintBinding
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.getRectWithScreenLocation
 import org.mozilla.fenix.ext.increaseTapArea
 import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
@@ -111,6 +109,10 @@ import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
 import org.mozilla.fenix.search.toolbar.SearchSelectorToolbarAction
 import org.mozilla.fenix.search.toolbar.ToolbarView
 import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.telemetry.ACTION_QR_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
+import mozilla.components.browser.toolbar.R as toolbarR
+import org.mozilla.fenix.GleanMetrics.Toolbar as GleanMetricsToolbar
 
 typealias SearchDialogFragmentStore = SearchFragmentStore
 
@@ -147,7 +149,6 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
     private val qrFeature = ViewBoundFeatureWrapper<QrFeature>()
     private val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
 
-    private var isPrivateButtonClicked = false
     private var dialogHandledAction = false
     private var searchSelectorAlreadyAdded = false
     private var qrButtonAction: Toolbar.Action? = null
@@ -180,10 +181,13 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val args by navArgs<SearchDialogFragmentArgs>()
+
         if (context?.settings()?.isTabStripEnabled == true) {
-            setStyle(STYLE_NO_TITLE, R.style.SearchDialogStyleTabStrip)
+            setStyle(STYLE_NORMAL, R.style.SearchDialogStyleTabStrip)
         } else {
-            setStyle(STYLE_NO_TITLE, R.style.SearchDialogStyle)
+            setStyle(STYLE_NORMAL, R.style.SearchDialogStyle)
         }
 
         startForResult = registerForActivityResult { result ->
@@ -197,7 +201,10 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         }
 
         requireComponents.appStore.dispatch(
-            AppAction.UpdateSearchBeingActiveState(isSearchActive = true),
+            AppAction.SearchAction.SearchStarted(
+                tabId = args.sessionId,
+                source = args.searchAccessPoint,
+            ),
         )
     }
 
@@ -225,7 +232,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                     this@SearchDialogFragment.onBackPressed()
                 }
             }
-
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
             window?.setupPersistentInsets()
         }
     }
@@ -276,7 +283,9 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             clearToolbar = {
                 inlineAutocompleteEditText.setText("")
             },
-            dismissDialogAndGoBack = ::dismissDialogAndGoBack,
+            dismissDialogAndGoBack = {
+                dismissDialogAndGoBack()
+            },
         )
         nullableInteractor = SearchDialogInteractor(searchController = requireNotNull(controller))
 
@@ -291,7 +300,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             binding.toolbar,
             fromHomeFragment,
         ).also {
-            inlineAutocompleteEditText = it.view.findViewById(R.id.mozac_browser_toolbar_edit_url_view)
+            inlineAutocompleteEditText = it.view.findViewById(toolbarR.id.mozac_browser_toolbar_edit_url_view)
             inlineAutocompleteEditText.increaseTapArea(TAP_INCREASE_DPS_4)
         }
 
@@ -326,27 +335,18 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                 dialog?.window?.decorView?.setOnTouchListener { _, event ->
                     when (event?.action) {
                         MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                            isPrivateButtonClicked = isTouchingPrivateButton(event.x, event.y)
-                            // Immediately drop Search Bar focus when the touch is not on the private button.
-                            if (!isPrivateButtonClicked) {
-                                toolbarView.view.clearFocus()
-                            }
+                            // Immediately drop Search Bar focus on touch.
+                            toolbarView.view.clearFocus()
                         }
                         MotionEvent.ACTION_UP -> {
-                            if (!isTouchingPrivateButton(
-                                    event.x,
-                                    event.y,
-                                ) && !isPrivateButtonClicked
-                            ) {
-                                findNavController().popBackStack()
-                                isPrivateButtonClicked = false
-                            }
+                            findNavController().popBackStack()
                         }
-                        else -> isPrivateButtonClicked = false
                     }
+
                     if (binding.awesomeBar.visibility != View.VISIBLE) {
                         requireActivity().dispatchTouchEvent(event)
                     }
+
                     false
                 }
             }
@@ -545,13 +545,6 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         }
     }
 
-    private fun isTouchingPrivateButton(x: Float, y: Float): Boolean {
-        val view = parentFragmentManager.primaryNavigationFragment?.view?.findViewInHierarchy {
-            it.id == R.id.privateBrowsingButton
-        } ?: return false
-        return view.getRectWithScreenLocation().contains(x.toInt(), y.toInt())
-    }
-
     private fun hideClipboardSection() {
         binding.fillLinkFromClipboard.isVisible = false
         binding.fillLinkDivider.isVisible = false
@@ -599,13 +592,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
     }
 
     private fun updateAccessibilityTraversalOrder() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            binding.fillLinkFromClipboard.accessibilityTraversalAfter = binding.searchWrapper.id
-        } else {
-            viewLifecycleOwner.lifecycleScope.launch {
-                binding.searchWrapper.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
-            }
-        }
+        binding.fillLinkFromClipboard.accessibilityTraversalAfter = binding.searchWrapper.id
     }
 
     override fun onResume() {
@@ -634,6 +621,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        _awesomeBarView?.dispose()
         _awesomeBarView = null
         nullableInteractor = null
         controller?.apply {
@@ -669,7 +657,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         }
 
         requireComponents.appStore.dispatch(
-            AppAction.UpdateSearchBeingActiveState(isSearchActive = false),
+            AppAction.SearchAction.SearchEnded,
         )
     }
 
@@ -718,7 +706,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                 val normalizedUrl = result.toNormalizedUrl()
                 if (!normalizedUrl.toUri().isHttpOrHttps) {
                     activity?.let {
-                        AlertDialog.Builder(it).apply {
+                        MaterialAlertDialogBuilder(it).apply {
                             setMessage(R.string.qr_scanner_dialog_invalid)
                             setPositiveButton(R.string.qr_scanner_dialog_invalid_ok) { dialog: DialogInterface, _ ->
                                 dialog.dismiss()
@@ -728,7 +716,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                     }
                 } else {
                     activity?.let {
-                        AlertDialog.Builder(it).apply {
+                        MaterialAlertDialogBuilder(it).apply {
                             val spannable = resources.getSpanned(
                                 R.string.qr_scanner_confirmation_dialog_message,
                                 getString(R.string.app_name) to StyleSpan(Typeface.BOLD),
@@ -944,7 +932,9 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
             return
         }
 
-        Events.browserToolbarQrScanTapped.record(NoExtras())
+        GleanMetricsToolbar.buttonTapped.record(
+            GleanMetricsToolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_QR_CLICKED),
+        )
 
         view?.hideKeyboard()
         toolbarView.view.clearFocus()

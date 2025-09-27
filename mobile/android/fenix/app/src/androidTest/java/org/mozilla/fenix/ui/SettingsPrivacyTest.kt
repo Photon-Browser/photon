@@ -72,7 +72,7 @@ class SettingsPrivacyTest : TestSetup() {
                 isDailyUsagePingEnabled = true,
                 studiesSummary = "On",
             )
-            clickUsageAndTechnicalDataToggle()
+            clickUsageAndTechnicalDataToggle(composeTestRule)
             verifyDataCollectionView(
                 composeTestRule,
                 isSendTechnicalDataEnabled = false,
@@ -108,6 +108,19 @@ class SettingsPrivacyTest : TestSetup() {
             verifyAllSystemNotificationsToggleState(true)
             verifyPrivateBrowsingSystemNotificationsToggleState(true)
             exitMenu(DURATION_MS_TRANSLATIONS)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2939287
+    @Test
+    fun verifyTheDailyUsagePingCanBeEnabledAndDisabledTest() {
+        homeScreen {
+        }.openThreeDotMenu {
+        }.openSettings {
+        }.openSettingsSubMenuDataCollection {
+            verifyDailyUsagePingToggle(composeTestRule, isChecked = true)
+            clickDailyUsagePingToggle(composeTestRule)
+            verifyDailyUsagePingToggle(composeTestRule, isChecked = false)
         }
     }
 }

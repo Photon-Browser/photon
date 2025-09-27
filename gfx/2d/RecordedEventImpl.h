@@ -2219,7 +2219,7 @@ RecordedDrawTargetCreation::RecordedDrawTargetCreation(S& aStream)
   ReadElementConstrained(aStream, mBackendType, BackendType::NONE,
                          BackendType::WEBRENDER_TEXT);
   ReadElement(aStream, mRect);
-  ReadElementConstrained(aStream, mFormat, SurfaceFormat::A8R8G8B8_UINT32,
+  ReadElementConstrained(aStream, mFormat, SurfaceFormat::B8G8R8A8,
                          SurfaceFormat::UNKNOWN);
   ReadElement(aStream, mHasExistingData);
 
@@ -2324,7 +2324,7 @@ RecordedCreateSimilarDrawTarget::RecordedCreateSimilarDrawTarget(S& aStream)
     : RecordedEventDerived(CREATESIMILARDRAWTARGET) {
   ReadElement(aStream, mRefPtr);
   ReadElement(aStream, mSize);
-  ReadElementConstrained(aStream, mFormat, SurfaceFormat::A8R8G8B8_UINT32,
+  ReadElementConstrained(aStream, mFormat, SurfaceFormat::B8G8R8A8,
                          SurfaceFormat::UNKNOWN);
 }
 
@@ -2433,7 +2433,7 @@ RecordedCreateClippedDrawTarget::RecordedCreateClippedDrawTarget(S& aStream)
     : RecordedEventDerived(CREATECLIPPEDDRAWTARGET) {
   ReadElement(aStream, mRefPtr);
   ReadElement(aStream, mBounds);
-  ReadElementConstrained(aStream, mFormat, SurfaceFormat::A8R8G8B8_UINT32,
+  ReadElementConstrained(aStream, mFormat, SurfaceFormat::B8G8R8A8,
                          SurfaceFormat::UNKNOWN);
 }
 
@@ -2458,7 +2458,7 @@ RecordedCreateDrawTargetForFilter::RecordedCreateDrawTargetForFilter(S& aStream)
     : RecordedEventDerived(CREATEDRAWTARGETFORFILTER) {
   ReadElement(aStream, mRefPtr);
   ReadElement(aStream, mMaxSize);
-  ReadElementConstrained(aStream, mFormat, SurfaceFormat::A8R8G8B8_UINT32,
+  ReadElementConstrained(aStream, mFormat, SurfaceFormat::B8G8R8A8,
                          SurfaceFormat::UNKNOWN);
   ReadElement(aStream, mFilter);
   ReadElement(aStream, mSource);
@@ -3299,8 +3299,10 @@ struct ElementStreamFormat<S, layers::SurfaceDescriptor> {
   using T = layers::SurfaceDescriptor;
 
   static void Write(S& s, const T& t) {
-    // More rigorous version is coming soon! -Kelsey
-    const auto valid = dom::ValidSurfaceDescriptorForRemoteCanvas2d(t);
+    Maybe<T> valid;
+    if (!dom::ValidSurfaceDescriptorForRemoteCanvas2d(t, &valid)) {
+      MOZ_CRASH("Invalid surface descriptor for write");
+    }
     MOZ_RELEASE_ASSERT(valid && *valid == t);
     if (kIsDebug) {
       // We better be able to memcpy and destroy this if we're going to send it
@@ -3316,10 +3318,15 @@ struct ElementStreamFormat<S, layers::SurfaceDescriptor> {
     s.write(reinterpret_cast<const char*>(&tValid), sizeof(T));
   }
   static void Read(S& s, T& t) {
-    s.read(reinterpret_cast<char*>(&t), sizeof(T));
-    const auto valid = dom::ValidSurfaceDescriptorForRemoteCanvas2d(t);
-    MOZ_RELEASE_ASSERT(valid && *valid == t);
-    t = *valid;
+    char buf[sizeof(T)];
+    s.read(buf, sizeof(T));
+    const auto& sd = *reinterpret_cast<const layers::SurfaceDescriptor*>(buf);
+    if (dom::ValidSurfaceDescriptorForRemoteCanvas2d(sd)) {
+      t = sd;
+      MOZ_RELEASE_ASSERT(sd == t);
+    } else {
+      s.SetIsBad();
+    }
   }
 };
 
@@ -3604,7 +3611,7 @@ RecordedSourceSurfaceCreation::RecordedSourceSurfaceCreation(S& aStream)
     : RecordedEventDerived(SOURCESURFACECREATION), mDataOwned(true) {
   ReadElement(aStream, mRefPtr);
   ReadElement(aStream, mSize);
-  ReadElementConstrained(aStream, mFormat, SurfaceFormat::A8R8G8B8_UINT32,
+  ReadElementConstrained(aStream, mFormat, SurfaceFormat::B8G8R8A8,
                          SurfaceFormat::UNKNOWN);
 
   if (!Factory::AllowedSurfaceSize(mSize)) {

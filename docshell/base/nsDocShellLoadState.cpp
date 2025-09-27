@@ -26,6 +26,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
+#include "mozilla/dom/NavigationUtils.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_fission.h"
@@ -50,6 +51,7 @@ nsDocShellLoadState::nsDocShellLoadState(
     const DocShellLoadStateInit& aLoadState, mozilla::ipc::IProtocol* aActor,
     bool* aReadSuccess)
     : mNotifiedBeforeUnloadListeners(false),
+      mShouldNotForceReplaceInOnLoad(false),
       mLoadIdentifier(aLoadState.LoadIdentifier()) {
   // If we return early, we failed to read in the data.
   *aReadSuccess = false;
@@ -96,6 +98,7 @@ nsDocShellLoadState::nsDocShellLoadState(
   mTriggeringClassificationFlags = aLoadState.TriggeringClassificationFlags();
   mTriggeringRemoteType = aLoadState.TriggeringRemoteType();
   mSchemelessInput = aLoadState.SchemelessInput();
+  mForceMediaDocument = aLoadState.forceMediaDocument();
   mHttpsUpgradeTelemetry = aLoadState.HttpsUpgradeTelemetry();
   mPolicyContainer = aLoadState.PolicyContainer();
   mOriginalURIString = aLoadState.OriginalURIString();
@@ -169,6 +172,7 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mInheritPrincipal(aOther.mInheritPrincipal),
       mPrincipalIsExplicit(aOther.mPrincipalIsExplicit),
       mNotifiedBeforeUnloadListeners(aOther.mNotifiedBeforeUnloadListeners),
+      mShouldNotForceReplaceInOnLoad(aOther.mShouldNotForceReplaceInOnLoad),
       mPrincipalToInherit(aOther.mPrincipalToInherit),
       mPartitionedPrincipalToInherit(aOther.mPartitionedPrincipalToInherit),
       mForceAllowDataURI(aOther.mForceAllowDataURI),
@@ -206,6 +210,7 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mRemoteTypeOverride(aOther.mRemoteTypeOverride),
       mTriggeringRemoteType(aOther.mTriggeringRemoteType),
       mSchemelessInput(aOther.mSchemelessInput),
+      mForceMediaDocument(aOther.mForceMediaDocument),
       mHttpsUpgradeTelemetry(aOther.mHttpsUpgradeTelemetry) {
   MOZ_DIAGNOSTIC_ASSERT(
       XRE_IsParentProcess(),
@@ -230,6 +235,7 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
       mInheritPrincipal(false),
       mPrincipalIsExplicit(false),
       mNotifiedBeforeUnloadListeners(false),
+      mShouldNotForceReplaceInOnLoad(false),
       mForceAllowDataURI(false),
       mIsExemptFromHTTPSFirstMode(false),
       mOriginalFrameSrc(false),
@@ -515,6 +521,9 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
   loadState->SetSchemelessInput(static_cast<nsILoadInfo::SchemelessInputType>(
       aLoadURIOptions.mSchemelessInput));
 
+  loadState->SetForceMediaDocument(aLoadURIOptions.mForceMediaDocument);
+  loadState->SetAppLinkLaunchType(aLoadURIOptions.mAppLinkLaunchType);
+
   loadState.forget(aResult);
   return NS_OK;
 }
@@ -659,6 +668,15 @@ bool nsDocShellLoadState::NotifiedBeforeUnloadListeners() const {
 void nsDocShellLoadState::SetNotifiedBeforeUnloadListeners(
     bool aNotifiedBeforeUnloadListeners) {
   mNotifiedBeforeUnloadListeners = aNotifiedBeforeUnloadListeners;
+}
+
+bool nsDocShellLoadState::ShouldNotForceReplaceInOnLoad() const {
+  return mShouldNotForceReplaceInOnLoad;
+}
+
+void nsDocShellLoadState::SetShouldNotForceReplaceInOnLoad(
+    bool aShouldNotForceReplaceInOnLoad) {
+  mShouldNotForceReplaceInOnLoad = aShouldNotForceReplaceInOnLoad;
 }
 
 bool nsDocShellLoadState::ForceAllowDataURI() const {
@@ -1398,6 +1416,7 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.LoadIdentifier() = mLoadIdentifier;
   loadState.ChannelInitialized() = mChannelInitialized;
   loadState.IsMetaRefresh() = mIsMetaRefresh;
+  loadState.forceMediaDocument() = mForceMediaDocument;
   if (mLoadingSessionHistoryInfo) {
     loadState.loadingSessionHistoryInfo().emplace(*mLoadingSessionHistoryInfo);
   }
@@ -1443,7 +1462,8 @@ void nsDocShellLoadState::SetNavigationAPIState(
 }
 
 NavigationType nsDocShellLoadState::GetNavigationType() const {
-  return LoadReplace() ? NavigationType::Replace : NavigationType::Push;
+  return NavigationUtils::NavigationTypeFromLoadType(LoadType())
+      .valueOr(NavigationType::Push);
 }
 
 mozilla::dom::FormData* nsDocShellLoadState::GetFormDataEntryList() {
@@ -1453,4 +1473,12 @@ mozilla::dom::FormData* nsDocShellLoadState::GetFormDataEntryList() {
 void nsDocShellLoadState::SetFormDataEntryList(
     mozilla::dom::FormData* aFormDataEntryList) {
   mFormDataEntryList = aFormDataEntryList;
+}
+
+uint32_t nsDocShellLoadState::GetAppLinkLaunchType() const {
+  return mAppLinkLaunchType;
+}
+
+void nsDocShellLoadState::SetAppLinkLaunchType(uint32_t aAppLinkLaunchType) {
+  mAppLinkLaunchType = aAppLinkLaunchType;
 }

@@ -16,7 +16,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   Finder: "resource://gre/modules/Finder.sys.mjs",
   FinderParent: "resource://gre/modules/FinderParent.sys.mjs",
-  PopupBlocker: "resource://gre/actors/PopupBlockingParent.sys.mjs",
+  PopupAndRedirectBlocker:
+    "resource://gre/actors/PopupAndRedirectBlockingParent.sys.mjs",
   SelectParentHelper: "resource://gre/actors/SelectParent.sys.mjs",
   RemoteWebNavigation: "resource://gre/modules/RemoteWebNavigation.sys.mjs",
 });
@@ -117,8 +118,8 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     this.mIconURL = null;
     this.lastURI = null;
 
-    ChromeUtils.defineLazyGetter(this, "popupBlocker", () => {
-      return new lazy.PopupBlocker(this);
+    ChromeUtils.defineLazyGetter(this, "popupAndRedirectBlocker", () => {
+      return new lazy.PopupAndRedirectBlocker(this);
     });
 
     this.addEventListener(
@@ -877,13 +878,6 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     this.webNavigation.stop(flags);
   }
 
-  _fixLoadParamsToLoadURIOptions(params) {
-    let loadFlags =
-      params.loadFlags || params.flags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
-    delete params.flags;
-    params.loadFlags = loadFlags;
-  }
-
   /**
    * throws exception for unknown schemes
    */
@@ -891,7 +885,6 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     if (!uri) {
       uri = lazy.blankURI;
     }
-    this._fixLoadParamsToLoadURIOptions(params);
     this._wrapURIChangeCall(() => this.webNavigation.loadURI(uri, params));
   }
 
@@ -903,7 +896,6 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
       this.loadURI(null, params);
       return;
     }
-    this._fixLoadParamsToLoadURIOptions(params);
     this._wrapURIChangeCall(() =>
       this.webNavigation.fixupAndLoadURIString(uriString, params)
     );

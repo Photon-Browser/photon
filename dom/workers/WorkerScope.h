@@ -15,16 +15,16 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AnimationFrameProvider.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/PerformanceWorker.h"
 #include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/TimeoutManager.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
@@ -79,6 +79,7 @@ class ServiceWorkerDescriptor;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
 struct StructuredSerializeOptions;
+class TimeoutManager;
 class WorkerDocumentListener;
 class WorkerLocation;
 class WorkerNavigator;
@@ -343,7 +344,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   MOZ_CAN_RUN_SCRIPT void ImportScripts(
       JSContext* aCx,
       const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-      ErrorResult& aRv);
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   OnErrorEventHandlerNonNull* GetOnerror();
 

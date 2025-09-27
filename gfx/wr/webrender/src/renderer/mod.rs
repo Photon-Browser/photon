@@ -58,6 +58,8 @@ use crate::composite::{CompositeState, CompositeTileSurface, CompositorInputLaye
 use crate::composite::{CompositorKind, Compositor, NativeTileId, CompositeFeatures, CompositeSurfaceFormat, ResolvedExternalSurfaceColorData};
 use crate::composite::{CompositorConfig, NativeSurfaceOperationDetails, NativeSurfaceId, NativeSurfaceOperation, ClipRadius};
 use crate::composite::TileKind;
+#[cfg(feature = "debugger")]
+use api::debugger::CompositorDebugInfo;
 use crate::segment::SegmentBuilder;
 use crate::{debug_colors, CompositorInputConfig, CompositorSurfaceUsage};
 use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, UploadPBOPool};
@@ -93,6 +95,8 @@ use crate::telemetry::Telemetry;
 use crate::tile_cache::PictureCacheDebugInfo;
 use crate::util::drain_filter;
 use crate::rectangle_occlusion as occlusion;
+#[cfg(feature = "debugger")]
+use crate::debugger::{Debugger, DebugQueryKind};
 use upload::{upload_to_texture_cache, UploadTexturePool};
 use init::*;
 
@@ -115,7 +119,6 @@ use std::{
 };
 #[cfg(any(feature = "capture", feature = "replay"))]
 use std::collections::hash_map::Entry;
-use time::precise_time_ns;
 
 mod debug;
 mod gpu_buffer;
@@ -128,7 +131,8 @@ pub(crate) mod init;
 pub use debug::DebugRenderer;
 pub use shade::{PendingShadersToPrecache, Shaders, SharedShaders};
 pub use vertex::{desc, VertexArrayKind, MAX_VERTEX_TEXTURE_WIDTH};
-pub use gpu_buffer::{GpuBuffer, GpuBufferF, GpuBufferBuilderF, GpuBufferI, GpuBufferBuilderI, GpuBufferAddress, GpuBufferBuilder};
+pub use gpu_buffer::{GpuBuffer, GpuBufferF, GpuBufferBuilderF, GpuBufferI, GpuBufferBuilderI};
+pub use gpu_buffer::{GpuBufferAddress, GpuBufferBuilder, GpuBufferWriterF};
 
 /// The size of the array of each type of vertex data texture that
 /// is round-robin-ed each frame during bind_frame_data. Doing this
@@ -191,6 +195,10 @@ const GPU_TAG_CACHE_FAST_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
 };
 const GPU_TAG_CACHE_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
     label: "C_LinearGradient",
+    color: debug_colors::BROWN,
+};
+const GPU_TAG_GRADIENT: GpuProfileTag = GpuProfileTag {
+    label: "C_Gradient",
     color: debug_colors::BROWN,
 };
 const GPU_TAG_RADIAL_GRADIENT: GpuProfileTag = GpuProfileTag {
@@ -331,6 +339,7 @@ impl BatchKind {
             }
             BatchKind::TextRun(_) => GPU_TAG_PRIM_TEXT_RUN,
             BatchKind::Quad(PatternKind::ColorOrTexture) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::Gradient) => GPU_TAG_GRADIENT,
             BatchKind::Quad(PatternKind::RadialGradient) => GPU_TAG_RADIAL_GRADIENT,
             BatchKind::Quad(PatternKind::ConicGradient) => GPU_TAG_CONIC_GRADIENT,
             BatchKind::Quad(PatternKind::Mask) => GPU_TAG_INDIRECT_MASK,
@@ -838,6 +847,8 @@ pub struct Renderer {
     resource_upload_time: f64,
     gpu_cache_upload_time: f64,
     profiler: Profiler,
+    #[cfg(feature = "debugger")]
+    debugger: Debugger,
 
     last_time: u64,
 
@@ -1269,8 +1280,40 @@ impl Renderer {
     fn handle_debug_command(&mut self, command: DebugCommand) {
         match command {
             DebugCommand::SetPictureTileSize(_) |
-            DebugCommand::SetMaximumSurfaceSize(_) => {
+            DebugCommand::SetMaximumSurfaceSize(_) |
+            DebugCommand::GenerateFrame => {
                 panic!("Should be handled by render backend");
+            }
+            #[cfg(feature = "debugger")]
+            DebugCommand::Query(ref query) => {
+                match query.kind {
+                    DebugQueryKind::SpatialTree { .. } => {
+                        panic!("Should be handled by render backend");
+                    }
+                    DebugQueryKind::CompositorConfig { .. } => {
+                        let result = match self.active_documents.iter().last() {
+                            Some((_, doc)) => {
+                                doc.frame.composite_state.print_to_string()
+                            }
+                            None => {
+                                "No active documents".into()
+                            }
+                        };
+                        query.result.send(result).ok();
+                    }
+                    DebugQueryKind::CompositorView { .. } => {
+                        let result = match self.active_documents.iter().last() {
+                            Some((_, doc)) => {
+                                let info = CompositorDebugInfo::from(&doc.frame.composite_state);
+                                serde_json::to_string(&info).unwrap()
+                            }
+                            None => {
+                                "No active documents".into()
+                            }
+                        };
+                        query.result.send(result).ok();
+                    }
+                }
             }
             DebugCommand::SaveCapture(..) |
             DebugCommand::LoadCapture(..) |
@@ -1287,6 +1330,17 @@ impl Renderer {
             }
             DebugCommand::SetFlags(flags) => {
                 self.set_debug_flags(flags);
+            }
+            DebugCommand::GetDebugFlags(tx) => {
+                tx.send(self.debug_flags).unwrap();
+            }
+            #[cfg(feature = "debugger")]
+            DebugCommand::AddDebugClient(client) => {
+                self.debugger.add_client(
+                    client,
+                    self.debug_flags,
+                    &self.profiler,
+                );
             }
         }
     }
@@ -1354,7 +1408,7 @@ impl Renderer {
                 result
             }
             None => {
-                self.last_time = precise_time_ns();
+                self.last_time = zeitstempel::now();
                 Ok(RenderResults::default())
             }
         };
@@ -1689,7 +1743,7 @@ impl Renderer {
         let t = self.profile.end_time(profiler::RENDERER_TIME);
         self.profile.end_time_if_started(profiler::TOTAL_FRAME_CPU_TIME);
 
-        let current_time = precise_time_ns();
+        let current_time = zeitstempel::now();
         if device_size.is_some() {
             let time = profiler::ns_to_ms(current_time - self.last_time);
             self.profile.set(profiler::FRAME_TIME, time);
@@ -1784,6 +1838,14 @@ impl Renderer {
 
         // Note: this clears the values in self.profile.
         self.profiler.set_counters(&mut self.profile);
+
+        // If debugger is enabled, collect any profiler updates before value is overwritten
+        // during update below.
+        #[cfg(feature = "debugger")]
+        self.debugger.update(
+            self.debug_flags,
+            &self.profiler,
+        );
 
         // Note: profile counters must be set before this or they will count for next frame.
         self.profiler.update();
@@ -2008,12 +2070,12 @@ impl Renderer {
 
             // Now that we've saved as many deletions for reuse as we can, actually delete whatever is left.
             if !pending_deletes.is_empty() {
-                let delete_texture_start = precise_time_ns();
+                let delete_texture_start = zeitstempel::now();
                 for (texture, _) in pending_deletes {
                     add_event_marker("TextureCacheFree");
                     self.device.delete_texture(texture);
                 }
-                delete_cache_texture_time += precise_time_ns() - delete_texture_start;
+                delete_cache_texture_time += zeitstempel::now() - delete_texture_start;
             }
 
             for allocation in update_list.allocations {
@@ -2025,7 +2087,7 @@ impl Renderer {
                 match allocation.kind {
                     TextureCacheAllocationKind::Alloc(ref info) |
                     TextureCacheAllocationKind::Reset(ref info) => {
-                        let create_cache_texture_start = precise_time_ns();
+                        let create_cache_texture_start = zeitstempel::now();
                         // Create a new native texture, as requested by the texture cache.
                         // If we managed to reuse a deleted texture, then prefer that instead.
                         //
@@ -2065,7 +2127,7 @@ impl Renderer {
                             }
                         }
 
-                        create_cache_texture_time += precise_time_ns() - create_cache_texture_start;
+                        create_cache_texture_time += zeitstempel::now() - create_cache_texture_start;
 
                         self.texture_resolver.texture_cache_map.insert(allocation.id, CacheTexture {
                             texture,
@@ -2322,7 +2384,8 @@ impl Renderer {
     ) {
         self.device.disable_depth_write();
 
-        {
+        let has_prim_instances = prim_instances.iter().any(|map| !map.is_empty());
+        if has_prim_instances || !prim_instances_with_scissor.is_empty() {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_INDIRECT_PRIM);
 
             self.set_blend(false, FramebufferKind::Other);
@@ -3851,13 +3914,11 @@ impl Renderer {
         assert_eq!(swapchain_layers.len(), input_layers.len());
 
         if window_is_opaque {
-            match input_layers.first_mut() {
+            match input_layers.last_mut() {
                 Some(_layer) => {
-                    // If the window is opaque, and the first layer is a content layer
-                    // then mark that as opaque.
-                    // TODO(gw): This causes flickering in some cases when changing
-                    //           layer count. We need to find out why so we can enable
-                    //           selecting an opaque swapchain where possible.
+                    // If the window is opaque, and the last(back) layer is
+                    //  a content layer then mark that as opaque.
+                    // TODO: This causes talos performance regressions.
                     // if let CompositorSurfaceUsage::Content = layer.usage {
                     //     layer.is_opaque = true;
                     // }
@@ -4117,6 +4178,7 @@ impl Renderer {
         }
 
         assert_eq!(swapchain_layers.len(), input_layers.len());
+        let mut content_clear_color = Some(self.clear_color);
 
         for (layer_index, (layer, swapchain_layer)) in input_layers.iter().zip(swapchain_layers.iter()).enumerate() {
             self.device.reset_state();
@@ -4129,11 +4191,8 @@ impl Renderer {
                 }
             }
 
-            let clear_color = if layer_index == 0 {
-                self.clear_color
-            } else {
-                ColorF::TRANSPARENT
-            };
+            // Only use supplied clear color for first content layer we encounter
+            let clear_color = content_clear_color.take().unwrap_or(ColorF::TRANSPARENT);
 
             if let Some(ref mut _compositor) = self.compositor_config.layer_compositor() {
                 if let Some(PartialPresentMode::Single { dirty_rect }) = partial_present_mode {
@@ -4695,13 +4754,16 @@ impl Renderer {
         );
 
         // Draw the clip items into the tiled alpha mask.
-        {
+        let has_primary_clips = !target.clip_batcher.primary_clips.is_empty();
+        let has_secondary_clips = !target.clip_batcher.secondary_clips.is_empty();
+        let has_clip_masks = !target.clip_masks.is_empty();
+        if has_primary_clips | has_secondary_clips | has_clip_masks {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_CLIP);
 
             // TODO(gw): Consider grouping multiple clip masks per shader
             //           invocation here to reduce memory bandwith further?
 
-            if !target.clip_batcher.primary_clips.is_empty() {
+            if has_primary_clips {
                 // Draw the primary clip mask - since this is the first mask
                 // for the task, we can disable blending, knowing that it will
                 // overwrite every pixel in the mask area.
@@ -4713,7 +4775,7 @@ impl Renderer {
                 );
             }
 
-            if !target.clip_batcher.secondary_clips.is_empty() {
+            if has_secondary_clips {
                 // switch to multiplicative blending for secondary masks, using
                 // multiplicative blending to accumulate clips into the mask.
                 self.set_blend(true, FramebufferKind::Other);
@@ -4725,12 +4787,14 @@ impl Renderer {
                 );
             }
 
-            self.handle_clips(
-                &draw_target,
-                &target.clip_masks,
-                &projection,
-                stats,
-            );
+            if has_clip_masks {
+                self.handle_clips(
+                    &draw_target,
+                    &target.clip_masks,
+                    &projection,
+                    stats,
+                );
+            }
         }
 
         if needs_depth {
@@ -4853,7 +4917,7 @@ impl Renderer {
                 .external_image
                 .expect("BUG: Deferred resolves must be external images!");
             // Provide rendering information for NativeTexture external images.
-            let image = handler.lock(ext_image.id, ext_image.channel_index);
+            let image = handler.lock(ext_image.id, ext_image.channel_index, deferred_resolve.is_composited);
             let texture_target = match ext_image.image_type {
                 ExternalImageType::TextureHandle(target) => target,
                 ExternalImageType::Buffer => {
@@ -5410,7 +5474,6 @@ impl Renderer {
             self.device.delete_texture(gpu_buffer_texture_i);
         }
 
-        self.force_redraw = false;
         frame.has_been_rendered = true;
     }
 
@@ -5486,10 +5549,12 @@ impl Renderer {
                     );
                 }
             }
+            // Reset force_redraw. It was used in composite_simple() with layer compositor.
+            self.force_redraw = false;
         } else {
             // Rendering a frame without presenting it will confuse the partial
             // present logic, so force a full present for the next frame.
-            self.force_redraw();
+            self.force_redraw = true;
         }
     }
 
@@ -6192,7 +6257,7 @@ struct DummyExternalImageHandler {
 
 #[cfg(feature = "replay")]
 impl ExternalImageHandler for DummyExternalImageHandler {
-    fn lock(&mut self, key: ExternalImageId, channel_index: u8) -> ExternalImage {
+    fn lock(&mut self, key: ExternalImageId, channel_index: u8, _is_composited: bool) -> ExternalImage {
         let (ref captured_data, ref uv) = self.data[&(key, channel_index)];
         ExternalImage {
             uv: *uv,
@@ -6327,7 +6392,7 @@ impl Renderer {
                 info!("\t{}", def.short_path);
                 let ExternalImageData { id, channel_index, image_type, .. } = def.external;
                 // The image rendering parameter is irrelevant because no filtering happens during capturing.
-                let ext_image = handler.lock(id, channel_index);
+                let ext_image = handler.lock(id, channel_index, false);
                 let (data, short_path) = match ext_image.source {
                     ExternalImageSource::RawData(data) => {
                         let arc_id = arc_map.len() + 1;

@@ -14,10 +14,11 @@ class InfallibleAllocPolicy {
  public:
   template <typename T>
   T* pod_malloc(size_t aNumElems) {
-    if (aNumElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+    size_t size;
+    if (__builtin_mul_overflow(aNumElems, sizeof(T), &size)) {
       MOZ_CRASH("TestBufferList.cpp: overflow");
     }
-    T* rv = static_cast<T*>(malloc(aNumElems * sizeof(T)));
+    T* rv = static_cast<T*>(malloc(size));
     if (!rv) {
       MOZ_CRASH("TestBufferList.cpp: out of memory");
     }

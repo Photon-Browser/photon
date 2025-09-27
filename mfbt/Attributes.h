@@ -29,6 +29,17 @@
 #  define MOZ_ALWAYS_INLINE_EVEN_DEBUG inline
 #endif
 
+/* [[no_unique_address]] tells the compiler that if the associated class member
+ * as a size of zero, it is not subject to the rule that each object must be
+ * addressable and thus use at lease a byte
+ */
+#if defined(_MSC_VER)
+// FIXME: should be [[no_unique_address]] for everyone in C++20
+#  define MOZ_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
+#else
+#  define MOZ_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#endif
+
 #if !defined(DEBUG)
 #  define MOZ_ALWAYS_INLINE MOZ_ALWAYS_INLINE_EVEN_DEBUG
 #elif defined(_MSC_VER) && !defined(__cplusplus)
@@ -47,7 +58,6 @@
  * for forward compatibility.
  */
 #  define MOZ_HAVE_NEVER_INLINE __declspec(noinline)
-#  define MOZ_HAVE_NORETURN __declspec(noreturn)
 #elif defined(__clang__)
 /*
  * Per Clang documentation, "Note that marketing version numbers should not
@@ -61,12 +71,8 @@
 #  if __has_attribute(noinline)
 #    define MOZ_HAVE_NEVER_INLINE __attribute__((noinline))
 #  endif
-#  if __has_attribute(noreturn)
-#    define MOZ_HAVE_NORETURN __attribute__((noreturn))
-#  endif
 #elif defined(__GNUC__)
 #  define MOZ_HAVE_NEVER_INLINE __attribute__((noinline))
-#  define MOZ_HAVE_NORETURN __attribute__((noreturn))
 #  define MOZ_HAVE_NORETURN_PTR __attribute__((noreturn))
 #endif
 
@@ -154,27 +160,11 @@
 #  define MOZ_NEVER_INLINE_DEBUG /* don't inline in opt builds */
 #endif
 /*
- * MOZ_NORETURN, specified at the start of a function declaration, indicates
- * that the given function does not return.  (The function definition does not
- * need to be annotated.)
- *
- *   MOZ_NORETURN void abort(const char* msg);
- *
- * This modifier permits the compiler to optimize code assuming a call to such a
- * function will never return.  It also enables the compiler to avoid spurious
- * warnings about not initializing variables, or about any other seemingly-dodgy
- * operations performed after the function returns.
- *
- * There are two variants. The GCC version of NORETURN may be applied to a
- * function pointer, while for MSVC it may not.
+ * MOZ_HAVE_NORETURN_PTR is equivalent to [[noreturn]] but can be set on
+ * function pointers.
  *
  * This modifier does not affect the corresponding function's linking behavior.
  */
-#if defined(MOZ_HAVE_NORETURN)
-#  define MOZ_NORETURN MOZ_HAVE_NORETURN
-#else
-#  define MOZ_NORETURN /* no support */
-#endif
 #if defined(MOZ_HAVE_NORETURN_PTR)
 #  define MOZ_NORETURN_PTR MOZ_HAVE_NORETURN_PTR
 #else
@@ -410,27 +400,6 @@
 #  define MOZ_INFALLIBLE_ALLOCATOR
 #endif
 
-/**
- * MOZ_MAYBE_UNUSED suppresses compiler warnings about functions that are
- * never called (in this build configuration, at least).
- *
- * Place this attribute at the very beginning of a function declaration. For
- * example, write
- *
- *   MOZ_MAYBE_UNUSED int foo();
- *
- * or
- *
- *   MOZ_MAYBE_UNUSED int foo() { return 42; }
- */
-#if defined(__GNUC__) || defined(__clang__)
-#  define MOZ_MAYBE_UNUSED __attribute__((__unused__))
-#elif defined(_MSC_VER)
-#  define MOZ_MAYBE_UNUSED __pragma(warning(suppress : 4505))
-#else
-#  define MOZ_MAYBE_UNUSED
-#endif
-
 /*
  * MOZ_NO_STACK_PROTECTOR, specified at the start of a function declaration,
  * indicates that the given function should *NOT* be instrumented to detect
@@ -514,6 +483,22 @@
 #  endif
 #else
 #  define MOZ_LIFETIME_CAPTURE_BY(x) /* nothing */
+#endif
+
+/**
+ * MOZ_STANDALONE_DEBUG causes complete debug information to be emitted
+ * for a record type when clang would otherwise try to elide some of it.
+ * This helps certain third party debugging tools introspect types.
+ * See: https://clang.llvm.org/docs/AttributeReference.html#standalone-debug
+ */
+#if defined(__clang__) && defined(__has_cpp_attribute)
+#  if __has_cpp_attribute(clang::standalone_debug)
+#    define MOZ_STANDALONE_DEBUG [[clang::standalone_debug]]
+#  else
+#    define MOZ_STANDALONE_DEBUG /* nothing */
+#  endif
+#else
+#  define MOZ_STANDALONE_DEBUG /* nothing */
 #endif
 
 #ifdef __cplusplus

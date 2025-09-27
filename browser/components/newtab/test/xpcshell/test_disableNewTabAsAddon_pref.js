@@ -38,9 +38,9 @@ add_task(async function test_bundled_resource_mapping() {
 
 add_task(async function test_AboutNewTabResourceMapping() {
   Assert.equal(
-    AboutNewTabResourceMapping._addonVersion,
+    AboutNewTabResourceMapping.addonVersion,
     null,
-    "Expected AboutNewTabResourceMapping _addonVersion to be null"
+    "Expected AboutNewTabResourceMapping addonVersion to be null"
   );
 
   const resProto = Cc[
@@ -61,6 +61,8 @@ add_task(async function test_AboutNewTabResourceMapping() {
 
   let policy = WebExtensionPolicy.getByID(BUILTIN_ADDON_ID);
   ok(policy, "Found a WebExtensionPolicy instance for the builtin addon id");
+
+  Services.fog.testResetFOG();
   const { id, rootURI, version } =
     AboutNewTabResourceMapping.getPreferredMapping();
   Assert.deepEqual(
@@ -71,6 +73,10 @@ add_task(async function test_AboutNewTabResourceMapping() {
       version: null,
     },
     "AboutNewTabResourceMapping.getPreferredMapping ignores active builtin addon"
+  );
+  Assert.ok(
+    !Glean.newtab.addonXpiUsed.testGetValue(),
+    "Probe says we're not using an XPI"
   );
 });
 

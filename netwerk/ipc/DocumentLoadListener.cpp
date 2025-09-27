@@ -51,6 +51,7 @@
 #include "nsIBrowser.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsINetworkInterceptController.h"
 #include "nsIStreamConverterService.h"
 #include "nsIViewSourceChannel.h"
 #include "nsImportModule.h"
@@ -71,6 +72,8 @@
 #include "mozilla/dom/RemoteWebProgressRequest.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/ExtensionPolicyService.h"
+#include "mozilla/intl/Localization.h"
+#include "nsDocLoader.h"  // for FormatStatusMessage
 
 #ifdef ANDROID
 #  include "mozilla/widget/nsWindow.h"
@@ -93,6 +96,8 @@ using namespace mozilla::dom;
 
 namespace mozilla {
 namespace net {
+
+static StaticRefPtr<mozilla::intl::Localization> sL10n;
 
 static ContentParentId GetContentProcessId(ContentParent* aContentParent) {
   return aContentParent ? aContentParent->ChildID() : ContentParentId{0};
@@ -937,7 +942,9 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
   if (documentContext && aLoadState->LoadType() != LOAD_ERROR_PAGE &&
       !(aLoadState->HasInternalLoadFlags(
           nsDocShell::INTERNAL_LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE)) &&
-      !(aLoadState->LoadType() & LOAD_HISTORY)) {
+      !(aLoadState->LoadType() & LOAD_HISTORY) &&
+      !nsExternalHelperAppService::ExternalProtocolIsBlockedBySandbox(
+          documentContext, aLoadState->HasValidUserGestureActivation())) {
     nsCOMPtr<nsIWidget> widget =
         documentContext->GetParentProcessWidgetContaining();
     RefPtr<nsWindow> window = nsWindow::From(widget);
@@ -1690,6 +1697,18 @@ void DocumentLoadListener::SerializeRedirectData(
   // can't use baseChannel here.
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel)) {
     MOZ_ALWAYS_SUCCEEDS(httpChannel->GetChannelId(&aArgs.channelId()));
+
+    // propagated the channel's referrerInfo back to child if the redirection
+    // is caused by ServiceWorker interception.
+    if (nsCOMPtr<nsIInterceptedChannel> interceptedChannel =
+            do_QueryInterface(mChannel)) {
+      nsCOMPtr<nsIReferrerInfo> referrerInfo;
+      MOZ_ALWAYS_SUCCEEDS(
+          httpChannel->GetReferrerInfo(getter_AddRefs(referrerInfo)));
+      if (referrerInfo) {
+        aArgs.referrerInfo() = referrerInfo;
+      }
+    }
   }
 
   aArgs.redirectMode() = nsIHttpChannelInternal::REDIRECT_MODE_FOLLOW;
@@ -3119,7 +3138,8 @@ DocumentLoadListener::AsyncOnChannelRedirect(
       bc ? bc->GetParentProcessWidgetContaining() : nullptr;
   RefPtr<nsWindow> window = nsWindow::From(widget);
 
-  if (window) {
+  if (window && !nsExternalHelperAppService::ExternalProtocolIsBlockedBySandbox(
+                    bc, false)) {
     promise = window->OnLoadRequest(uriBeingLoaded,
                                     nsIBrowserDOMWindow::OPEN_CURRENTWINDOW,
                                     nsIWebNavigation::LOAD_FLAGS_IS_REDIRECT,
@@ -3208,7 +3228,15 @@ NS_IMETHODIMP DocumentLoadListener::OnStatus(nsIRequest* aRequest,
 
   RefPtr<BrowsingContextWebProgress> webProgress =
       GetLoadingBrowsingContext()->GetWebProgress();
-  const nsString message(aStatusArg);
+
+  nsAutoString host;
+  host.Append(aStatusArg);
+
+  nsAutoString message;
+  nsresult rv = nsDocLoader::FormatStatusMessage(aStatus, host, message, sL10n);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   if (webProgress) {
     NS_DispatchToMainThread(

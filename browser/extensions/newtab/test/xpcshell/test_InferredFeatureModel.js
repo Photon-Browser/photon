@@ -511,29 +511,6 @@ const ctrModelDataNoDP = {
   },
 };
 
-const ctrModelDataWithDP = {
-  model_type: "ctr",
-  noise_scale: 1,
-  day_time_weighting: {
-    days: [3, 14, 45],
-    relative_weight: [1, 0.5, 0.3],
-  },
-  interest_vector: {
-    news_reader: {
-      features: { pub_nytimes_com: 0.5, pub_cnn_com: 0.5 },
-      thresholds: [0.3, 0.4],
-      diff_p: 1,
-      diff_q: 0,
-    },
-    parenting: {
-      features: { parenting: 1 },
-      thresholds: [0.3, 0.4],
-      diff_p: 1,
-      diff_q: 0,
-    },
-  },
-};
-
 add_task(function test_computeCTRInterestVectorsNoNoise() {
   const model = FeatureModel.fromJSON(ctrModelDataNoDP);
 
@@ -556,34 +533,4 @@ add_task(function test_computeCTRInterestVectorsNoNoise() {
   Assert.equal(result.inferredInterests.parenting, 0.5);
   Assert.equal(result.inferredInterests.news_reader, 0);
   Assert.ok(!result.coarseInferredInterests, "No coarse inferred interests");
-});
-
-add_task(function test_computCTRInterestVectorsWithNoise() {
-  const model = FeatureModel.fromJSON(ctrModelDataWithDP);
-  model.laplaceNoiseFn = () => 0.42;
-
-  const clickInferredInterests2 = { parenting: 1 };
-  const impressionInferredInterests2 = { parenting: 2, news_reader: 4 };
-
-  const result = model.computeCTRInterestVectors({
-    clicks: clickInferredInterests2,
-    impressions: impressionInferredInterests2,
-    model_id: "test-ctr-model",
-  });
-
-  Assert.equal(
-    result.inferredInterests.model_id,
-    "test-ctr-model",
-    "Model id is CTR"
-  );
-  // Assert the stubbed noise is added
-  Assert.equal(result.inferredInterests.parenting, 0.5 + 0.42);
-  Assert.equal(result.inferredInterests.news_reader, 0 + 0.42);
-  Assert.ok(result.coarseInferredInterests, "Coarse inferred interests exist");
-  Assert.ok(
-    result.coarsePrivateInferredInterests,
-    "Non coarse interests exist"
-  );
-  Assert.equal(result.coarseInferredInterests.parenting, 2);
-  Assert.equal(result.coarseInferredInterests.news_reader, 0);
 });

@@ -6,14 +6,11 @@ package org.mozilla.fenix.tabstray
 
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.rememberSplineBasedDecay
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -36,19 +33,19 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.SwipeToDismissState2
 import org.mozilla.fenix.compose.tabstray.TabGridItem
 import org.mozilla.fenix.compose.tabstray.TabListItem
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.tabstray.browser.compose.DragItemContainer
 import org.mozilla.fenix.tabstray.browser.compose.createGridReorderState
 import org.mozilla.fenix.tabstray.browser.compose.createListReorderState
 import org.mozilla.fenix.tabstray.browser.compose.detectGridPressAndDragGestures
 import org.mozilla.fenix.tabstray.browser.compose.detectListPressAndDrag
-import org.mozilla.fenix.tabstray.ext.MIN_COLUMN_WIDTH_DP
 import org.mozilla.fenix.tabstray.ext.numberOfGridColumns
 import org.mozilla.fenix.theme.FirefoxTheme
 import kotlin.math.max
@@ -135,7 +132,6 @@ fun TabLayout(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Suppress("LongParameterList", "LongMethod")
 @Composable
 private fun TabGrid(
@@ -155,8 +151,8 @@ private fun TabGrid(
     val state = rememberLazyGridState(initialFirstVisibleItemIndex = selectedTabIndex)
     val tabListBottomPadding = dimensionResource(id = R.dimen.tab_tray_list_bottom_padding)
     val tabThumbnailSize = max(
-        LocalContext.current.resources.getDimensionPixelSize(R.dimen.tab_tray_grid_item_thumbnail_height),
-        LocalContext.current.resources.getDimensionPixelSize(R.dimen.tab_tray_grid_item_thumbnail_width),
+        LocalContext.current.pixelSizeFor(R.dimen.tab_tray_grid_item_thumbnail_height),
+        LocalContext.current.pixelSizeFor(R.dimen.tab_tray_grid_item_thumbnail_width),
     )
     val isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
 
@@ -247,7 +243,6 @@ private fun TabGrid(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Suppress("LongParameterList")
 @Composable
 private fun TabList(
@@ -267,8 +262,8 @@ private fun TabList(
     val state = rememberLazyListState(initialFirstVisibleItemIndex = selectedTabIndex)
     val tabListBottomPadding = dimensionResource(id = R.dimen.tab_tray_list_bottom_padding)
     val tabThumbnailSize = max(
-        LocalContext.current.resources.getDimensionPixelSize(R.dimen.tab_tray_list_item_thumbnail_height),
-        LocalContext.current.resources.getDimensionPixelSize(R.dimen.tab_tray_list_item_thumbnail_width),
+        LocalContext.current.pixelSizeFor(R.dimen.tab_tray_list_item_thumbnail_height),
+        LocalContext.current.pixelSizeFor(R.dimen.tab_tray_list_item_thumbnail_width),
     )
     val isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
     val reorderState = createListReorderState(
@@ -368,7 +363,7 @@ private fun TabListPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun TabGridPreview() {
     val tabs = remember { generateFakeTabsList().toMutableStateList() }
@@ -377,35 +372,6 @@ private fun TabGridPreview() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(FirefoxTheme.colors.layer1),
-        ) {
-            TabLayout(
-                tabs = tabs,
-                selectedTabId = tabs[0].id,
-                selectionMode = TabsTrayState.Mode.Normal,
-                displayTabsInGrid = true,
-                onTabClose = tabs::remove,
-                onTabMediaClick = {},
-                onTabClick = {},
-                onTabLongClick = {},
-                onTabDragStart = {},
-                onMove = { _, _, _ -> },
-            )
-        }
-    }
-}
-
-@PreviewLightDark
-@Composable
-private fun TabGridSmallPreview() {
-    val tabs = remember { generateFakeTabsList().toMutableStateList() }
-    val width = MIN_COLUMN_WIDTH_DP.dp + 50.dp
-
-    FirefoxTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(width)
                 .background(FirefoxTheme.colors.layer1),
         ) {
             TabLayout(

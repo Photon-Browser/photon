@@ -69,6 +69,9 @@ struct SizeComputationInput {
   // Rendering context to use for measurement.
   gfxContext* mRenderingContext;
 
+  // Cache of referenced anchors for this computation.
+  AnchorPosReferenceData* mAnchorPosReferenceData = nullptr;
+
   nsMargin ComputedPhysicalMargin() const {
     return mComputedMargin.GetPhysicalMargin(mWritingMode);
   }
@@ -128,7 +131,9 @@ struct SizeComputationInput {
 
  public:
   // Callers using this constructor must call InitOffsets on their own.
-  SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext);
+  SizeComputationInput(
+      nsIFrame* aFrame, gfxContext* aRenderingContext,
+      AnchorPosReferenceData* aAnchorPosReferenceData = nullptr);
 
   SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext,
                        WritingMode aContainingBlockWritingMode,
@@ -523,6 +528,14 @@ struct ReflowInput : public SizeComputationInput {
     // If true, then children of this frame can generate class A breakpoints
     // for paginated reflow.
     bool mCanHaveClassABreakpoints : 1;
+
+    // If set:
+    // (1) This frame is absolutely-positioned,
+    // (2) Inset in that axis are non-auto, and
+    // (3) Size in that axis is `auto` & resolved as fit-content size.
+    // Automatic margin computation in this case requires waiting until
+    // the frame reflows to compute the fit-content size.
+    bool mDeferAutoMarginComputation : 1;
   };
   Flags mFlags;
 
@@ -614,6 +627,9 @@ struct ReflowInput : public SizeComputationInput {
    *        call nsIFrame::ComputeSize() internally.
    * @param aComputeSizeFlags A set of flags used when we call
    *        nsIFrame::ComputeSize() internally.
+   * @param aAnchorPosReferenceData A cache of referenced anchors to be
+   * populated (If specified) for this reflowed frame. Should live for the
+   * lifetime of this ReflowInput.
    */
   ReflowInput(nsPresContext* aPresContext,
               const ReflowInput& aParentReflowInput, nsIFrame* aFrame,
@@ -621,7 +637,8 @@ struct ReflowInput : public SizeComputationInput {
               const Maybe<LogicalSize>& aContainingBlockSize = Nothing(),
               InitFlags aFlags = {},
               const StyleSizeOverrides& aSizeOverrides = {},
-              ComputeSizeFlags aComputeSizeFlags = {});
+              ComputeSizeFlags aComputeSizeFlags = {},
+              AnchorPosReferenceData* aAnchorPosReferenceData = nullptr);
 
   /**
    * This method initializes various data members. It is automatically called by
@@ -855,6 +872,11 @@ struct ReflowInput : public SizeComputationInput {
   // absolute containing block (aCBReflowInput->mFrame). The writing mode of the
   // hypothetical box will have the same block direction as the absolute
   // containing block, but it may differ in the inline direction.
+  //
+  // FIXME: Bug 1983345. We should update this function to use the customized
+  // containing block rect (if any), instead of using |aCBReflowInput| to
+  // calculate everything. Perhaps we could update
+  // ReflowInput::mContainingBlockSize earlier and use it in this function.
   void CalculateHypotheticalPosition(
       nsPlaceholderFrame* aPlaceholderFrame, const ReflowInput* aCBReflowInput,
       nsHypotheticalPosition& aHypotheticalPos) const;
@@ -953,7 +975,8 @@ struct ReflowInput : public SizeComputationInput {
 
 inline AnchorPosResolutionParams AnchorPosResolutionParams::From(
     const mozilla::ReflowInput* aRI) {
-  return {aRI->mFrame, aRI->mStyleDisplay->mPosition};
+  return {aRI->mFrame, aRI->mStyleDisplay->mPosition,
+          aRI->mStylePosition->mPositionArea, aRI->mAnchorPosReferenceData};
 }
 
 #endif  // mozilla_ReflowInput_h

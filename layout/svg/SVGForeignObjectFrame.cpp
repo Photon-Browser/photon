@@ -67,7 +67,7 @@ void SVGForeignObjectFrame::Init(nsIContent* aContent,
 
 nsresult SVGForeignObjectFrame::AttributeChanged(int32_t aNameSpaceID,
                                                  nsAtom* aAttribute,
-                                                 int32_t aModType) {
+                                                 AttrModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::transform) {
       // We don't invalidate for transform changes (the layers code does that).
@@ -299,12 +299,8 @@ void SVGForeignObjectFrame::NotifySVGChanged(uint32_t aFlags) {
     const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
     // Our coordinate context's width/height has changed. If we have a
     // percentage width/height our dimensions will change so we must reflow.
-    if (StylePosition()
-            ->GetWidth(anchorResolutionParams.mPosition)
-            ->HasPercent() ||
-        StylePosition()
-            ->GetHeight(anchorResolutionParams.mPosition)
-            ->HasPercent()) {
+    if (StylePosition()->GetWidth(anchorResolutionParams)->HasPercent() ||
+        StylePosition()->GetHeight(anchorResolutionParams)->HasPercent()) {
       needNewBounds = true;
       needReflow = true;
     }

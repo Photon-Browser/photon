@@ -37,10 +37,10 @@ internal class CustomReviewPromptTelemetryMiddleware :
             }
 
             CustomReviewPromptAction.LeaveFeedbackButtonClicked -> {
-                CustomReviewPrompt.openMozillaConnectClicked.record(NoExtras())
+                CustomReviewPrompt.leaveFeedbackClicked.record(NoExtras())
             }
 
-            CustomReviewPromptAction.DismissRequested -> {
+            CustomReviewPromptAction.Dismissed -> {
                 CustomReviewPrompt.promptDismissed.record(NoExtras())
             }
         }

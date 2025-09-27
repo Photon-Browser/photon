@@ -223,6 +223,10 @@ void nsFieldSetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     DO_GLOBAL_REFLOW_COUNT_DSP("nsFieldSetFrame");
   }
 
+  if (HidesContent()) {
+    return;
+  }
+
   if (GetPrevInFlow()) {
     DisplayOverflowContainers(aBuilder, aLists);
   }
@@ -415,7 +419,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     LogicalSize legendAvailSize = availSize.ConvertTo(legendWM, wm);
     ComputeSizeFlags sizeFlags;
     if (legend->StylePosition()
-            ->ISize(wm, legend->StyleDisplay()->mPosition)
+            ->ISize(wm, AnchorPosResolutionParams::From(legend))
             ->IsAuto()) {
       sizeFlags = ComputeSizeFlag::ShrinkWrap;
     }

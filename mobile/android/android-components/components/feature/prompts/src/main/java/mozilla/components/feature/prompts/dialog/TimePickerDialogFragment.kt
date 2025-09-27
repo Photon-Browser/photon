@@ -13,8 +13,6 @@ import android.content.DialogInterface
 import android.content.DialogInterface.BUTTON_NEGATIVE
 import android.content.DialogInterface.BUTTON_NEUTRAL
 import android.content.DialogInterface.BUTTON_POSITIVE
-import android.os.Build
-import android.os.Build.VERSION_CODES.M
 import android.os.Bundle
 import android.text.format.DateFormat
 import android.view.LayoutInflater
@@ -78,7 +76,6 @@ internal class TimePickerDialogFragment :
             safeArguments.putSerializable(KEY_SELECTED_DATE, value)
         }
 
-    @Suppress("ComplexMethod")
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
         val dialog = when (selectionType) {
@@ -217,15 +214,9 @@ internal class TimePickerDialogFragment :
         )
     }
 
-    @Suppress("DEPRECATION")
     private fun initTimePicker(picker: TimePicker, cal: Calendar) {
-        if (Build.VERSION.SDK_INT >= M) {
-            picker.hour = cal.hour
-            picker.minute = cal.minute
-        } else {
-            picker.currentHour = cal.hour
-            picker.currentMinute = cal.minute
-        }
+        picker.hour = cal.hour
+        picker.minute = cal.minute
         picker.setIs24HourView(DateFormat.is24HourFormat(requireContext()))
         picker.setOnTimeChangedListener(this)
     }

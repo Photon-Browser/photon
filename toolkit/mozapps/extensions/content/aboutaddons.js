@@ -13,6 +13,7 @@ ChromeUtils.defineESModuleGetters(this, {
   AMBrowserExtensionsImport: "resource://gre/modules/AddonManager.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonRepository: "resource://gre/modules/addons/AddonRepository.sys.mjs",
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   ColorwayThemeMigration:
@@ -292,6 +293,14 @@ async function getAddonMessageInfo(
       messageArgs: { name, version: Services.appinfo.version },
       type: "error",
     };
+  } else if (
+    (Cu.isInAutomation || !AppConstants.MOZILLA_OFFICIAL) &&
+    Services.prefs.getBoolPref("extensions.ui.disableUnsignedWarnings", false)
+  ) {
+    // In local builds, when this pref is set, pretend the file is correctly
+    // signed even if it isn't so that the UI looks like what users would
+    // normally see.
+    return {};
   } else if (!isCorrectlySigned(addon)) {
     return {
       linkSumoPage: "unsigned-addons",
@@ -1987,10 +1996,13 @@ class AddonPermissionsList extends HTMLElement {
     ];
 
     this.textContent = "";
-    let frag = importTemplate("addon-permissions-list");
+    let permissionsFrag = importTemplate("addon-permissions-list");
+    let dataCollectionFrag = importTemplate("addon-permissions-list");
 
     if (permissions.msgs.length) {
-      let section = frag.querySelector(".addon-permissions-required");
+      let section = permissionsFrag.querySelector(
+        ".addon-permissions-required"
+      );
       section.hidden = false;
       let list = section.querySelector(".addon-permissions-list");
       for (const msg of permissions.msgs) {
@@ -2001,9 +2013,12 @@ class AddonPermissionsList extends HTMLElement {
       }
     }
 
-    if (permissions.dataCollectionPermissions?.msg) {
-      let section = frag.querySelector(
-        ".addon-data-collection-permissions-required"
+    if (
+      permissions.dataCollectionPermissions?.msg &&
+      !permissions.dataCollectionPermissions.hasNone
+    ) {
+      let section = dataCollectionFrag.querySelector(
+        ".addon-permissions-required"
       );
       section.hidden = false;
       let list = section.querySelector(".addon-permissions-list");
@@ -2016,12 +2031,14 @@ class AddonPermissionsList extends HTMLElement {
     }
 
     if (optionalEntries.length) {
-      let section = frag.querySelector(".addon-permissions-optional");
-      let list = section.querySelector(".addon-permissions-list");
-
-      let dataCollectionSection = frag.querySelector(
-        ".addon-data-collection-permissions-optional"
+      let section = permissionsFrag.querySelector(
+        ".addon-permissions-optional"
       );
+      let dataCollectionSection = dataCollectionFrag.querySelector(
+        ".addon-permissions-optional"
+      );
+
+      let list = section.querySelector(".addon-permissions-list");
       let dataCollectionList = dataCollectionSection.querySelector(
         ".addon-permissions-list"
       );
@@ -2079,16 +2096,70 @@ class AddonPermissionsList extends HTMLElement {
       }
     }
 
-    if (
-      !permissions.msgs.length &&
-      !optionalEntries.length &&
-      !permissions.dataCollectionPermissions?.msg
-    ) {
-      let row = frag.querySelector(".addon-permissions-empty");
-      row.hidden = false;
-    }
+    let configureSection = ({
+      fragment,
+      headerL10n,
+      subheaderL10n,
+      emptyL10n,
+      supportPage,
+      supportL10n,
+    }) => {
+      let header = fragment.querySelector(".permission-header");
+      let subheader = fragment.querySelector(".permission-subheader");
+      let footer = fragment.querySelector(".addon-permissions-footer");
+      let requiredSection = fragment.querySelector(
+        ".addon-permissions-required"
+      );
+      let optionalSection = fragment.querySelector(
+        ".addon-permissions-optional"
+      );
+      let emptySection = fragment.querySelector(".addon-permissions-empty");
+      let isPopulated = !(requiredSection.hidden && optionalSection.hidden);
 
-    this.appendChild(frag);
+      header.setAttribute("data-l10n-id", headerL10n);
+
+      let supportUrl = document.createElement("a", {
+        is: "moz-support-link",
+      });
+      supportUrl.setAttribute("support-page", supportPage);
+      supportUrl.setAttribute("data-l10n-id", supportL10n);
+      footer.append(supportUrl);
+
+      if (subheaderL10n) {
+        subheader.setAttribute("data-l10n-id", subheaderL10n);
+        subheader.hidden = !isPopulated;
+      }
+
+      if (isPopulated) {
+        emptySection.hidden = true;
+        emptySection.removeAttribute("data-l10n-id");
+      } else {
+        emptySection.setAttribute("data-l10n-id", emptyL10n);
+        emptySection.hidden = false;
+      }
+    };
+
+    configureSection({
+      fragment: permissionsFrag,
+      headerL10n: "addon-permissions-heading",
+      emptyL10n: "addon-permissions-empty2",
+      supportPage: "extension-permissions",
+      supportL10n: "addon-permissions-learnmore",
+    });
+
+    configureSection({
+      fragment: dataCollectionFrag,
+      headerL10n: "addon-permissions-data-collection-heading",
+      subheaderL10n: "addon-data-collection-provided",
+      emptyL10n: "addon-permissions-data-collection-empty",
+      supportPage: "extension-data-collection",
+      supportL10n: "addon-data-collection-learnmore",
+    });
+
+    this.appendChild(permissionsFrag);
+    if (this.addon.hasDataCollectionPermissions) {
+      this.appendChild(dataCollectionFrag);
+    }
   }
 }
 customElements.define("addon-permissions-list", AddonPermissionsList);
@@ -2148,13 +2219,14 @@ class AddonDetails extends HTMLElement {
   handleEvent(e) {
     if (e.type == "view-changed" && e.target == this.deck) {
       switch (this.deck.selectedViewName) {
-        case "release-notes":
+        case "release-notes": {
           let releaseNotes = this.querySelector("update-release-notes");
           let uri = this.releaseNotesUri;
           if (uri) {
             releaseNotes.loadForUri(uri);
           }
           break;
+        }
         case "preferences":
           if (getOptionsType(this.addon) == "inline") {
             this.inlineOptions.ensureBrowserCreated();

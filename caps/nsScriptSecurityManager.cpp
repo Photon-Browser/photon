@@ -481,7 +481,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     bool areArgumentsTrusted = TrustedTypeUtils::
         AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
             cx, aCodeString, aCompilationType, aParameterStrings, aBodyString,
-            aParameterArgs, aBodyArg, error);
+            aParameterArgs, aBodyArg, subjectPrincipal, error);
     if (error.MaybeSetPendingException(cx)) {
       return false;
     }
@@ -1863,4 +1863,12 @@ nsScriptSecurityManager::EnsureFileURIAllowlist() {
   }
 
   return mFileURIAllowlist.ref();
+}
+
+NS_IMETHODIMP
+nsScriptSecurityManager::GetFirstUnexpectedJavaScriptLoad(
+    nsACString& aScriptFilename) {
+  aScriptFilename.Truncate();
+  return nsContentSecurityUtils::GetVeryFirstUnexpectedScriptFilename(
+      aScriptFilename);
 }

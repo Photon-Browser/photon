@@ -6,7 +6,7 @@ package org.mozilla.fenix.reviewprompt
 
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.telemetry.glean.internal.RecordedEvent
+import mozilla.telemetry.glean.private.RecordedEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -72,23 +72,23 @@ class CustomReviewPromptTelemetryMiddlewareTest {
     }
 
     @Test
-    fun `WHEN LeaveFeedbackButtonClicked is dispatched THEN openMozillaConnectClicked event is recorded`() {
-        assertNull(CustomReviewPrompt.openMozillaConnectClicked.testGetValue())
+    fun `WHEN LeaveFeedbackButtonClicked is dispatched THEN leaveFeedbackClicked event is recorded`() {
+        assertNull(CustomReviewPrompt.leaveFeedbackClicked.testGetValue())
 
         val store = createStore(CustomReviewPromptState.Feedback)
         store.dispatch(CustomReviewPromptAction.LeaveFeedbackButtonClicked).joinBlocking()
 
-        assertEventRecorded("open_mozilla_connect_clicked") {
-            CustomReviewPrompt.openMozillaConnectClicked.testGetValue()
+        assertEventRecorded("leave_feedback_clicked") {
+            CustomReviewPrompt.leaveFeedbackClicked.testGetValue()
         }
     }
 
     @Test
-    fun `WHEN DismissRequested is dispatched THEN promptDismissed event is recorded`() {
+    fun `WHEN Dismissed is dispatched THEN promptDismissed event is recorded`() {
         assertNull(CustomReviewPrompt.promptDismissed.testGetValue())
 
         val store = createStore()
-        store.dispatch(CustomReviewPromptAction.DismissRequested).joinBlocking()
+        store.dispatch(CustomReviewPromptAction.Dismissed).joinBlocking()
 
         assertEventRecorded("prompt_dismissed") {
             CustomReviewPrompt.promptDismissed.testGetValue()

@@ -5,8 +5,12 @@
 package mozilla.components.feature.downloads
 
 import android.app.DownloadManager
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -37,8 +41,7 @@ import kotlin.coroutines.CoroutineContext
  * [Middleware] implementation for managing downloads via the provided download service. Its
  * purpose is to react to global download state changes (e.g. of [BrowserState.downloads])
  * and notify the download service, as needed.
- */
-@Suppress("ComplexMethod")
+*/
 class DownloadMiddleware(
     private val applicationContext: Context,
     private val downloadServiceClass: Class<*>,
@@ -121,14 +124,17 @@ class DownloadMiddleware(
 
     private fun removeFileFromStorage(filePath: String) {
         val file = File(filePath)
-        if (file.exists()) {
-            if (file.delete()) {
-                logger.debug("Successfully deleted file: $filePath")
-            } else {
-                logger.error("Failed to delete file: $filePath")
-            }
-        } else {
+        if (!file.exists()) {
             logger.warn("File to delete not found: $filePath")
+            return
+        }
+
+        val deletedSuccessfully = deleteMediaFile(applicationContext.contentResolver, file)
+
+        if (deletedSuccessfully) {
+            logger.debug("Successfully deleted file: $filePath")
+        } else {
+            logger.error("Failed to delete file: $filePath (OS Version: ${Build.VERSION.SDK_INT})")
         }
     }
 
@@ -225,5 +231,37 @@ class DownloadMiddleware(
     internal fun removePrivateNotifications(store: Store<BrowserState, BrowserAction>) {
         val privateDownloads = store.state.downloads.filterValues { it.private }
         privateDownloads.forEach { removeStatusBarNotification(store, it.value) }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    @VisibleForTesting
+    internal fun deleteMediaFile(contentResolver: ContentResolver, file: File): Boolean {
+        val fileUri = getUriFromFile(contentResolver, file) ?: return false
+        try {
+            val rowsDeleted = contentResolver.delete(fileUri, null, null)
+            return rowsDeleted > 0
+        } catch (e: SecurityException) {
+            logger.debug("SecurityException: ${e.message}")
+        } catch (e: Exception) {
+            logger.debug("Error deleting file: ${e.message}")
+        }
+        return false
+    }
+
+    private fun getUriFromFile(contentResolver: ContentResolver, file: File): Uri? {
+        val cursor = contentResolver.query(
+            MediaStore.Files.getContentUri("external"),
+            arrayOf(MediaStore.Files.FileColumns._ID),
+            "${MediaStore.Files.FileColumns.DATA}=?",
+            arrayOf(file.absolutePath),
+            null,
+        )
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID))
+                return Uri.withAppendedPath(MediaStore.Files.getContentUri("external"), "" + id)
+            }
+        }
+        return null
     }
 }

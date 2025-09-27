@@ -452,7 +452,7 @@ void nsHtml5TreeOpExecutor::ContinueInterruptedParsingAsync() {
     // Now we set up a repetitive idle scheduler for flushing background list.
     gBackgroundFlushRunner = IdleTaskRunner::Create(
         &BackgroundFlushCallback,
-        "nsHtml5TreeOpExecutor::BackgroundFlushCallback",
+        "nsHtml5TreeOpExecutor::BackgroundFlushCallback"_ns,
         0,  // Start looking for idle time immediately.
         TimeDuration::FromMilliseconds(250),  // The hard deadline.
         TimeDuration::FromMicroseconds(
@@ -826,6 +826,7 @@ void nsHtml5TreeOpExecutor::CommitToInternalEncoding() {
   }
   mStreamParser->ContinueAfterScriptsOrEncodingCommitment(nullptr, nullptr,
                                                           false);
+  ContinueInterruptedParsingAsync();
 }
 
 [[nodiscard]] bool nsHtml5TreeOpExecutor::TakeOpsFromStage() {

@@ -252,7 +252,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
    *         - `id` used to identify any other key shortcuts like about:debugging
    * @param {Number} startTime
    *        Optional, indicates the time at which the key event fired. This is a
-   *        `Cu.now()` timing.
+   *        `ChromeUtils.now()` timing.
    */
   async onKeyShortcut(window, key, startTime) {
     // Avoid to open devtools when the about:devtools-toolbox page is showing
@@ -282,24 +282,26 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
       case "browserToolbox":
         lazy.BrowserToolboxLauncher.init();
         break;
-      case "browserConsole":
+      case "browserConsole": {
         const {
           BrowserConsoleManager,
         } = require("resource://devtools/client/webconsole/browser-console-manager.js");
         BrowserConsoleManager.openBrowserConsoleOrFocus();
         break;
+      }
       case "responsiveDesignMode":
         ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
           trigger: "shortcut",
         });
         break;
-      case "javascriptTracingToggle":
+      case "javascriptTracingToggle": {
         const toolbox = gDevTools.getToolboxForTab(window.gBrowser.selectedTab);
         if (!toolbox) {
           break;
         }
         await toolbox.commands.tracerCommand.toggle();
         break;
+      }
     }
   },
 

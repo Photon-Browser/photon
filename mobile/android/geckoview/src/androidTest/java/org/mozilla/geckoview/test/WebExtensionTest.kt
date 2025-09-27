@@ -1817,6 +1817,7 @@ class WebExtensionTest : BaseSessionTest() {
                 assertEquals(notification.imageUrl, "https://example.com/img.svg")
                 // This should be filled out, Bug 1589693
                 assertEquals(notification.source, null)
+                notification.show()
             }
         })
 
@@ -4342,6 +4343,8 @@ class WebExtensionTest : BaseSessionTest() {
         downloadData.endTime = expectedEndTime
         downloadData.totalBytes = finishedDownloadSize
         downloadData.state = Download.STATE_COMPLETE
+
+        downloadCreated.update(downloadData)
         downloadCreated.update(downloadData)
 
         sessionRule.waitForResult(thirdUpdateReceived)

@@ -4,11 +4,10 @@
 
 package org.mozilla.fenix.home.store
 
+import android.content.res.Configuration
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalConfiguration
 import mozilla.components.feature.top.sites.TopSite
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
@@ -16,7 +15,6 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.shouldShowRecentSyncedTabs
 import org.mozilla.fenix.ext.shouldShowRecentTabs
 import org.mozilla.fenix.home.bookmarks.Bookmark
@@ -34,12 +32,6 @@ import org.mozilla.fenix.utils.Settings
  * State object that describes the homepage.
  */
 internal sealed class HomepageState {
-
-    /**
-     * Height in [Dp] for the bottom of the scrollable view, based on
-     * what's currently visible on the screen.
-     */
-    abstract val bottomSpacerHeight: Dp
 
     /**
      * Whether to show the homepage header.
@@ -62,14 +54,11 @@ internal sealed class HomepageState {
      * @property showHeader Whether to show the homepage header.
      * @property firstFrameDrawn Flag indicating whether the first frame of the homescreen has been drawn.
      * @property isSearchInProgress Whether search is currently active on the homepage.
-     * @property bottomSpacerHeight Height in [Dp] for the bottom of the scrollable view, based on
-     * what's currently visible on the screen.
      */
     internal data class Private(
         override val showHeader: Boolean,
         override val firstFrameDrawn: Boolean = false,
         override val isSearchInProgress: Boolean,
-        override val bottomSpacerHeight: Dp,
     ) : HomepageState()
 
     /**
@@ -91,7 +80,7 @@ internal sealed class HomepageState {
      * @property showPocketStories Whether to show the pocket stories section.
      * @property showCollections Whether to show the collections section.
      * @property showHeader Whether to show the homepage header.
-     * @property showSearchBar Whether to show the middle search bar.
+     * @property searchBarVisible Whether the middle search bar should be visible or not.
      * @property searchBarEnabled Whether the middle search bar is enabled or not.
      * @property firstFrameDrawn Flag indicating whether the first frame of the homescreen has been drawn.
      * @property setupChecklistState Optional state of the setup checklist feature.
@@ -99,8 +88,6 @@ internal sealed class HomepageState {
      * @property cardBackgroundColor Background color for card items.
      * @property buttonBackgroundColor Background [Color] for buttons.
      * @property buttonTextColor Text [Color] for buttons.
-     * @property bottomSpacerHeight Height in [Dp] for the bottom of the scrollable view, based on
-     * what's currently visible on the screen.
      * @property isSearchInProgress Whether search is currently active on the homepage.
      */
     internal data class Normal(
@@ -120,7 +107,7 @@ internal sealed class HomepageState {
         val showPocketStories: Boolean,
         val showCollections: Boolean,
         override val showHeader: Boolean,
-        val showSearchBar: Boolean,
+        val searchBarVisible: Boolean,
         val searchBarEnabled: Boolean,
         override val firstFrameDrawn: Boolean = false,
         val setupChecklistState: SetupChecklistState?,
@@ -128,7 +115,6 @@ internal sealed class HomepageState {
         val cardBackgroundColor: Color,
         val buttonBackgroundColor: Color,
         val buttonTextColor: Color,
-        override val bottomSpacerHeight: Dp,
         override val isSearchInProgress: Boolean,
     ) : HomepageState()
 
@@ -158,8 +144,7 @@ internal sealed class HomepageState {
                     Private(
                         showHeader = settings.showHomepageHeader,
                         firstFrameDrawn = firstFrameDrawn,
-                        isSearchInProgress = isSearchActive,
-                        bottomSpacerHeight = getBottomSpace(),
+                        isSearchInProgress = searchState.isSearchActive,
                     )
                 } else {
                     Normal(
@@ -180,7 +165,7 @@ internal sealed class HomepageState {
                             browserState = components.core.store.state,
                             browsingModeManager = browsingModeManager,
                         ),
-                        pocketState = PocketState.build(appState),
+                        pocketState = PocketState.build(appState = appState, settings = settings),
                         showTopSites = settings.showTopSitesFeature && topSites.isNotEmpty(),
                         showRecentTabs = shouldShowRecentTabs(settings),
                         showBookmarks = settings.showBookmarksHomeFeature && bookmarks.isNotEmpty(),
@@ -190,31 +175,22 @@ internal sealed class HomepageState {
                             recommendationState.pocketStories.isNotEmpty(),
                         showCollections = settings.collections,
                         showHeader = settings.showHomepageHeader,
-                        showSearchBar = shouldShowSearchBar(appState = appState),
+                        searchBarVisible = shouldShowSearchBar(appState = appState),
                         searchBarEnabled = settings.enableHomepageSearchBar &&
-                            settings.toolbarPosition == ToolbarPosition.TOP,
+                            settings.toolbarPosition == ToolbarPosition.TOP &&
+                                LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT,
                         firstFrameDrawn = firstFrameDrawn,
                         setupChecklistState = setupChecklistState,
                         topSiteColors = TopSiteColors.colors(wallpaperState = wallpaperState),
                         cardBackgroundColor = wallpaperState.cardBackgroundColor,
                         buttonBackgroundColor = wallpaperState.buttonBackgroundColor,
                         buttonTextColor = wallpaperState.buttonTextColor,
-                        bottomSpacerHeight = getBottomSpace(),
-                        isSearchInProgress = isSearchActive,
+                        isSearchInProgress = searchState.isSearchActive,
                     )
                 }
             }
         }
     }
-}
-
-@Composable
-private fun getBottomSpace(): Dp {
-    val toolbarHeight = LocalContext.current.settings().getBottomToolbarContainerHeight().dp
-    // We need this 88 dp because of this bug: https://github.com/mozilla-mobile/fenix/issues/20833
-    val extraSpace = 88.dp
-
-    return toolbarHeight + extraSpace + HOME_APP_BAR_HEIGHT
 }
 
 /**
@@ -226,6 +202,4 @@ private fun getBottomSpace(): Dp {
  * search bar's visibility.
  */
 private fun shouldShowSearchBar(appState: AppState) =
-    !appState.isSearchActive
-
-private val HOME_APP_BAR_HEIGHT = 48.dp
+    !appState.searchState.isSearchActive

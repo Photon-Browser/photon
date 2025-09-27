@@ -63,6 +63,8 @@ let patterns: string[];
 - [`onSearch`](#onsearch)
 - [`sidebarToolOpened`](#sidebartoolopened)
 - [`elementClicked`](#elementclicked)
+- [`ipProtectionReady`](#ipprotectionready)
+- [`selectableProfilesUpdated`](#selectableprofilesupdated)
 
 ### `openArticleURL`
 
@@ -382,7 +384,7 @@ Happens when the user uses the search feature in the awesome bar.
 
 The `isSuggestion` boolean context variable is available in targeting, and will evaluate to true if the search was initiated from a recommendation in the awesomebar.
 
-The `searchSource` string context variable is also available in targeting, and returns the search source. It will be one of four values: `urlbar-handoff` if one of the faux-search inputs were used (such as the one present on the newtab page), `urlbar-searchmode` if the user has selected a search engine, `urlbar-persisted` if the user has changed tabs or windows and come back to their search term in the URL bar, or `urlbar` if the user is doing a standard search by entering a term into the URL bar and pressing enter, or clicking on a search suggestion.
+The `searchSource` string context variable is also available in targeting, and returns the search source. It will be one of four values: `urlbar-handoff` if one of the faux-search inputs were used (such as the one present on the newtab page), `urlbar-searchmode` if the user has selected a search engine, `urlbar-persisted` if the user has changed tabs or windows and come back to their search term in the URL bar, `urlbar` if the user is doing a standard search by entering a term into the URL bar and pressing enter, or clicking on a search suggestion, or `searchbar` if the search was started from the separate search bar toolbar widget.
 
 The `isOneOff` boolean context variable is available in targeting, and will be true if one of the one-off search features (typically found at the bottom of the awesomebar's dropdown menu) is used.
 
@@ -421,5 +423,32 @@ The `elementId` string context variable is also available in targeting, and will
     params: ["element1-id", "element2-id"]
   },
   targeting: "elementId == 'element1-id'"
+}
+```
+
+### `ipProtectionReady`
+
+Fired once the IP protection widget is created and available. Used as a trigger for the IP protection feature introduction callout, which anchors to the widget.
+
+Targets users with the `browser.ipProtection.enabled` pref set to true, along with frequency caps.
+
+```js
+
+{
+  trigger: { "ipProtectionReady" },
+  targeting: "'browser.ipProtection.enabled' | preferenceValue && !(messageImpressions.IP_PROTECTION_INTRODUCTION_CALLOUT[messageImpressions.IP_PROTECTION_INTRODUCTION_CALLOUT | length - 1] < currentDate|date - (3600000 * 24))",
+
+}
+```
+
+### `selectableProfilesUpdated`
+
+Fires to keep multi-profile feature users informed of changes to data collection settings. Within a profile group, any update to these shared profile settings triggers this event for all other running remote profile instances.
+
+```js
+{
+  trigger: { id: "selectableProfilesUpdated" },
+  template: "infobar",
+  frequency: { lifetime: 1 }
 }
 ```

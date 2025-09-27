@@ -10,6 +10,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchAborted
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchQueryUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.UrlSuggestionAutocompleted
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.CommitUrl
@@ -19,7 +20,7 @@ import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.DisplayState
 import mozilla.components.compose.browser.toolbar.store.EditState
 import mozilla.components.compose.browser.toolbar.store.Mode
-import mozilla.components.lib.state.ext.observeAsState
+import mozilla.components.lib.state.ext.observeAsComposableState
 
 /**
  * A customizable toolbar for browsers.
@@ -34,18 +35,21 @@ import mozilla.components.lib.state.ext.observeAsState
 fun BrowserToolbar(
     store: BrowserToolbarStore,
 ) {
-    val uiState by store.observeAsState(initialValue = store.state) { it }
+    val uiState by store.observeAsComposableState { it }
 
     if (uiState.isEditMode()) {
         BrowserEditToolbar(
             query = uiState.editState.query,
-            showQueryAsPreselected = uiState.editState.showQueryAsPreselected,
+            hint = stringResource(uiState.editState.hint),
+            isQueryPrefilled = uiState.editState.isQueryPrefilled,
+            usePrivateModeQueries = uiState.editState.isQueryPrivate,
+            gravity = uiState.gravity,
             autocompleteProviders = uiState.editState.autocompleteProviders,
             editActionsStart = uiState.editState.editActionsStart,
             editActionsEnd = uiState.editState.editActionsEnd,
-            hint = stringResource(uiState.editState.hint),
             onUrlCommitted = { text -> store.dispatch(CommitUrl(text)) },
             onUrlEdit = { text -> store.dispatch(SearchQueryUpdated(text)) },
+            onUrlEditAborted = { store.dispatch(SearchAborted) },
             onUrlSuggestionAutocompleted = { store.dispatch(UrlSuggestionAutocompleted(it)) },
             onInteraction = { store.dispatch(it) },
         )
@@ -53,6 +57,7 @@ fun BrowserToolbar(
         BrowserDisplayToolbar(
             pageOrigin = uiState.displayState.pageOrigin,
             progressBarConfig = uiState.displayState.progressBarConfig,
+            gravity = uiState.gravity,
             browserActionsStart = uiState.displayState.browserActionsStart,
             pageActionsStart = uiState.displayState.pageActionsStart,
             pageActionsEnd = uiState.displayState.pageActionsEnd,

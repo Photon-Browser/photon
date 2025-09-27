@@ -155,9 +155,9 @@ partial interface Document {
   WindowProxy? open(UTF8String url, DOMString name, DOMString features);
   [CEReactions, Throws]
   undefined close();
-  [CEReactions, Throws]
+  [CEReactions, Throws, NeedsSubjectPrincipal=NonSystem]
   undefined write((TrustedHTML or DOMString)... text);
-  [CEReactions, Throws]
+  [CEReactions, Throws, NeedsSubjectPrincipal=NonSystem]
   undefined writeln((TrustedHTML or DOMString)... text);
 
   // user interaction
@@ -556,12 +556,6 @@ partial interface Document {
 partial interface Document {
   [Func="Document::CallerIsSystemPrincipalOrWebCompatAddon", NewObject]
   Promise<undefined> requestStorageAccessForOrigin(DOMString thirdPartyOrigin, optional boolean requireUserInteraction = true);
-};
-
-// Extension to give chrome JS the ability to determine whether
-// the user has interacted with the document or not.
-partial interface Document {
-  [ChromeOnly] readonly attribute boolean userHasInteracted;
 };
 
 // Extension to give chrome JS the ability to simulate activate the document

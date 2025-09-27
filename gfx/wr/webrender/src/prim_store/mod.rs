@@ -93,6 +93,7 @@ pub struct DeferredResolve {
     pub address: GpuCacheAddress,
     pub image_properties: ImageProperties,
     pub rendering: ImageRendering,
+    pub is_composited: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -1054,6 +1055,7 @@ pub enum PrimitiveInstanceKind {
         /// Handle to the common interned data for this primitive.
         data_handle: LinearGradientDataHandle,
         visible_tiles_range: GradientTileRange,
+        use_legacy_path: bool,
     },
     /// Always rendered via a cached render task. Usually faster with
     /// a GPU.
@@ -1066,13 +1068,13 @@ pub enum PrimitiveInstanceKind {
         /// Handle to the common interned data for this primitive.
         data_handle: RadialGradientDataHandle,
         visible_tiles_range: GradientTileRange,
-        cached: bool,
+        use_legacy_path: bool,
     },
     ConicGradient {
         /// Handle to the common interned data for this primitive.
         data_handle: ConicGradientDataHandle,
         visible_tiles_range: GradientTileRange,
-        cached: bool,
+        use_legacy_path: bool,
     },
     /// Clear out a rect, used for special effects.
     Clear {
@@ -1332,7 +1334,7 @@ impl PrimitiveScratchBuffer {
         const LINE_HEIGHT: f32 = 20.0;
         const X0: f32 = 32.0;
         const Y0: f32 = 32.0;
-        let now = time::precise_time_ns();
+        let now = zeitstempel::now();
 
         let msgs_to_remove = self.messages.len().max(MSGS_TO_RETAIN) - MSGS_TO_RETAIN;
         let mut msgs_removed = 0;
@@ -1438,7 +1440,7 @@ impl PrimitiveScratchBuffer {
     ) {
         self.messages.push(DebugMessage {
             msg,
-            timestamp: time::precise_time_ns(),
+            timestamp: zeitstempel::now(),
         })
     }
 }

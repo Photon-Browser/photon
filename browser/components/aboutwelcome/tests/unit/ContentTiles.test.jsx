@@ -3,6 +3,7 @@ import { shallow, mount } from "enzyme";
 import { ContentTiles } from "content-src/components/ContentTiles";
 import { ActionChecklist } from "content-src/components/ActionChecklist";
 import { MobileDownloads } from "content-src/components/MobileDownloads";
+import { EmbeddedBackupRestore } from "content-src/components/EmbeddedBackupRestore";
 import { AboutWelcomeUtils } from "content-src/lib/aboutwelcome-utils.mjs";
 import { GlobalOverrider } from "asrouter/tests/unit/utils";
 
@@ -72,6 +73,12 @@ describe("ContentTiles component", () => {
 
   const TEST_CONTENT = {
     tiles: [CHECKLIST_TILE, MOBILE_TILE],
+  };
+
+  const EMBEDDED_BACKUP_RESTORE_TILE = {
+    type: "backup_restore",
+    title: "Tile Title",
+    subtitle: "Tile Subtitle",
   };
 
   beforeEach(() => {
@@ -257,6 +264,29 @@ describe("ContentTiles component", () => {
       },
     });
     assert.equal(mobileDownloads.prop("handleAction"), handleAction);
+  });
+
+  it("should render EmbeddedBackupRestore for 'backup_restore' tile type", () => {
+    const TEST_CONTENT_WITH_EMBEDDED_BACKUP_RESTORE = {
+      tiles: [EMBEDDED_BACKUP_RESTORE_TILE],
+    };
+
+    const backupWrapper = mount(
+      <ContentTiles
+        content={TEST_CONTENT_WITH_EMBEDDED_BACKUP_RESTORE}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const embeddedBackupRestore = backupWrapper.find(EmbeddedBackupRestore);
+    assert.ok(
+      embeddedBackupRestore.exists(),
+      "EmbeddedBackupRestore component should be rendered"
+    );
+
+    backupWrapper.unmount();
   });
 
   it("should handle a single tile object", () => {
@@ -869,4 +899,98 @@ describe("ContentTiles component", () => {
     );
     wrapper.unmount();
   });
+});
+
+it("restores last tiles focus in Spotlight context and genuine Tab is ignored", async () => {
+  const TAB_GRACE_WINDOW_MS = 250;
+
+  function nextFrame() {
+    return new Promise(r => requestAnimationFrame(r));
+  }
+  function delay(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+  async function waitFor(condition, timeout = TAB_GRACE_WINDOW_MS) {
+    const start = performance.now();
+    while (!condition()) {
+      await nextFrame();
+      if (performance.now() - start > timeout) {
+        throw new Error("timeout waiting for condition");
+      }
+    }
+  }
+
+  // Pretend we're in a Spotlight dialog so the effect runs
+  const root = document.body.appendChild(document.createElement("div"));
+  root.id = "multi-stage-message-root";
+  root.className = "onboardingContainer";
+  root.dataset.page = "spotlight";
+
+  const mountNode = document.body.appendChild(document.createElement("div"));
+
+  const content = {
+    tiles: [{ type: "multiselect", header: { title: "Test" }, data: [] }],
+  };
+
+  const wrapper = mount(
+    <main role="alertdialog">
+      <ContentTiles
+        content={content}
+        handleAction={() => {}}
+        activeMultiSelect={null}
+        setActiveMultiSelect={() => {}}
+      />
+      <div className="action-buttons">
+        <button className="primary">Continue</button>
+      </div>
+    </main>,
+    { attachTo: mountNode }
+  );
+
+  // Let the hook attach listeners
+  await nextFrame();
+
+  const dialog = wrapper.getDOMNode();
+  const header = dialog.querySelector(".tile-header");
+  const primary = dialog.querySelector(".action-buttons .primary");
+
+  // Record real DOM focus inside tiles
+  header.focus();
+  header.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  await nextFrame();
+
+  // Wait past the tab grace window so this isn’t treated as a real Tab
+  await delay(TAB_GRACE_WINDOW_MS + 1);
+
+  // Simulate programmatic focus “snap” to an outside control
+  primary.focus();
+  primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+  await waitFor(() => document.activeElement === header);
+  assert.strictEqual(
+    document.activeElement,
+    header,
+    "restored focus to tiles header"
+  );
+
+  dialog.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    })
+  );
+  primary.focus();
+  primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  await nextFrame();
+  assert.strictEqual(
+    document.activeElement,
+    primary,
+    "did not override genuine Tab focus"
+  );
+
+  // Cleanup
+  wrapper.unmount();
+  mountNode.remove();
+  root.remove();
 });

@@ -7,6 +7,13 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 /* import-globals-from head_nimbus_trainhop.js */
 
+const { AboutHomeStartupCache } = ChromeUtils.importESModule(
+  "resource:///modules/AboutHomeStartupCache.sys.mjs"
+);
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
 add_task(async function test_download_and_staged_install_trainhop_addon() {
   Services.fog.testResetFOG();
 
@@ -233,10 +240,15 @@ add_task(async function test_trainhop_addon_after_browser_restart() {
   });
   // Verify that we are still using the New Tab resources from the builtin add-on.
   assertNewTabResourceMapping();
+  Assert.ok(
+    !Glean.newtab.addonXpiUsed.testGetValue(),
+    "Probe says we're not using an XPI"
+  );
 
   info(
     "Simulated browser restart while train-hop add-on is pending installation"
   );
+  Services.fog.testResetFOG();
   mockAboutNewTabUninit();
   await AddonTestUtils.promiseRestartManager();
   AboutNewTab.init();
@@ -253,6 +265,10 @@ add_task(async function test_trainhop_addon_after_browser_restart() {
   );
 
   assertNewTabResourceMapping(trainhopAddonPolicy.extension.rootURI.spec);
+  Assert.ok(
+    Glean.newtab.addonXpiUsed.testGetValue(),
+    "Probe says we're using an XPI"
+  );
 
   Assert.deepEqual(
     await AddonManager.getAllInstalls(),
@@ -450,6 +466,8 @@ add_task(async function test_builtin_version_upgrades() {
 });
 
 add_task(async function test_nonsystem_xpi_uninstalled() {
+  let sandbox = sinon.createSandbox();
+
   // Sanity check (verifies builtin add-on resources have been mapped).
   assertNewTabResourceMapping();
 
@@ -502,7 +520,14 @@ add_task(async function test_nonsystem_xpi_uninstalled() {
   await AddonTestUtils.promiseRestartManager();
   AboutNewTab.init();
   assertNewTabResourceMapping();
+
+  sandbox.stub(AboutHomeStartupCache, "clearCacheAndUninit").returns();
   await AboutNewTabResourceMapping.updateTrainhopAddonState();
+  Assert.ok(
+    AboutHomeStartupCache.clearCacheAndUninit.called,
+    "Uninstalling caused the startup cache to be cleared."
+  );
+
   // Expect the newtab xpi to have been uninstalled and the updated
   // builtin add-on to be the newtab add-on version becoming active.
   await asyncAssertNewTabAddon({
@@ -518,4 +543,5 @@ add_task(async function test_nonsystem_xpi_uninstalled() {
   await cancelPendingInstall(pendingInstall);
 
   await nimbusFeatureCleanup();
+  sandbox.restore();
 });

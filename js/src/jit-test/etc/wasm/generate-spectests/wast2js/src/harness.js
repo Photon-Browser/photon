@@ -22,7 +22,8 @@ if (!wasmIsSupported()) {
 function partialOobWriteMayWritePartialData() {
   let arm_native = getBuildConfiguration("arm") && !getBuildConfiguration("arm-simulator");
   let arm64_native = getBuildConfiguration("arm64") && !getBuildConfiguration("arm64-simulator");
-  return arm_native || arm64_native;
+  let riscv64_native = getBuildConfiguration("riscv64") && !getBuildConfiguration("riscv64-simulator");
+  return arm_native || arm64_native || riscv64_native;
 }
 
 function bytes(type, bytes) {
@@ -350,10 +351,8 @@ function formatResult(result) {
 
 function formatExpected(expected) {
   if (
-    expected === `f32_canonical_nan` ||
-    expected === `f32_arithmetic_nan` ||
-    expected === `f64_canonical_nan` ||
-    expected === `f64_arithmetic_nan`
+    expected === `canonical_nan` ||
+    expected === `arithmetic_nan`
   ) {
     return expected;
   } else if (expected instanceof F32x4Pattern) {

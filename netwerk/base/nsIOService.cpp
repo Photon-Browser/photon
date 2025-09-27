@@ -25,7 +25,6 @@
 #include "nsSimpleNestedURI.h"
 #include "nsSocketTransport2.h"
 #include "nsTArray.h"
-#include "nsIConsoleService.h"
 #include "nsIUploadChannel2.h"
 #include "nsXULAppAPI.h"
 #include "nsIProtocolProxyCallback.h"
@@ -47,8 +46,10 @@
 #include "mozilla/Services.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/CacheControlParser.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/NeckoParent.h"
+#include "mozilla/dom/ChromeUtilsBinding.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
@@ -106,7 +107,6 @@ using mozilla::dom::ServiceWorkerDescriptor;
 #define PREF_LNA_IP_ADDR_SPACE_LOCAL "network.lna.address_space.local.override"
 
 nsIOService* gIOService;
-static bool gHasWarnedUploadChannel2;
 static bool gCaptivePortalEnabled = false;
 static LazyLogModule gIOServiceLog("nsIOService");
 #undef LOG
@@ -248,12 +248,14 @@ static const char* gCallbackPrefsForSocketProcess[] = {
     "network.disable-localhost-when-offline",
     "network.proxy.parse_pac_on_socket_process",
     "network.proxy.allow_hijacking_localhost",
+    "network.proxy.testing_localhost_is_secure_when_hijacked",
     "network.connectivity-service.",
     "network.captive-portal-service.testMode",
     "network.socket.ip_addr_any.disabled",
     "network.socket.attach_mock_network_layer",
     "network.lna.enabled",
     "network.lna.blocking",
+    "network.lna.address_space.private.override",
     nullptr,
 };
 
@@ -302,13 +304,13 @@ nsresult nsIOService::Init() {
 
   // Register for profile change notifications
   mObserverService = services::GetObserverService();
-  AddObserver(this, kProfileChangeNetTeardownTopic, true);
-  AddObserver(this, kProfileChangeNetRestoreTopic, true);
-  AddObserver(this, kProfileDoChange, true);
-  AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
-  AddObserver(this, NS_NETWORK_LINK_TOPIC, true);
-  AddObserver(this, NS_NETWORK_ID_CHANGED_TOPIC, true);
-  AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true);
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, kProfileChangeNetTeardownTopic, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, kProfileChangeNetRestoreTopic, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, kProfileDoChange, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_NETWORK_LINK_TOPIC, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_NETWORK_ID_CHANGED_TOPIC, true));
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(this, NS_WIDGET_WAKE_OBSERVER_TOPIC, true));
 
   // Register observers for sending notifications to nsSocketTransportService
   if (XRE_IsParentProcess()) {
@@ -1230,30 +1232,6 @@ nsresult nsIOService::NewChannelFromURIWithProxyFlagsInternal(
   if (loadInfo->GetLoadingSandboxed()) {
     channel->SetOwner(nullptr);
   }
-
-  // Some extensions override the http protocol handler and provide their own
-  // implementation. The channels returned from that implementation doesn't
-  // seem to always implement the nsIUploadChannel2 interface, presumably
-  // because it's a new interface.
-  // Eventually we should remove this and simply require that http channels
-  // implement the new interface.
-  // See bug 529041
-  if (!gHasWarnedUploadChannel2 && scheme.EqualsLiteral("http")) {
-    nsCOMPtr<nsIUploadChannel2> uploadChannel2 = do_QueryInterface(channel);
-    if (!uploadChannel2) {
-      nsCOMPtr<nsIConsoleService> consoleService;
-      consoleService = mozilla::components::Console::Service();
-      if (consoleService) {
-        consoleService->LogStringMessage(
-            u"Http channel implementation "
-            "doesn't support nsIUploadChannel2. An extension has "
-            "supplied a non-functional http protocol handler. This will "
-            "break behavior and in future releases not work at all.");
-      }
-      gHasWarnedUploadChannel2 = true;
-    }
-  }
-
   channel.forget(result);
   return NS_OK;
 }
@@ -2485,6 +2463,53 @@ bool nsIOService::GetFallbackDomain(const nsACString& aDomain,
     return true;
   }
   return false;
+}
+
+NS_IMETHODIMP
+nsIOService::ParseCacheControlHeader(const nsACString& aCacheControlHeader,
+                                     JSContext* cx,
+                                     JS::MutableHandle<JS::Value> _retval) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  mozilla::dom::HTTPCacheControlParseResult result;
+  CacheControlParser parser(aCacheControlHeader);
+
+  bool didParseValue = false;
+
+  uint32_t maxAge = 0;
+  didParseValue = parser.MaxAge(&maxAge);
+  if (didParseValue) {
+    result.mMaxAge = maxAge;
+  }
+
+  uint32_t maxStale = 0;
+  didParseValue = parser.MaxStale(&maxStale);
+  if (didParseValue) {
+    result.mMaxStale = maxStale;
+  }
+
+  uint32_t minFresh = 0;
+  didParseValue = parser.MaxStale(&minFresh);
+  if (didParseValue) {
+    result.mMinFresh = minFresh;
+  }
+
+  uint32_t staleWhileRevalidate = 0;
+  didParseValue = parser.StaleWhileRevalidate(&staleWhileRevalidate);
+  if (didParseValue) {
+    result.mStaleWhileRevalidate = staleWhileRevalidate;
+  }
+
+  result.mNoCache = parser.NoCache();
+  result.mNoStore = parser.NoStore();
+  result.mPublic = parser.Public();
+  result.mPrivate = parser.Private();
+  result.mImmutable = parser.Immutable();
+
+  if (!ToJSValue(cx, result, _retval)) {
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
 }
 
 }  // namespace net

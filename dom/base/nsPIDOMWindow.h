@@ -7,20 +7,20 @@
 #ifndef nsPIDOMWindow_h__
 #define nsPIDOMWindow_h__
 
-#include "nsIDOMWindow.h"
-#include "mozIDOMWindow.h"
-
-#include "nsCOMPtr.h"
-#include "nsTArray.h"
 #include "Units.h"
-#include "mozilla/dom/EventTarget.h"
+#include "js/TypeDecls.h"
+#include "mozIDOMWindow.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
-#include "js/TypeDecls.h"
-#include "nsRefPtrHashtable.h"
-#include "nsILoadInfo.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/EventTarget.h"
+#include "nsCOMPtr.h"
+#include "nsIDOMWindow.h"
+#include "nsILoadInfo.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTArray.h"
 
+class nsDOMCSSDeclaration;
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
 class nsIArray;
@@ -28,7 +28,6 @@ class nsIBaseWindow;
 class nsIChannel;
 class nsIContent;
 class nsIContentSecurityPolicy;
-class nsICSSDeclaration;
 class nsIDocShell;
 class nsIDocShellTreeOwner;
 class nsDocShellLoadState;
@@ -38,6 +37,8 @@ class nsIRunnable;
 class nsIScriptTimeoutHandler;
 class nsISerialEventTarget;
 class nsIURI;
+class nsIPrompt;
+class nsIControllers;
 class nsIWebBrowserChrome;
 class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
@@ -173,26 +174,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   mozilla::dom::Performance* GetPerformance();
 
   void QueuePerformanceNavigationTiming();
-
-  bool HasMutationListeners(uint32_t aMutationEventType) const {
-    if (!mOuterWindow) {
-      NS_ERROR("HasMutationListeners() called on orphan inner window!");
-
-      return false;
-    }
-
-    return (mMutationBits & aMutationEventType) != 0;
-  }
-
-  void SetMutationListeners(uint32_t aType) {
-    if (!mOuterWindow) {
-      NS_ERROR("HasMutationListeners() called on orphan inner window!");
-
-      return;
-    }
-
-    mMutationBits |= aType;
-  }
 
   /**
    * Call this to check whether some node (this window, its document,
@@ -605,10 +586,10 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   virtual nsresult GetControllers(nsIControllers** aControllers) = 0;
 
-  virtual nsresult GetInnerWidth(double* aWidth) = 0;
-  virtual nsresult GetInnerHeight(double* aHeight) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult GetInnerWidth(double* aWidth) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult GetInnerHeight(double* aHeight) = 0;
 
-  virtual already_AddRefed<nsICSSDeclaration> GetComputedStyle(
+  virtual already_AddRefed<nsDOMCSSDeclaration> GetComputedStyle(
       mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
       mozilla::ErrorResult& aError) = 0;
 
@@ -684,8 +665,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   RefPtr<mozilla::dom::Navigator> mNavigator;
 
   // These variables are only used on inner windows.
-  uint32_t mMutationBits = 0;
-
   uint32_t mActivePeerConnections = 0;
 
   bool mIsDocumentLoaded = false;
@@ -1073,11 +1052,16 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
                                   mozilla::dom::BrowsingContext** _retval) = 0;
 
   /**
-   * Fire a popup blocked event on the document.
+   * Fire a popup blocked event.
    */
-  virtual void FirePopupBlockedEvent(Document* aDoc, nsIURI* aPopupURI,
+  virtual void FirePopupBlockedEvent(nsIURI* aPopupURI,
                                      const nsAString& aPopupWindowName,
                                      const nsAString& aPopupWindowFeatures) = 0;
+
+  /**
+   * Fire a redirect blocked event.
+   */
+  virtual void FireRedirectBlockedEvent(nsIURI* aRedirectURI) = 0;
 
   // WebIDL-ish APIs
   void MarkUncollectableForCCGeneration(uint32_t aGeneration) {
@@ -1108,8 +1092,8 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
                               const nsAString& aOptions, nsIArray* aArguments,
                               mozilla::dom::BrowsingContext** _retval) = 0;
 
-  virtual nsresult GetInnerWidth(double* aWidth) = 0;
-  virtual nsresult GetInnerHeight(double* aHeight) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult GetInnerWidth(double* aWidth) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult GetInnerHeight(double* aHeight) = 0;
 
   virtual mozilla::dom::Element* GetFrameElement() = 0;
 

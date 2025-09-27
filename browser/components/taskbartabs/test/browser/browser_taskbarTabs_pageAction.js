@@ -18,6 +18,7 @@ ChromeUtils.defineESModuleGetters(this, {
   TaskbarTabsPin: "resource:///modules/taskbartabs/TaskbarTabsPin.sys.mjs",
   TaskbarTabsPageAction:
     "resource:///modules/taskbartabs/TaskbarTabsPageAction.sys.mjs",
+  TaskbarTabsUtils: "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
 });
 
 sinon.stub(TaskbarTabsPin, "pinTaskbarTab");
@@ -36,6 +37,11 @@ async function browserPageAction(win) {
     pageAction.hidden,
     false,
     "Taskbar tab page action button should not be hidden."
+  );
+  is(
+    pageAction.getAttribute("data-l10n-id"),
+    "taskbar-tab-urlbar-button-open",
+    "Taskbar tab page action should have the 'add' tooltip."
   );
 
   let newWinPromise = BrowserTestUtils.waitForNewWindow();
@@ -63,6 +69,11 @@ async function taskbarTabsPageAction(win, destWin) {
     pageAction.hidden,
     false,
     "Taskbar tab page action button should not be hidden."
+  );
+  is(
+    pageAction.getAttribute("data-l10n-id"),
+    "taskbar-tab-urlbar-button-close",
+    "Taskbar tab page action should have the 'remove' tooltip."
   );
 
   let closeWinPromise = BrowserTestUtils.windowClosed(win);
@@ -301,3 +312,82 @@ add_task(async function testIframeNavigationIsIgnored() {
 function getURIScheme(uri) {
   return Services.io.newURI(uri).scheme;
 }
+
+add_task(async function testPrefIsMonitored() {
+  const element = document.getElementById("taskbar-tabs-button");
+
+  await BrowserTestUtils.withNewTab(BASE_URL, async () => {
+    ok(!element.hidden, "Page action starts as visible");
+    await testVisibilityChange(BASE_URL, HIDDEN_URI, true, false);
+
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.taskbarTabs.enabled", false]],
+    });
+    ok(element.hidden, "Page action becomes invisible");
+    await testVisibilityChange(BASE_URL, HIDDEN_URI, false, false);
+
+    await SpecialPowers.popPrefEnv();
+    ok(!element.hidden, "Page action becomes visible again");
+    await testVisibilityChange(BASE_URL, HIDDEN_URI, true, false);
+  });
+});
+
+add_task(async function test_moveTabIntoTaskbarTabCreation() {
+  // Ensure example.com does not have a Taskbar Tab.
+  const uri = Services.io.newURI(BASE_URL);
+  const tt = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0);
+  await TaskbarTabs.removeTaskbarTab(tt.id);
+
+  await BrowserTestUtils.withNewTab("https://example.com/", async browser => {
+    const tab = window.gBrowser.getTabForBrowser(browser);
+    const move = await TaskbarTabs.moveTabIntoTaskbarTab(tab);
+
+    const found = TaskbarTabsUtils.getTaskbarTabIdFromWindow(move.window);
+    is(found, move.taskbarTab.id, "Returned Taskbar Tab matches window");
+    await BrowserTestUtils.closeWindow(move.window);
+  });
+});
+
+add_task(async function test_moveTabIntoTaskbarTabReuse() {
+  // Ensure example.com has a Taskbar Tab.
+  const uri = Services.io.newURI(BASE_URL);
+  const tt = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0);
+
+  await BrowserTestUtils.withNewTab("https://example.com/", async browser => {
+    const tab = window.gBrowser.getTabForBrowser(browser);
+    const move = await TaskbarTabs.moveTabIntoTaskbarTab(tab);
+
+    const found = TaskbarTabsUtils.getTaskbarTabIdFromWindow(move.window);
+    is(found, move.taskbarTab.id, "Returned Taskbar Tab matches window");
+    is(tt.id, move.taskbarTab.id, "Returned Taskbar Tab existed before");
+    await TaskbarTabs.removeTaskbarTab(tt.id);
+    await BrowserTestUtils.closeWindow(move.window);
+  });
+});
+
+add_task(async function test_page_action_uses_manifest() {
+  const pageAction = window.document.getElementById("taskbar-tabs-button");
+  const url = "https://example.com/";
+  await BrowserTestUtils.withNewTab(url, async browser => {
+    await SpecialPowers.spawn(browser, [], async () => {
+      content.document.body.innerHTML =
+        '<link rel="manifest" href="/manifest.webapp">';
+    });
+
+    const newWinPromise = BrowserTestUtils.waitForNewWindow();
+    pageAction.dispatchEvent(new PointerEvent("click"));
+    const win = await newWinPromise;
+
+    const uri = Services.io.newURI(url);
+    const tt = await TaskbarTabs.findOrCreateTaskbarTab(uri, 0);
+    is(
+      await TaskbarTabsUtils.getTaskbarTabIdFromWindow(win),
+      tt.id,
+      "Page action created a Taskbar Tab"
+    );
+    is(tt.name, "Mochitest", "Manifest name was used");
+
+    await TaskbarTabs.removeTaskbarTab(tt.id);
+    await BrowserTestUtils.closeWindow(win);
+  });
+});

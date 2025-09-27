@@ -1519,15 +1519,14 @@ struct HistogramMarker {
   using MS = mozilla::MarkerSchema;
   static MS MarkerTypeDisplay() {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable("id", "Histogram Name",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("id", "Histogram Name", MS::Format::UniqueString,
+                             MS::PayloadFlags::Searchable);
     schema.AddKeyLabelFormat("key", "Key", MS::Format::String);
     schema.AddKeyLabelFormat("val", "Sample", MS::Format::Integer);
     schema.SetTooltipLabel(
         "{marker.data.id}[{marker.data.key}] {marker.data.val}");
     schema.SetTableLabel(
-        "{marker.name} - {marker.data.id}[{marker.data.key}]: "
+        "{marker.data.id}[{marker.data.key}]: "
         "{marker.data.val}");
     return schema;
   }

@@ -8,9 +8,7 @@ import android.content.Context
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
+import io.mockk.verify
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -20,12 +18,9 @@ import org.junit.Test
 import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.components.Core
-import org.mozilla.fenix.components.appstate.AppAction
-import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.reviewprompt.ReviewPromptState
-import org.mozilla.fenix.reviewprompt.ReviewPromptState.Eligible.Type
+import org.mozilla.fenix.home.toolbar.HomeToolbarView
 import org.mozilla.fenix.utils.Settings
 
 class HomeFragmentTest {
@@ -92,78 +87,61 @@ class HomeFragmentTest {
     }
 
     @Test
-    fun `GIVEN observing review prompt state WHEN eligible for custom prompt THEN custom prompt shown`() {
-        runTest {
-            val actions = mutableListOf<AppAction>()
-            var playStorePromptShown = false
-            var customPromptShown = false
+    fun `GIVEN canShowCFR and shouldShowCFR are true WHEN maybeShowEncourageSearchCfr is called THEN the cfr is shown and exposure recorded`() {
+        var cfrShown = false
+        var exposureRecorded = false
 
-            homeFragment.observeReviewPromptState(
-                appStates = flowOf(AppState(reviewPrompt = ReviewPromptState.Eligible(Type.Custom))),
-                dispatchAction = { actions += it },
-                tryShowPlayStorePrompt = { playStorePromptShown = true },
-                showCustomPrompt = { customPromptShown = true },
-            )
+        homeFragment.maybeShowEncourageSearchCfr(
+            canShowCfr = true,
+            shouldShowCFR = true,
+            showCfr = { cfrShown = true },
+            recordExposure = { exposureRecorded = true },
+        )
 
-            assertTrue(customPromptShown)
-            assertFalse(playStorePromptShown)
-            assertTrue(actions.contains(AppAction.ReviewPromptAction.ReviewPromptShown))
-        }
+        assertTrue(cfrShown)
+        assertTrue(exposureRecorded)
     }
 
     @Test
-    fun `GIVEN observing review prompt state WHEN eligible for Play Store prompt THEN Play Store prompt shown`() {
-        runTest {
-            val actions = mutableListOf<AppAction>()
-            var playStorePromptShown = false
-            var customPromptShown = false
+    fun `GIVEN canShowCFR is false WHEN maybeShowEncourageSearchCfr is called THEN the cfr is not shown and exposure is not recorded`() {
+        var cfrShown = false
+        var exposureRecorded = false
 
-            homeFragment.observeReviewPromptState(
-                appStates = flowOf(AppState(reviewPrompt = ReviewPromptState.Eligible(Type.PlayStore))),
-                dispatchAction = { actions += it },
-                tryShowPlayStorePrompt = { playStorePromptShown = true },
-                showCustomPrompt = { customPromptShown = true },
-            )
+        homeFragment.maybeShowEncourageSearchCfr(
+            canShowCfr = false,
+            shouldShowCFR = true,
+            showCfr = { cfrShown = true },
+            recordExposure = { exposureRecorded = true },
+        )
 
-            assertTrue(playStorePromptShown)
-            assertFalse(customPromptShown)
-            assertTrue(actions.contains(AppAction.ReviewPromptAction.ReviewPromptShown))
-        }
+        assertFalse(cfrShown)
+        assertFalse(exposureRecorded)
     }
 
     @Test
-    fun `GIVEN observing review prompt state WHEN state is unknown THEN does nothing`() {
-        runTest {
-            val actions = mutableListOf<AppAction>()
-            var promptShown = false
+    fun `GIVEN exposureRecorded is false WHEN maybeShowEncourageSearchCfr is called THEN the cfr is not shown and exposure is not recorded`() {
+        var cfrShown = false
+        var exposureRecorded = false
 
-            homeFragment.observeReviewPromptState(
-                appStates = flowOf(AppState(reviewPrompt = ReviewPromptState.Unknown)),
-                dispatchAction = { actions += it },
-                tryShowPlayStorePrompt = { promptShown = true },
-                showCustomPrompt = { promptShown = true },
-            )
+        homeFragment.maybeShowEncourageSearchCfr(
+            canShowCfr = true,
+            shouldShowCFR = false,
+            showCfr = { cfrShown = true },
+            recordExposure = { exposureRecorded = true },
+        )
 
-            assertFalse(promptShown)
-            assertEquals(emptyList<AppAction>(), actions)
-        }
+        assertFalse(cfrShown)
+        assertFalse(exposureRecorded)
     }
 
     @Test
-    fun `GIVEN observing review prompt state WHEN not eligible THEN does nothing`() {
-        runTest {
-            val actions = mutableListOf<AppAction>()
-            var promptShown = false
+    fun `WHEN configuration changed THEN menu is dismissed`() {
+        val toolbarView: HomeToolbarView = mockk(relaxed = true)
 
-            homeFragment.observeReviewPromptState(
-                appStates = flowOf(AppState(reviewPrompt = ReviewPromptState.NotEligible)),
-                dispatchAction = { actions += it },
-                tryShowPlayStorePrompt = { promptShown = true },
-                showCustomPrompt = { promptShown = true },
-            )
+        homeFragment.nullableToolbarView = toolbarView
 
-            assertFalse(promptShown)
-            assertEquals(emptyList<AppAction>(), actions)
-        }
+        homeFragment.onConfigurationChanged(mockk(relaxed = true))
+
+        verify(exactly = 1) { toolbarView.dismissMenu() }
     }
 }

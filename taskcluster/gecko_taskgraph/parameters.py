@@ -21,11 +21,10 @@ gecko_parameters_schema = {
     Required("build_number"): int,
     Required("enable_always_target"): Any(bool, [str]),
     Required("files_changed"): [str],
-    Required("hg_branch"): str,
+    Required("hg_branch"): Any(None, str),
     Required("message"): str,
     Required("next_version"): Any(None, str),
     Required("optimize_strategies"): Any(None, str),
-    Optional("partial_versions"): [str],
     Required("phabricator_diff"): Any(None, str),
     Required("release_enable_emefree"): bool,
     Required("release_enable_partner_repack"): bool,
@@ -44,7 +43,6 @@ gecko_parameters_schema = {
     Required("try_task_config"): {
         Optional("tasks"): [str],
         Optional("browsertime"): bool,
-        Optional("chemspill-prio"): bool,
         Optional("disable-pgo"): bool,
         Optional("env"): {str: str},
         Optional("gecko-profile"): bool,
@@ -72,6 +70,7 @@ gecko_parameters_schema = {
             description="Record an rr trace on supported tasks using the Pernosco debugging "
             "service.",
         ): bool,
+        Optional("priority"): Any("lowest", "very-low", "low"),
         Optional("rebuild"): int,
         Optional("tasks-regex"): {
             "include": Any(None, [str]),

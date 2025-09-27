@@ -6,7 +6,6 @@ package org.mozilla.fenix.components
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.Build
 import android.os.StrictMode
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.preferencesDataStore
@@ -105,6 +104,7 @@ import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.ktx.android.content.appVersionName
 import mozilla.components.support.ktx.android.content.res.readJSONObject
 import mozilla.components.support.locale.LocaleManager
+import mozilla.components.support.utils.RunWhenReadyQueue
 import org.mozilla.fenix.AppRequestInterceptor
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.Config
@@ -147,6 +147,7 @@ class Core(
     private val context: Context,
     private val crashReporter: CrashReporting,
     strictMode: StrictModeManager,
+    visualCompletenessQueue: RunWhenReadyQueue,
 ) {
     /**
      * The browser engine component initialized based on the build
@@ -155,8 +156,7 @@ class Core(
     val engine: Engine by lazyMonitored {
         val defaultSettings = DefaultSettings(
             requestInterceptor = requestInterceptor,
-            remoteDebuggingEnabled = context.settings().isRemoteDebuggingEnabled &&
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M,
+            remoteDebuggingEnabled = context.settings().isRemoteDebuggingEnabled,
             testingModeEnabled = false,
             trackingProtectionPolicy = trackingProtectionPolicyFactory.createTrackingProtectionPolicy(),
             historyTrackingDelegate = HistoryDelegate(lazyHistoryStorage),
@@ -195,6 +195,7 @@ class Core(
             postQuantumKeyExchangeEnabled = FxNimbus.features.pqcrypto.value().postQuantumKeyExchangeEnabled,
             dohAutoselectEnabled = FxNimbus.features.doh.value().autoselectEnabled,
             bannedPorts = FxNimbus.features.networkingBannedPorts.value().bannedPortList,
+            lnaBlockingEnabled = context.settings().isLnaBlockingEnabled,
         )
 
         // Apply fingerprinting protection overrides if the feature is enabled in Nimbus
@@ -308,6 +309,8 @@ class Core(
 
         val middlewareList =
             listOf(
+                ProfileMarkerMiddleware(markerName = "BrowserStore", profiler = engine.profiler),
+                LogMiddleware(tag = "BrowserStore", shouldIncludeDetailedData = { Config.channel.isDebug }),
                 LastAccessMiddleware(),
                 RecentlyClosedMiddleware(recentlyClosedTabsStorage, RECENTLY_CLOSED_MAX),
                 DownloadMiddleware(
@@ -352,6 +355,10 @@ class Core(
                     applicationContext = context,
                     repository = DefaultHomepageAsANewTabPreferenceRepository(context.settings()),
                 ),
+                AboutHomeMiddleware(
+                    homepageTitle = context.getString(R.string.tab_tray_homepage_tab),
+                ),
+                BrowserVisualCompletenessMiddleware(visualCompletenessQueue),
             )
 
         BrowserStore(

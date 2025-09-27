@@ -14,6 +14,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.FragmentManager
 import androidx.navigation.NavController
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -36,8 +37,10 @@ import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.R
 import org.mozilla.fenix.addons.AddonsManagementFragmentDirections
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.ThemeManager
+import mozilla.components.feature.addons.R as addonsR
 
 /**
  * Feature implementation for handling [WebExtensionPromptRequest] and showing the respective UI.
@@ -178,17 +181,17 @@ class WebExtensionPromptFeature(
         val addonName = exception.extensionName ?: ""
         val appName = context.getString(R.string.app_name)
 
-        var title = context.getString(R.string.mozac_feature_addons_cant_install_extension)
+        var title = context.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         var url: String? = null
         val message = when (exception) {
             is WebExtensionInstallException.Blocklisted -> {
                 url = formatBlocklistURL(exception)
-                context.getString(R.string.mozac_feature_addons_blocklisted_2, addonName, appName)
+                context.getString(addonsR.string.mozac_feature_addons_blocklisted_2, addonName, appName)
             }
 
             is WebExtensionInstallException.SoftBlocked -> {
                 url = formatBlocklistURL(exception)
-                context.getString(R.string.mozac_feature_addons_soft_blocked_1, addonName, appName)
+                context.getString(addonsR.string.mozac_feature_addons_soft_blocked_1, addonName, appName)
             }
 
             is WebExtensionInstallException.UserCancelled -> {
@@ -204,34 +207,34 @@ class WebExtensionPromptFeature(
                 // Message = Failed to install $addonName
                 title = ""
                 if (addonName.isNotEmpty()) {
-                    context.getString(R.string.mozac_feature_addons_failed_to_install, addonName)
+                    context.getString(addonsR.string.mozac_feature_addons_failed_to_install, addonName)
                 } else {
-                    context.getString(R.string.mozac_feature_addons_extension_failed_to_install)
+                    context.getString(addonsR.string.mozac_feature_addons_extension_failed_to_install)
                 }
             }
 
             is WebExtensionInstallException.AdminInstallOnly -> {
-                context.getString(R.string.mozac_feature_addons_admin_install_only, addonName)
+                context.getString(addonsR.string.mozac_feature_addons_admin_install_only, addonName)
             }
 
             is WebExtensionInstallException.NetworkFailure -> {
-                context.getString(R.string.mozac_feature_addons_extension_failed_to_install_network_error)
+                context.getString(addonsR.string.mozac_feature_addons_extension_failed_to_install_network_error)
             }
 
             is WebExtensionInstallException.CorruptFile -> {
-                context.getString(R.string.mozac_feature_addons_extension_failed_to_install_corrupt_error)
+                context.getString(addonsR.string.mozac_feature_addons_extension_failed_to_install_corrupt_error)
             }
 
             is WebExtensionInstallException.NotSigned -> {
                 context.getString(
-                    R.string.mozac_feature_addons_extension_failed_to_install_not_signed_error,
+                    addonsR.string.mozac_feature_addons_extension_failed_to_install_not_signed_error,
                 )
             }
 
             is WebExtensionInstallException.Incompatible -> {
                 val version = context.appVersionName
                 context.getString(
-                    R.string.mozac_feature_addons_failed_to_install_incompatible_error,
+                    addonsR.string.mozac_feature_addons_failed_to_install_incompatible_error,
                     addonName,
                     appName,
                     version,
@@ -302,8 +305,7 @@ class WebExtensionPromptFeature(
                     R.attr.textActionPrimaryDisabled,
                     context,
                 ),
-                confirmButtonRadius =
-                (context.resources.getDimensionPixelSize(R.dimen.tab_corner_radius)).toFloat(),
+                confirmButtonRadius = context.pixelSizeFor(R.dimen.tab_corner_radius).toFloat(),
                 learnMoreLinkTextColor = ThemeManager.resolveAttribute(
                     R.attr.textAccent,
                     context,
@@ -455,8 +457,7 @@ class WebExtensionPromptFeature(
                         R.attr.textActionPrimary,
                         context,
                     ),
-                    confirmButtonRadius =
-                    (context.resources.getDimensionPixelSize(R.dimen.tab_corner_radius)).toFloat(),
+                    confirmButtonRadius = context.pixelSizeFor(R.dimen.tab_corner_radius).toFloat(),
                 ),
                 onDismissed = {
                     consumePromptRequest()
@@ -501,7 +502,7 @@ class WebExtensionPromptFeature(
                 }
             }
 
-            dialog = AlertDialog.Builder(it)
+            dialog = MaterialAlertDialogBuilder(it)
                 .setTitle(title)
                 .setPositiveButton(android.R.string.ok) { _, _ -> }
                 .setCancelable(false)

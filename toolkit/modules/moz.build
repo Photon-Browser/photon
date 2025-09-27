@@ -151,6 +151,7 @@ EXTRA_JS_MODULES += [
     "AboutPagesUtils.sys.mjs",
     "ActorManagerParent.sys.mjs",
     "AppMenuNotifications.sys.mjs",
+    "AppServicesTracing.sys.mjs",
     "AsyncPrefs.sys.mjs",
     "BinarySearch.sys.mjs",
     "BrowserTelemetryUtils.sys.mjs",
@@ -262,7 +263,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     ]
 
 for var in (
-    "ANDROID_PACKAGE_NAME",
     "MOZ_APP_NAME",
     "MOZ_APP_BASENAME",
     "MOZ_APP_DISPLAYNAME",

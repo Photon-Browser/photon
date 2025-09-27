@@ -8,6 +8,8 @@
 #define mozilla_dom_workers_workerprivate_h__
 
 #include <bitset>
+
+#include "FontVisibilityProvider.h"
 #include "MainThreadUtils.h"
 #include "ScriptLoader.h"
 #include "js/ContextOptions.h"
@@ -22,28 +24,29 @@
 #include "mozilla/OriginTrials.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/Result.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/TargetShutdownTaskSet.h"
 #include "mozilla/ThreadBound.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UseCounter.h"
 #include "mozilla/dom/ClientSource.h"
 #include "mozilla/dom/FlippedOnce.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerChild.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/dom/Timeout.h"
-#include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/dom/Worker.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerLoadInfo.h"
 #include "mozilla/dom/WorkerStatus.h"
+#include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/dom/workerinternals/JSSettings.h"
 #include "mozilla/dom/workerinternals/Queue.h"
-#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/StaticPrefs_extensions.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
@@ -146,7 +149,8 @@ nsString ComputeWorkerPrivateId();
 
 class WorkerPrivate final
     : public RelativeTimeline,
-      public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>> {
+      public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>>,
+      public FontVisibilityProvider {
  public:
   // Callback invoked on the parent thread when the worker's cancellation is
   // about to be requested.  This covers both calls to
@@ -233,6 +237,8 @@ class WorkerPrivate final
   };
 
   NS_INLINE_DECL_REFCOUNTING(WorkerPrivate)
+
+  FONT_VISIBILITY_PROVIDER_IMPL
 
   static already_AddRefed<WorkerPrivate> Constructor(
       JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
@@ -616,23 +622,26 @@ class WorkerPrivate final
   nsISerialEventTarget* MainThreadEventTargetForMessaging();
 
   nsresult DispatchToMainThreadForMessaging(
-      nsIRunnable* aRunnable, uint32_t aFlags = NS_DISPATCH_NORMAL);
+      nsIRunnable* aRunnable,
+      nsIEventTarget::DispatchFlags aFlags = NS_DISPATCH_NORMAL);
 
   nsresult DispatchToMainThreadForMessaging(
       already_AddRefed<nsIRunnable> aRunnable,
-      uint32_t aFlags = NS_DISPATCH_NORMAL);
+      nsIEventTarget::DispatchFlags aFlags = NS_DISPATCH_NORMAL);
 
   nsISerialEventTarget* MainThreadEventTarget();
 
-  nsresult DispatchToMainThread(nsIRunnable* aRunnable,
-                                uint32_t aFlags = NS_DISPATCH_NORMAL);
+  nsresult DispatchToMainThread(
+      nsIRunnable* aRunnable,
+      nsIEventTarget::DispatchFlags aFlags = NS_DISPATCH_NORMAL);
 
-  nsresult DispatchToMainThread(already_AddRefed<nsIRunnable> aRunnable,
-                                uint32_t aFlags = NS_DISPATCH_NORMAL);
+  nsresult DispatchToMainThread(
+      already_AddRefed<nsIRunnable> aRunnable,
+      nsIEventTarget::DispatchFlags aFlags = NS_DISPATCH_NORMAL);
 
   nsresult DispatchDebuggeeToMainThread(
       already_AddRefed<WorkerRunnable> aRunnable,
-      uint32_t aFlags = NS_DISPATCH_NORMAL);
+      nsIEventTarget::DispatchFlags aFlags = NS_DISPATCH_NORMAL);
 
   // Get an event target that will dispatch runnables as control runnables on
   // the worker thread.  Implement nsICancelableRunnable if you wish to take
@@ -1018,8 +1027,6 @@ class WorkerPrivate final
   bool IsThirdPartyContext() const { return mLoadInfo.mIsThirdPartyContext; }
 
   bool IsWatchedByDevTools() const { return mLoadInfo.mWatchedByDevTools; }
-
-  bool ShouldResistFingerprinting(RFPTarget aTarget) const;
 
   const Maybe<RFPTargetSet>& GetOverriddenFingerprintingSettings() const {
     return mLoadInfo.mOverriddenFingerprintingSettings;
@@ -1437,6 +1444,16 @@ class WorkerPrivate final
   workerinternals::Queue<WorkerRunnable*, 4> mDebuggerQueue
       MOZ_GUARDED_BY(mMutex);
 
+  // This counts the numbers of dispatching WorkerControlRunnables.
+  // This is used to decouple the lock sequence between WorkerPrivate::mMutex
+  // and FutexThread::Lock. If this count is not zero, it means there are some
+  // WorkerControlRunnables are dispatching, and WorkerControlRunables might
+  // unlock WorkerPrivate::mMutex to request JS execution interrupt on the
+  // Worker thread.
+  // When a Worker starts shutdown, before releasing mJSContext, this value must
+  // be ensured to be zero.
+  uint32_t mDispatchingControlRunnables MOZ_GUARDED_BY(mMutex);
+
   // Touched on multiple threads, protected with mMutex. Only modified on the
   // worker thread
   JSContext* mJSContext MOZ_GUARDED_BY(mMutex);
@@ -1699,8 +1716,7 @@ class WorkerPrivate final
   Atomic<uint32_t> mTopLevelWorkerFinishedRunnableCount;
   Atomic<uint32_t> mWorkerFinishedRunnableCount;
 
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
-      MOZ_GUARDED_BY(mMutex);
+  TargetShutdownTaskSet mShutdownTasks MOZ_GUARDED_BY(mMutex);
   bool mShutdownTasksRun MOZ_GUARDED_BY(mMutex) = false;
 
   bool mCCFlagSaysEligible MOZ_GUARDED_BY(mMutex){true};
@@ -1713,6 +1729,8 @@ class WorkerPrivate final
   bool hasNotifiedStorageKeyUsed{false};
 
   RefPtr<WorkerParentRef> mParentRef;
+
+  FontVisibility mFontVisibility;
 };
 
 class AutoSyncLoopHolder {

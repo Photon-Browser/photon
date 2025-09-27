@@ -259,6 +259,10 @@ class JitRuntime {
                                  Label* bailoutTail);
   void generateBailoutTailStub(MacroAssembler& masm, Label* bailoutTail);
   void generateEnterJIT(JSContext* cx, MacroAssembler& masm);
+  void generateEnterJitShared(MacroAssembler& masm, Register argcReg,
+                              Register argvReg, Register calleeTokenReg,
+                              Register scratch, Register scratch2,
+                              Register scratch3);
   void generateArgumentsRectifier(MacroAssembler& masm,
                                   ArgumentsRectifierKind kind);
   void generateBailoutHandler(MacroAssembler& masm, Label* bailoutTail);
@@ -278,6 +282,8 @@ class JitRuntime {
   void generateIonGenericCallArgumentsShift(MacroAssembler& masm, Register argc,
                                             Register curr, Register end,
                                             Register scratch, Label* done);
+  void generateIonGenericHandleUnderflow(MacroAssembler& masm,
+                                         bool isConstructing, Label* vmCall);
 
   JitCode* generateDebugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
 

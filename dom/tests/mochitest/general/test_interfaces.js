@@ -222,8 +222,6 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSS", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "CSS2Properties", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSAnimation", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSConditionRule", insecureContext: true },
@@ -262,6 +260,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPageRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSPositionTryDescriptors", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSPositionTryRule", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPropertyRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPseudoElement", insecureContext: true, disabled: true },
@@ -275,6 +277,8 @@ let interfaceNamesInGlobalScope = [
   { name: "CSSStartingStyleRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSStyleDeclaration", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSStyleProperties", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSStyleRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -318,6 +322,8 @@ let interfaceNamesInGlobalScope = [
     nightly: true,
     android: false,
   },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CommandEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Comment", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1513,7 +1519,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "VideoPlaybackQuality", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ViewTransition", insecureContext: true, nightly: true },
+  { name: "ViewTransition", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "VisualViewport", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1755,6 +1761,8 @@ let interfaceNamesInGlobalScope = [
   { name: "onclick", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "onclose", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "oncommand", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "oncontentvisibilityautostatechange", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

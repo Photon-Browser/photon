@@ -4,6 +4,8 @@
 
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
+import { getErrorL10nId } from "chrome://browser/content/backup/backup-errors.mjs";
+import { ERRORS } from "chrome://browser/content/backup/backup-constants.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/backup/turn-on-scheduled-backups.mjs";
@@ -16,6 +18,8 @@ import "chrome://browser/content/backup/enable-backup-encryption.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/backup/disable-backup-encryption.mjs";
 
+const BACKUP_ERROR_CODE_PREF_NAME = "browser.backup.errorCode";
+
 /**
  * The widget for managing the BackupService that is embedded within the main
  * document of about:settings / about:preferences.
@@ -25,14 +29,14 @@ export default class BackupSettings extends MozLitElement {
 
   static properties = {
     backupServiceState: { type: Object },
-    recoveryErrorCode: { type: Number },
-    recoveryInProgress: { type: Boolean },
+    backupErrorCode: { type: Number },
     _enableEncryptionTypeAttr: { type: String },
   };
 
   static get queries() {
     return {
       scheduledBackupsButtonEl: "#backup-toggle-scheduled-button",
+      triggerBackupButtonEl: "#backup-trigger-button",
       changePasswordButtonEl: "#backup-change-password-button",
       disableBackupEncryptionEl: "disable-backup-encryption",
       disableBackupEncryptionDialogEl: "#disable-backup-encryption-dialog",
@@ -54,6 +58,7 @@ export default class BackupSettings extends MozLitElement {
       backupLocationShowButtonEl: "#backup-location-show",
       backupLocationEditButtonEl: "#backup-location-edit",
       scheduledBackupsDescriptionEl: "#scheduled-backups-description",
+      backupErrorBarEl: "#create-backup-error",
     };
   }
 
@@ -77,9 +82,11 @@ export default class BackupSettings extends MozLitElement {
       lastBackupDate: null,
       lastBackupFileName: "",
       supportBaseLink: "",
+      backupInProgress: false,
+      recoveryInProgress: false,
+      recoveryErrorCode: 0,
     };
-    this.recoveryInProgress = false;
-    this.recoveryErrorCode = 0;
+    this.backupErrorCode = this.#readBackupErrorPref();
     this._enableEncryptionTypeAttr = "";
   }
 
@@ -94,10 +101,19 @@ export default class BackupSettings extends MozLitElement {
     );
 
     this.addEventListener("dialogCancel", this);
-    this.addEventListener("getBackupFileInfo", this);
     this.addEventListener("restoreFromBackupConfirm", this);
     this.addEventListener("restoreFromBackupChooseFile", this);
   }
+
+  #readBackupErrorPref() {
+    return Services.prefs.getIntPref(BACKUP_ERROR_CODE_PREF_NAME);
+  }
+
+  handleErrorBarDismiss = () => {
+    // Reset the pref and reactive state; Lit will re-render without the bar.
+    Services.prefs.setIntPref(BACKUP_ERROR_CODE_PREF_NAME, ERRORS.NONE);
+    this.backupErrorCode = 0;
+  };
 
   handleEvent(event) {
     switch (event.type) {
@@ -134,18 +150,15 @@ export default class BackupSettings extends MozLitElement {
           })
         );
         break;
-      case "getBackupFileInfo":
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:GetBackupFileInfo", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              backupFile: event.detail.backupFile,
-            },
-          })
-        );
-        break;
     }
+  }
+
+  handleBackupTrigger() {
+    this.dispatchEvent(
+      new CustomEvent("BackupUI:TriggerCreateBackup", {
+        bubbles: true,
+      })
+    );
   }
 
   handleShowScheduledBackups() {
@@ -224,16 +237,8 @@ export default class BackupSettings extends MozLitElement {
   }
 
   restoreFromBackupDialogTemplate() {
-    let { backupFilePath, backupFileToRestore, backupFileInfo } =
-      this.backupServiceState;
     return html`<dialog id="restore-from-backup-dialog">
-      <restore-from-backup
-        .backupFilePath=${backupFilePath}
-        .backupFileToRestore=${backupFileToRestore}
-        .backupFileInfo=${backupFileInfo}
-        .recoveryInProgress=${this.recoveryInProgress}
-        .recoveryErrorCode=${this.recoveryErrorCode}
-      ></restore-from-backup>
+      <restore-from-backup></restore-from-backup>
     </dialog>`;
   }
 
@@ -348,7 +353,7 @@ export default class BackupSettings extends MozLitElement {
           class="backup-location-filepicker-input"
           type="text"
           readonly
-          value=${backupDirPath}
+          .value=${backupDirPath}
           style=${`background-image: url(${iconURL})`}></input>
         <moz-button
           id="backup-location-show"
@@ -410,6 +415,19 @@ export default class BackupSettings extends MozLitElement {
     </section>`;
   }
 
+  errorBarTemplate() {
+    const l10nId = getErrorL10nId(this.backupErrorCode);
+    return html`
+      <moz-message-bar
+        type="error"
+        id="create-backup-error"
+        dismissable
+        data-l10n-id=${l10nId}
+        @message-bar:user-dismissed=${this.handleErrorBarDismiss}
+      ></moz-message-bar>
+    `;
+  }
+
   updated() {
     if (this.backupServiceState.scheduledBackupsEnabled) {
       let input = this.lastBackupLocationInputEl;
@@ -422,6 +440,11 @@ export default class BackupSettings extends MozLitElement {
       .scheduledBackupsEnabled
       ? "settings-data-backup-scheduled-backups-on"
       : "settings-data-backup-scheduled-backups-off";
+
+    let backupTriggerL10nID = this.backupServiceState.backupInProgress
+      ? "settings-data-backup-in-progress-button"
+      : "settings-data-backup-trigger-button";
+
     return html`<link
         rel="stylesheet"
         href="chrome://browser/skin/preferences/preferences.css"
@@ -430,6 +453,7 @@ export default class BackupSettings extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/backup/backup-settings.css"
       />
+      ${this.backupErrorCode ? this.errorBarTemplate() : null}
       ${this.turnOnScheduledBackupsDialogTemplate()}
       ${this.turnOffScheduledBackupsDialogTemplate()}
       ${this.enableBackupEncryptionDialogTemplate()}
@@ -442,6 +466,14 @@ export default class BackupSettings extends MozLitElement {
             data-l10n-id=${scheduledBackupsEnabledL10nID}
             class="heading-medium"
           ></span>
+
+          <moz-button
+            id="backup-trigger-button"
+            @click=${this.handleBackupTrigger}
+            data-l10n-id=${backupTriggerL10nID}
+            ?disabled=${this.backupServiceState.backupInProgress ||
+            !this.backupServiceState.scheduledBackupsEnabled}
+          ></moz-button>
 
           <moz-button
             id="backup-toggle-scheduled-button"

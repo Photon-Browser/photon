@@ -55,18 +55,22 @@ internal fun ProtectionPanelHeader(
                 .weight(1f),
         ) {
             Text(
-                text = websiteInfoState.websiteTitle,
+                text = websiteInfoState.websiteTitle.ifEmpty {
+                    websiteInfoState.websiteUrl.tryGetHostFromUrl()
+                },
                 color = FirefoxTheme.colors.textSecondary,
                 maxLines = 1,
                 style = FirefoxTheme.typography.headline7,
                 overflow = TextOverflow.Ellipsis,
             )
 
-            Text(
-                text = websiteInfoState.websiteUrl.tryGetHostFromUrl(),
-                color = FirefoxTheme.colors.textSecondary,
-                style = FirefoxTheme.typography.body2,
-            )
+            if (websiteInfoState.websiteTitle.isNotEmpty()) {
+                Text(
+                    text = websiteInfoState.websiteUrl.tryGetHostFromUrl(),
+                    color = FirefoxTheme.colors.textSecondary,
+                    style = FirefoxTheme.typography.body2,
+                )
+            }
         }
     }
 }
@@ -98,7 +102,7 @@ private fun ProtectionPanelIcon(
                 )
                 .padding(all = ICON_PADDING),
             size = ICON_SIZE,
-            roundedCornerShape = INNER_ICON_SHAPE,
+            shape = INNER_ICON_SHAPE,
         )
     }
 }
@@ -117,6 +121,27 @@ private fun ProtectionPanelHeaderPreview() {
                     isSecured = true,
                     websiteUrl = "https://www.mozilla.org",
                     websiteTitle = "Mozilla",
+                    certificateName = "",
+                ),
+            )
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun ProtectionPanelHeaderUrlAsTitlePreview() {
+    FirefoxTheme {
+        Column(
+            modifier = Modifier
+                .background(color = FirefoxTheme.colors.layer1),
+        ) {
+            ProtectionPanelHeader(
+                icon = null,
+                websiteInfoState = WebsiteInfoState(
+                    isSecured = true,
+                    websiteUrl = "https://www.mozilla.org",
+                    websiteTitle = "",
                     certificateName = "",
                 ),
             )

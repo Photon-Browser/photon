@@ -10,6 +10,7 @@ import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAct
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsEndUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsStartUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageOriginUpdated
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchAborted
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.UrlSuggestionAutocompleted
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.lib.state.Middleware
@@ -33,6 +34,7 @@ open class BrowserToolbarStore(
                 mode = initialState.mode,
                 displayState = initialState.displayState,
                 editState = initialState.editState,
+                gravity = initialState.gravity,
             ),
         )
     }
@@ -45,6 +47,7 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             mode = action.mode,
             displayState = action.displayState,
             editState = action.editState,
+            gravity = action.gravity,
         )
 
         is BrowserToolbarAction.ToggleEditMode -> state.copy(
@@ -52,6 +55,10 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             editState = state.editState.copy(
                 query = if (action.editMode) state.editState.query else "",
             ),
+        )
+
+        is BrowserToolbarAction.ToolbarGravityUpdated -> state.copy(
+            gravity = action.gravity,
         )
 
         is BrowserToolbarAction.CommitUrl -> state
@@ -95,7 +102,13 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
         is BrowserEditToolbarAction.SearchQueryUpdated -> state.copy(
             editState = state.editState.copy(
                 query = action.query,
-                showQueryAsPreselected = action.showAsPreselected,
+                isQueryPrefilled = action.isQueryPrefilled,
+            ),
+        )
+
+        is BrowserEditToolbarAction.PrivateModeUpdated -> state.copy(
+            editState = state.editState.copy(
+                isQueryPrivate = action.inPrivateMode,
             ),
         )
 
@@ -125,6 +138,7 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
 
         is EnvironmentRehydrated,
         is EnvironmentCleared,
+        is SearchAborted,
         is UrlSuggestionAutocompleted,
         is BrowserToolbarEvent,
             -> {

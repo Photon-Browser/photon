@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/HTMLDetailsElement.h"
 
+#include "mozilla/BuiltInStyleSheets.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/HTMLDetailsElementBinding.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/BuiltInStyleSheets.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsTextNode.h"
 
@@ -202,13 +202,8 @@ void HTMLDetailsElement::CloseElementIfNeeded() {
     return;
   }
 
-  RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
-
-  RefPtr<Document> doc = OwnerDoc();
-  bool oldFlag = doc->FireMutationEvents();
-  doc->SetFireMutationEvents(false);
-
-  nsINode* root = SubtreeRoot();
+  const RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
+  nsINode* const root = SubtreeRoot();
   for (nsINode* cur = root; cur; cur = cur->GetNextNode(root)) {
     if (!cur->HasName()) {
       continue;
@@ -222,8 +217,6 @@ void HTMLDetailsElement::CloseElementIfNeeded() {
       }
     }
   }
-
-  doc->SetFireMutationEvents(oldFlag);
 }
 
 void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
@@ -237,13 +230,8 @@ void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
     return;
   }
 
-  RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
-
-  RefPtr<Document> doc = OwnerDoc();
-  bool oldFlag = doc->FireMutationEvents();
-  doc->SetFireMutationEvents(false);
-
-  nsINode* root = SubtreeRoot();
+  const RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
+  nsINode* const root = SubtreeRoot();
   for (nsINode* cur = root; cur; cur = cur->GetNextNode(root)) {
     if (!cur->HasName()) {
       continue;
@@ -258,8 +246,6 @@ void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
       }
     }
   }
-
-  doc->SetFireMutationEvents(oldFlag);
 }
 
 }  // namespace mozilla::dom

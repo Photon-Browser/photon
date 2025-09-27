@@ -10,7 +10,7 @@ import mozilla.components.feature.addons.Addon
 import mozilla.components.service.fxa.manager.AccountState
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.telemetry.glean.internal.CounterMetric
+import mozilla.telemetry.glean.private.CounterMetricType
 import mozilla.telemetry.glean.private.EventMetricType
 import mozilla.telemetry.glean.private.NoExtras
 import org.junit.Assert.assertEquals
@@ -22,7 +22,6 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.AppMenu
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeMenu
-import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.GleanMetrics.Menu
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
@@ -106,17 +105,6 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.Navigate.AddToHomeScreen).joinBlocking()
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "add_to_homescreen")
-    }
-
-    @Test
-    fun `WHEN navigating to customize homepage THEN record the customize homepage telemetry`() {
-        val store = createStore()
-        assertNull(AppMenu.customizeHomepage.testGetValue())
-        assertNull(HomeScreen.customizeHomeClicked.testGetValue())
-
-        store.dispatch(MenuAction.Navigate.CustomizeHomepage).joinBlocking()
-
-        assertTelemetryRecorded(AppMenu.customizeHomepage)
     }
 
     @Test
@@ -629,7 +617,7 @@ class MenuTelemetryMiddlewareTest {
         assertEquals(1, event.testGetValue()!!.size)
     }
 
-    private fun assertTelemetryRecorded(event: CounterMetric) {
+    private fun assertTelemetryRecorded(event: CounterMetricType) {
         assertNotNull(event.testGetValue())
         assertEquals(1, event.testGetValue()!!)
     }

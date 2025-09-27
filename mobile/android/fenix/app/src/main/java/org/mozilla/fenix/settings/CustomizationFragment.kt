@@ -12,6 +12,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreference
+import org.mozilla.fenix.Config
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.AppTheme
 import org.mozilla.fenix.GleanMetrics.CustomizationSettings
@@ -19,6 +20,7 @@ import org.mozilla.fenix.GleanMetrics.PullToRefreshInBrowser
 import org.mozilla.fenix.GleanMetrics.ToolbarSettings
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
+import org.mozilla.fenix.ext.isTallWindow
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
@@ -56,6 +58,7 @@ class CustomizationFragment : PreferenceFragmentCompat() {
         val tabletAndTabStripEnabled = Settings(requireContext()).isTabStripEnabled
         updateToolbarCategoryBasedOnTabStrip(tabletAndTabStripEnabled)
         setupTabStripCategory()
+        setupToolbarLayout()
 
         // if tab strip is enabled, swipe toolbar to switch tabs should not be enabled so the
         // preference is not shown
@@ -147,6 +150,8 @@ class CustomizationFragment : PreferenceFragmentCompat() {
                     Position.TOP.name,
                 ),
             )
+
+            updateToolbarLayoutIcons()
         }
 
         val bottomPreference = requirePreference<RadioButtonPreference>(R.string.pref_key_toolbar_bottom)
@@ -156,6 +161,8 @@ class CustomizationFragment : PreferenceFragmentCompat() {
                     Position.BOTTOM.name,
                 ),
             )
+
+            updateToolbarLayoutIcons()
         }
 
         val toolbarPosition = requireContext().settings().toolbarPosition
@@ -175,7 +182,27 @@ class CustomizationFragment : PreferenceFragmentCompat() {
             val enabled = newValue as Boolean
             context.settings().isTabStripEnabled = enabled
             updateToolbarCategoryBasedOnTabStrip(enabled)
+            setupToolbarLayout()
             true
+        }
+    }
+
+    private fun setupToolbarLayout() {
+        val settings = requireContext().settings()
+        (requirePreference(R.string.pref_key_customization_category_toolbar_layout) as PreferenceCategory).apply {
+            isVisible = Config.channel.isNightlyOrDebug &&
+                settings.shouldUseComposableToolbar && settings.toolbarRedesignEnabled && isTallWindow()
+        }
+        updateToolbarLayoutIcons()
+    }
+
+    private fun updateToolbarLayoutIcons() {
+        (requirePreference(R.string.pref_key_toolbar_expanded) as ToggleRadioButtonPreference).apply {
+            if (requireContext().settings().shouldUseBottomToolbar) {
+                updateIcon(R.drawable.ic_toolbar_bottom_expanded, R.drawable.ic_toolbar_bottom_simple)
+            } else {
+                updateIcon(R.drawable.ic_toolbar_top_expanded, R.drawable.ic_toolbar_top_simple)
+            }
         }
     }
 
@@ -198,7 +225,7 @@ class CustomizationFragment : PreferenceFragmentCompat() {
 
     private fun setupAppIconCategory() {
         requirePreference<PreferenceCategory>(R.string.pref_key_customization_category_app_icon).apply {
-           isVisible = FeatureFlags.alternativeAppIconFeatureEnabled
+           isVisible = context.settings().appIconSelection
         }
     }
 

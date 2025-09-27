@@ -59,15 +59,19 @@ class HomeActivityTestRule(
         isWallpaperOnboardingEnabled: Boolean = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
+        isUnifiedTrustPanelEnabled: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
+        isComposableToolbarEnabled: Boolean = false,
         isMenuRedesignEnabled: Boolean = false,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
-        isComposeHomepageEnabled: Boolean = true,
         isUseNewCrashReporterDialog: Boolean = false,
+        isTabSwipeCFREnabled: Boolean = false,
+        isTermsOfServiceAccepted: Boolean = true,
+        isComposeLoginsEnabled: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomepageHeaderEnabled = isHomepageHeaderEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -77,15 +81,19 @@ class HomeActivityTestRule(
         this.isWallpaperOnboardingEnabled = isWallpaperOnboardingEnabled
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
+        this.isUnifiedTrustPanelEnabled = isUnifiedTrustPanelEnabled
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
+        this.isComposableToolbarEnabled = isComposableToolbarEnabled
         this.isMenuRedesignEnabled = isMenuRedesignEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
         this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
-        this.isComposeHomepageEnabled = isComposeHomepageEnabled
         this.isUseNewCrashReporterDialog = isUseNewCrashReporterDialog
+        this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
+        this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
+        this.isComposeLoginsEnabled = isComposeLoginsEnabled
     }
 
     /**
@@ -142,11 +150,15 @@ class HomeActivityTestRule(
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             isMicrosurveyEnabled = false,
+            isComposableToolbarEnabled = false,
             // workaround for toolbar at top position by default
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
             isPageLoadTranslationsPromptEnabled = false,
             isUseNewCrashReporterDialog = useNewCrashReporterDialog,
+            isTabSwipeCFREnabled = true,
+            isTermsOfServiceAccepted = true,
+            isComposeLoginsEnabled = false,
         )
     }
 }
@@ -180,15 +192,19 @@ class HomeActivityIntentTestRule internal constructor(
         isWallpaperOnboardingEnabled: Boolean = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
+        isUnifiedTrustPanelEnabled: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
+        isComposableToolbarEnabled: Boolean = false,
         isMenuRedesignEnabled: Boolean = false,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
         onboardingFeatureEnabled: Boolean = true,
-        isComposeHomepageEnabled: Boolean = true,
+        isTabSwipeCFREnabled: Boolean = false,
+        isTermsOfServiceAccepted: Boolean = true,
+        isComposeLoginsEnabled: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomepageHeaderEnabled = isHomepageHeaderEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -198,15 +214,19 @@ class HomeActivityIntentTestRule internal constructor(
         this.isWallpaperOnboardingEnabled = isWallpaperOnboardingEnabled
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
+        this.isUnifiedTrustPanelEnabled = isUnifiedTrustPanelEnabled
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
+        this.isComposableToolbarEnabled = isComposableToolbarEnabled
         this.isMenuRedesignEnabled = isMenuRedesignEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
         this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
         this.onboardingFeatureEnabled = onboardingFeatureEnabled
-        this.isComposeHomepageEnabled = isComposeHomepageEnabled
+        this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
+        this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
+        this.isComposeLoginsEnabled = isComposeLoginsEnabled
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -270,13 +290,17 @@ class HomeActivityIntentTestRule internal constructor(
         isWallpaperOnboardingEnabled = settings.showWallpaperOnboarding
         isDeleteSitePermissionsEnabled = settings.deleteSitePermissions
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner
+        isUnifiedTrustPanelEnabled = settings.enableUnifiedTrustPanel
         etpPolicy = getETPPolicy(settings)
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
+        isComposableToolbarEnabled = settings.shouldUseComposableToolbar
         isMenuRedesignEnabled = settings.enableMenuRedesign
         isMenuRedesignCFREnabled = settings.shouldShowMenuCFR
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar
-        isComposeHomepageEnabled = settings.enableComposeHomepage
+        isTabSwipeCFREnabled = !settings.hasShownTabSwipeCFR
+        isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService
+        isComposeLoginsEnabled = settings.enableComposeLogins
     }
 
     companion object {
@@ -300,10 +324,14 @@ class HomeActivityIntentTestRule internal constructor(
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             isMicrosurveyEnabled = false,
+            isComposableToolbarEnabled = false,
             // workaround for toolbar at top position by default
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
             isPageLoadTranslationsPromptEnabled = false,
+            isTabSwipeCFREnabled = true,
+            isTermsOfServiceAccepted = true,
+            isComposeLoginsEnabled = false,
         )
     }
 }

@@ -700,6 +700,7 @@ add_task(async function test_updateRecipes_appId() {
     manager.onRecipe.calledOnceWith(recipe, "rs-loader", {
       ok: false,
       reason: "unsupported-feature",
+      featureIds: ["backgroundTaskMessage"],
     }),
     "Should call onRecipe with unsupported-feature"
   );
@@ -1085,6 +1086,37 @@ add_task(async function test_rollout_reenroll_optout() {
     !manager.store.getRolloutForFeature("testFeature"),
     "Should not re-enroll in rollout"
   );
+
+  await cleanup();
+});
+
+add_task(async function test_rollout_reenroll_prefchanged() {
+  const rollout = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "rollout",
+    { featureId: "nimbus-qa-2", value: { value: "rollout-value" } },
+    { isRollout: true }
+  );
+
+  const { loader, manager, cleanup } = await setupTest({
+    experiments: [rollout],
+  });
+
+  Assert.ok(manager.store.get("rollout")?.active, "rollout is active");
+
+  Services.prefs.setStringPref("nimbus.qa.pref-2", "override");
+
+  {
+    const enrollment = manager.store.get("rollout");
+    Assert.ok(!enrollment.active, "Rollout no longer active");
+    Assert.equal(
+      enrollment.unenrollReason,
+      NimbusTelemetry.UnenrollReason.CHANGED_PREF
+    );
+  }
+
+  await loader.updateRecipes();
+
+  Assert.ok(!manager.store.get("rollout").active, "Did not re-enroll");
 
   await cleanup();
 });

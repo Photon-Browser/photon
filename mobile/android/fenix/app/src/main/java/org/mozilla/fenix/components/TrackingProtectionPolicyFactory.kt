@@ -29,7 +29,6 @@ class TrackingProtectionPolicyFactory(
      * in private browsing mode, default to the current preference value.
      * @return the constructed tracking protection policy based on preferences.
      */
-    @Suppress("ComplexMethod")
     fun createTrackingProtectionPolicy(
         normalMode: Boolean = settings.shouldUseTrackingProtection,
         privateMode: Boolean = settings.shouldUseTrackingProtection,
@@ -122,13 +121,8 @@ class TrackingProtectionPolicyFactory(
     private fun getAllowConvenienceTrackingProtection(): Boolean {
         return when {
             settings.useStandardTrackingProtection -> true
-            settings.useStrictTrackingProtection ->
-                settings.strictAllowListBaselineTrackingProtection &&
-                    settings.strictAllowListConvenienceTrackingProtection
-            settings.useCustomTrackingProtection ->
-                settings.customAllowListBaselineTrackingProtection &&
-                    settings.customAllowListConvenienceTrackingProtection
-            else -> false
+            settings.useStrictTrackingProtection -> settings.strictAllowListConvenienceTrackingProtection
+            else -> settings.customAllowListConvenienceTrackingProtection
         }
     }
 }

@@ -1629,7 +1629,7 @@ void nsXULPopupManager::HidePopupAfterDelay(nsMenuPopupFrame* aPopup,
           pm->KillMenuTimer();
         }
       },
-      nullptr, aDelay, nsITimer::TYPE_ONE_SHOT, "KillMenuTimer", target);
+      nullptr, aDelay, nsITimer::TYPE_ONE_SHOT, "KillMenuTimer"_ns, target);
   // the popup will call PopupDestroyed if it is destroyed, which checks if it
   // is set to mTimerMenu, so it should be safe to keep a reference to it
   mTimerMenu = aPopup;
@@ -1790,6 +1790,9 @@ nsEventStatus nsXULPopupManager::FirePopupShowingEvent(
   event.mInputSource = aPendingPopup.MouseInputSource();
   event.mRefPoint = aPendingPopup.mMousePoint;
   event.mModifiers = aPendingPopup.mModifiers;
+  if (aPendingPopup.mEvent) {
+    event.mTriggerEvent = aPendingPopup.mEvent;
+  }
   RefPtr<nsIContent> popup = aPendingPopup.mPopup;
   EventDispatcher::Dispatch(popup, aPresContext, &event, nullptr, &status);
 
@@ -2149,8 +2152,7 @@ bool nsXULPopupManager::MayShowPopup(nsMenuPopupFrame* aPopup) {
 
   // platforms respond differently when an popup is opened in a minimized
   // window, so this is always disabled.
-  nsCOMPtr<nsIWidget> mainWidget;
-  baseWin->GetMainWidget(getter_AddRefs(mainWidget));
+  nsCOMPtr<nsIWidget> mainWidget = baseWin->GetMainWidget();
   if (mainWidget && mainWidget->SizeMode() == nsSizeMode_Minimized) {
     return false;
   }

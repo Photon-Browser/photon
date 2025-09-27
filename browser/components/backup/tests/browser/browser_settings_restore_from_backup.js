@@ -3,9 +3,26 @@
 
 "use strict";
 
+let TEST_PROFILE_PATH;
+
 add_setup(async () => {
   MockFilePicker.init(window.browsingContext);
-  registerCleanupFunction(() => {
+  TEST_PROFILE_PATH = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "testBackup"
+  );
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.backup.location", TEST_PROFILE_PATH]],
+  });
+
+  // It's possible for other tests to change the internal state of the BackupService
+  // which can lead to complications with the auto detection behaviour. Let's just reset
+  // these states before testing
+  let bs = BackupService.get();
+  bs.resetLastBackupInternalState();
+
+  registerCleanupFunction(async () => {
     MockFilePicker.cleanup();
   });
 });
@@ -14,16 +31,17 @@ add_setup(async () => {
  * Tests that the a backup file can be restored from the settings page.
  */
 add_task(async function test_restore_from_backup() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     let sandbox = sinon.createSandbox();
     let recoverFromBackupArchiveStub = sandbox
       .stub(BackupService.prototype, "recoverFromBackupArchive")
       .resolves();
 
     const mockBackupFilePath = await IOUtils.createUniqueFile(
-      PathUtils.tempDir,
+      TEST_PROFILE_PATH,
       "backup.html"
     );
+
     const mockBackupFile = Cc["@mozilla.org/file/local;1"].createInstance(
       Ci.nsIFile
     );
@@ -57,17 +75,40 @@ add_task(async function test_restore_from_backup() {
 
     let infoPromise = BrowserTestUtils.waitForEvent(
       window,
-      "getBackupFileInfo"
+      "BackupUI:GetBackupFileInfo"
     );
 
     restoreFromBackup.chooseButtonEl.click();
+
     await filePickerShownPromise;
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      backupFileToRestore: mockBackupFilePath,
+    };
+    await restoreFromBackup.updateComplete;
+
+    // Dispatch the event that would normally be sent by BackupUIChild
+    // after a file is selected
+    restoreFromBackup.dispatchEvent(
+      new CustomEvent("BackupUI:SelectNewFilepickerPath", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          path: mockBackupFilePath,
+          filename: mockBackupFile.leafName,
+          iconURL: "",
+        },
+      })
+    );
 
     await infoPromise;
     // Set mock file info
-    restoreFromBackup.backupFileInfo = {
-      date: new Date(),
-      isEncrypted: true,
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      backupFileInfo: {
+        date: new Date(),
+        isEncrypted: true,
+      },
     };
     await restoreFromBackup.updateComplete;
 
@@ -76,12 +117,16 @@ add_task(async function test_restore_from_backup() {
 
     let restorePromise = BrowserTestUtils.waitForEvent(
       window,
-      "restoreFromBackupConfirm"
+      "BackupUI:RestoreFromBackupFile"
     );
 
     Assert.ok(
       restoreFromBackup.confirmButtonEl,
       "Confirm button should be found"
+    );
+    Assert.ok(
+      !restoreFromBackup.confirmButtonEl.disabled,
+      "Confirm button should not be disabled"
     );
 
     await restoreFromBackup.updateComplete;
@@ -112,7 +157,7 @@ add_task(async function test_restore_from_backup() {
  * Tests that the dialog stays open while restoring from the settings page.
  */
 add_task(async function test_restore_in_progress() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     let sandbox = sinon.createSandbox();
     let bs = BackupService.get();
 
@@ -138,6 +183,15 @@ add_task(async function test_restore_in_progress() {
     let restoreFromBackup = settings.restoreFromBackupEl;
 
     Assert.ok(restoreFromBackup, "restore-from-backup should be found");
+
+    Assert.equal(
+      restoreFromBackup.filePicker.value,
+      "",
+      "File picker has no value assigned automatically"
+    );
+
+    // There is a backup file, but it is not a valid one
+    // we don't automatically pick it
     Assert.ok(
       restoreFromBackup.confirmButtonEl.disabled,
       "Confirm button should be disabled."
@@ -148,8 +202,10 @@ add_task(async function test_restore_in_progress() {
       "backup.html"
     );
 
-    // Set mock file
-    restoreFromBackup.backupFileToRestore = mockBackupFilePath;
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      backupFileToRestore: mockBackupFilePath,
+    };
     await restoreFromBackup.updateComplete;
 
     Assert.ok(
@@ -164,19 +220,16 @@ add_task(async function test_restore_in_progress() {
 
     let restorePromise = BrowserTestUtils.waitForEvent(
       window,
-      "restoreFromBackupConfirm"
+      "BackupUI:RestoreFromBackupFile"
     );
 
     restoreFromBackup.confirmButtonEl.click();
-    let currentState = bs.state;
-    let recoveryInProgressState = Object.assign(
-      { recoveryInProgress: true },
-      currentState
-    );
-    sandbox.stub(BackupService.prototype, "state").get(() => {
-      return recoveryInProgressState;
-    });
-    bs.stateUpdate();
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      recoveryInProgress: true,
+    };
+    // Re-render since we've manually changed the component's state
+    await restoreFromBackup.requestUpdate();
 
     await restorePromise;
 

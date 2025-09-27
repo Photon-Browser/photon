@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2025-07-07T15:56:32.244722+00:00'
+updated_at: '2025-09-23T23:04:15.488928+00:00'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -125,8 +125,7 @@ people:
     bmo_id: 683100
     name: Ben Dean-Kawamura
     nick: bdk
-  - &benbangert
-    bmo_id: 424312
+  - bmo_id: 424312
     name: Ben Bangert
     nick: benbangert
   - &beth
@@ -615,10 +614,18 @@ people:
     bmo_id: 701257
     name: James Teow
     nick: jteow
+  - &jthomas
+    bmo_id: 421957
+    name: Jason Thomas
+    nick: jthomas
   - &jules
     bmo_id: 699161
     name: Jules Simplicio
     nick: jules
+  - &Julian
+    bmo_id: 656418
+    name: Julian Gaibler
+    nick: Julian
   - &jwatt
     bmo_id: 32767
     name: Jonathan Watt
@@ -962,10 +969,6 @@ people:
     bmo_id: 703413
     name: Stephanie Cunnane
     nick: scunnane
-  - &sefeng
-    bmo_id: 625922
-    name: Sean Feng
-    nick: sefeng
   - &serg
     bmo_id: 691597
     name: Sergey Galich
@@ -1021,6 +1024,10 @@ people:
   - bmo_id: 468136
     name: Dan Gohman
     nick: sunfish
+  - &sunil
+    bmo_id: 711499
+    name: Sunil Mayya
+    nick: sunil
   - &Sylvestre
     bmo_id: 495955
     name: Sylvestre Ledru
@@ -1053,6 +1060,10 @@ people:
     bmo_id: 466874
     name: Scott
     nick: thecount
+  - &thinker
+    bmo_id: 427371
+    name: Thinker Li
+    nick: thinker
   - &timhuang
     bmo_id: 547199
     name: Tim Huang
@@ -1147,13 +1158,14 @@ modules:
       - README.txt
     meta:
       owners_emeritus:
+        - Ben Bangert
         - Brendan Eich
         - Kate Hudson
     owners:
       - *bholley
       - *overholt
+      - *jthomas
       - *mossop
-      - *benbangert
       - *nalexander
       - *nika
     peers: []
@@ -1634,6 +1646,7 @@ modules:
         - Ehsan Akhgari
         - Axel Hecht
         - Eric Rahm
+        - Sean Feng
       url: http://developer.mozilla.org/en/docs/DOM
       components:
         - Core::DOM
@@ -1653,7 +1666,7 @@ modules:
       - *asuth
       - *edgar
       - *saschanaz
-      - *sefeng
+      - *tschuster
     machine_name: core_document_object_model
 
   - name: 'Core: DOM File'
@@ -2404,6 +2417,7 @@ modules:
     peers:
       - *kershaw
       - *jesup
+      - *sunil
     machine_name: core_necko
 
   - name: 'Core: NodeJS usage, tools, and style'
@@ -3002,6 +3016,7 @@ modules:
       - dom/webidl/WebGPU.webidl
       - dom/webgpu/**/*
       - gfx/wgpu_bindings/**/*
+      - taskcluster/kinds/toolchain-dxc-upload/kind.yml
       - third_party/rust/naga/**/*
       - third_party/rust/wgpu-*/**/*
       - testing/web-platform/tests/webgpu/**/*
@@ -3160,6 +3175,7 @@ modules:
     peers:
       - *stransky
       - *emilio
+      - *thinker
     machine_name: core_widget_gtk
 
   - name: 'Core: Widget - Headless'
@@ -3517,10 +3533,10 @@ modules:
         owners:
           - *dao
         peers:
-          - *cmkm
           - *emilio
           - *hjones
           - *itielyn8
+          - *Julian
           - *jules
           - *kcochrane
           - *sfoster
@@ -3859,14 +3875,20 @@ modules:
         includes:
           - browser/components/preferences/**/*
           - browser/themes/*/preferences
-          - toolkit/mozapps/preferences
+          - toolkit/components/aboutconfig/*
+          - toolkit/content/preferencesBindings.js
+          - toolkit/content/preferences/*
+          - toolkit/mozapps/preferences/*
         meta:
           owners_emeritus:
             - Jared Wein
             - *mossop
           peers_emeritus:
             - Tim Nguyen
-          review_group: preferences-reviewers
+          components:
+            - Firefox::Settings UI
+            - Toolkit::Preferences
+          review_group: settings-reviewers
         owners:
           - *mstriemer
         peers:
@@ -4602,5 +4624,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: 4d14a54db53e9dd6af3c29c7302a2086434780d7
-  export: cf1db5d27151bf75e3bd5ba9b5f7cf18691b8e7c
+  config: 34850133dd60d111a521e20f79845f3a86106132
+  export: 51bf99560fa38ad343a714908b7d4b423028e058

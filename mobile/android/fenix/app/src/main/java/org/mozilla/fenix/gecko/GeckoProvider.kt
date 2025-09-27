@@ -75,7 +75,7 @@ object GeckoProvider {
         geckoRuntime.crashPullDelegate = GeckoCrashPullDelegate(
             dispatcher = { crashIDs ->
                 context.components.appStore.dispatch(
-                    AppAction.CrashActionWrapper(CrashAction.PullCrashes(crashIDs)),
+                    AppAction.CrashActionWrapper(CrashAction.CheckDeferred(crashIDs.toList())),
                 )
             },
         )
@@ -131,6 +131,7 @@ object GeckoProvider {
             .setSameDocumentNavigationOverridesLoadTypeForceDisable(
                 FxNimbus.features.sameDocumentNavigationOverridesLoadType.value().forceDisableUri,
             )
+            .isolatedProcessEnabled(context.settings().isIsolatedProcessEnabled)
             .build()
     }
 }

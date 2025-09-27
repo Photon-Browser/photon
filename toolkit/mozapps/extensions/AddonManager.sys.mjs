@@ -596,6 +596,9 @@ var AddonManagerInternal = {
       }
 
       this.recordTimestamp("AMI_startup_begin");
+      Glean.addonsManager.startupTimeline.AMI_startup_begin.set(
+        Services.telemetry.msSinceProcessStart()
+      );
 
       // Enable the AMRemoteSettings client.
       AMRemoteSettings.init();
@@ -765,6 +768,9 @@ var AddonManagerInternal = {
       gStartupComplete = true;
       gStartedPromise.resolve();
       this.recordTimestamp("AMI_startup_end");
+      Glean.addonsManager.startupTimeline.AMI_startup_end.set(
+        Services.telemetry.msSinceProcessStart()
+      );
     } catch (e) {
       logger.error("startup failed", e);
       AddonManagerPrivate.recordException("AMI", "startup failed", e);
@@ -1250,11 +1256,21 @@ var AddonManagerInternal = {
     let newPerms = info.addon.userPermissions;
     let difference = lazy.Extension.comparePermissions(oldPerms, newPerms);
 
+    // When an update for an existing add-on includes data collection
+    // permissions, which the add-ons didn't have so far, and the manifest
+    // contains a flag to indicate that there was a previous consent, then we
+    // allow the update to just proceed, unless there are other new required
+    // permissions.
+    const updateIsMigratingToDataCollectionPerms =
+      !info.existingAddon.hasDataCollectionPermissions &&
+      info.install.addonHasPreviousConsent;
+
     // If there are no new permissions, just go ahead with the update
     if (
       !difference.origins.length &&
       !difference.permissions.length &&
-      !difference.data_collection.length
+      (updateIsMigratingToDataCollectionPerms ||
+        !difference.data_collection.length)
     ) {
       return Promise.resolve();
     }
@@ -3881,6 +3897,7 @@ export var AddonManagerPrivate = {
       }
     }
 
+    Glean.addonsManager.exception.set(report);
     this._simpleMeasures.exception = report;
   },
 
@@ -3899,10 +3916,13 @@ export var AddonManagerPrivate = {
   // Start a timer, record a simple measure of the time interval when
   // timer.done() is called
   simpleTimer(aName) {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
     return {
       done: () =>
-        this.recordSimpleMeasure(aName, Math.round(Cu.now() - startTime)),
+        this.recordSimpleMeasure(
+          aName,
+          Math.round(ChromeUtils.now() - startTime)
+        ),
     };
   },
 
@@ -4637,10 +4657,7 @@ AMRemoteSettings = {
    *   the settings groups defined here.
    */
   RS_ENTRIES_MAP: {
-    installTriggerDeprecation: [
-      "extensions.InstallTriggerImpl.enabled",
-      "extensions.InstallTrigger.enabled",
-    ],
+    installTriggerDeprecation: ["extensions.InstallTrigger.enabled"],
     quarantinedDomains: ["extensions.quarantinedDomains.list"],
   },
 
@@ -4849,7 +4866,9 @@ AMTelemetry = {
   },
 
   onDownloadEnded(install) {
-    let download_time = Math.round(Cu.now() - install.downloadStartedAt);
+    let download_time = Math.round(
+      ChromeUtils.now() - install.downloadStartedAt
+    );
     this.recordInstallEvent(install, {
       step: "download_completed",
       download_time,
@@ -4857,7 +4876,9 @@ AMTelemetry = {
   },
 
   onDownloadFailed(install) {
-    let download_time = Math.round(Cu.now() - install.downloadStartedAt);
+    let download_time = Math.round(
+      ChromeUtils.now() - install.downloadStartedAt
+    );
     this.recordInstallEvent(install, {
       step: "download_failed",
       download_time,
@@ -5110,8 +5131,9 @@ AMTelemetry = {
     });
     Glean.addonsManager.installStats.record(
       this.formatExtraVars({
-        addon_id: extra.addon_id,
+        addon_id: addonId,
         addon_type: object,
+        hashed_addon_id: install.hashedAddonId,
         taar_based: extra.taar_based,
         utm_campaign: extra.utm_campaign,
         utm_content: extra.utm_content,

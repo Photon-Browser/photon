@@ -97,11 +97,11 @@ MOZ_END_EXTERN_C
 MOZ_BEGIN_EXTERN_C
 
 #if defined(ANDROID) && defined(MOZ_DUMP_ASSERTION_STACK)
-MOZ_MAYBE_UNUSED static void MOZ_ReportAssertionFailurePrintFrame(
+[[maybe_unused]] static void MOZ_ReportAssertionFailurePrintFrame(
     const char* aBuf) {
   __android_log_print(ANDROID_LOG_FATAL, "MOZ_Assert", "%s", aBuf);
 }
-MOZ_MAYBE_UNUSED static void MOZ_CrashPrintFrame(const char* aBuf) {
+[[maybe_unused]] static void MOZ_CrashPrintFrame(const char* aBuf) {
   __android_log_print(ANDROID_LOG_FATAL, "MOZ_Crash", "%s", aBuf);
 }
 #endif
@@ -115,7 +115,7 @@ MOZ_MAYBE_UNUSED static void MOZ_CrashPrintFrame(const char* aBuf) {
  * for use in implementing release-build assertions.
  */
 
-MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void
+[[maybe_unused]] static MOZ_COLD MOZ_NEVER_INLINE void
 MOZ_ReportAssertionFailure(const char* aStr, const char* aFilename,
                            int aLine) MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS {
   MOZ_FUZZING_HANDLE_CRASH_EVENT4("MOZ_ASSERT", aFilename, aLine, aStr);
@@ -144,7 +144,7 @@ MOZ_ReportAssertionFailure(const char* aStr, const char* aFilename,
 #endif
 }
 
-MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
+[[maybe_unused]] static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
     const char* aStr, const char* aFilename,
     int aLine) MOZ_PRETEND_NORETURN_FOR_STATIC_ANALYSIS {
 #ifdef ANDROID
@@ -179,17 +179,7 @@ MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
  * should use MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE because it has extra
  * asserts.
  */
-#if defined(__clang__) || defined(__GNUC__)
-#  define MOZ_ASSUME_UNREACHABLE_MARKER() __builtin_unreachable()
-#elif defined(_MSC_VER)
-#  define MOZ_ASSUME_UNREACHABLE_MARKER() __assume(0)
-#else
-#  ifdef __cplusplus
-#    define MOZ_ASSUME_UNREACHABLE_MARKER() ::abort()
-#  else
-#    define MOZ_ASSUME_UNREACHABLE_MARKER() abort()
-#  endif
-#endif
+#define MOZ_ASSUME_UNREACHABLE_MARKER() __builtin_unreachable()
 
 /**
  * MOZ_REALLY_CRASH is used in the implementation of MOZ_CRASH().  You should
@@ -218,8 +208,8 @@ MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NEVER_INLINE void MOZ_ReportCrash(
  * by MSVC, so doing it this way reduces complexity.)
  */
 
-MOZ_MAYBE_UNUSED static MOZ_COLD MOZ_NORETURN MOZ_NEVER_INLINE void
-MOZ_NoReturn(int aLine) {
+[[maybe_unused, noreturn]] static MOZ_COLD MOZ_NEVER_INLINE void MOZ_NoReturn(
+    int aLine) {
   *((volatile int*)NULL) = aLine;
   TerminateProcess(GetCurrentProcess(), 3);
   MOZ_ASSUME_UNREACHABLE_MARKER();
@@ -254,7 +244,7 @@ static inline void MOZ_CrashSequence(void* aAddress, intptr_t aLine) {
       "str %1,[%0];\n"  // Write the line number to the crashing address
       :                 // no output registers
       : "r"(aAddress), "r"(aLine));
-#  elif defined(__riscv) && (__riscv_xlen == 64)
+#  elif (defined(__riscv) && (__riscv_xlen == 64)) || defined(__mips64)
   asm volatile(
       "sd %1,0(%0);\n"  // Write the line number to the crashing address
       :                 // no output registers
@@ -371,7 +361,12 @@ static inline void MOZ_CrashSequence(void* aAddress, intptr_t aLine) {
  * to crash-stats and are publicly visible. Firefox data stewards must do data
  * review on usages of this macro.
  */
-static MOZ_ALWAYS_INLINE_EVEN_DEBUG MOZ_COLD MOZ_NORETURN void MOZ_Crash(
+#ifdef __cplusplus
+[[noreturn]]
+#else
+_Noreturn
+#endif
+static MOZ_ALWAYS_INLINE_EVEN_DEBUG MOZ_COLD void MOZ_Crash(
     const char* aFilename, int aLine, const char* aReason) {
   MOZ_FUZZING_HANDLE_CRASH_EVENT4("MOZ_CRASH", aFilename, aLine, aReason);
 #if defined(DEBUG) || defined(MOZ_ASAN) || defined(FUZZING)
@@ -785,7 +780,7 @@ struct AssertionConditionType {
  */
 #ifdef __cplusplus
 namespace mozilla::detail {
-MFBT_API MOZ_NORETURN MOZ_COLD void InvalidArrayIndex_CRASH(size_t aIndex,
+[[noreturn]] MFBT_API MOZ_COLD void InvalidArrayIndex_CRASH(size_t aIndex,
                                                             size_t aLength);
 }  // namespace mozilla::detail
 #endif  // __cplusplus
@@ -816,5 +811,7 @@ static inline T MakeCompilerAssumeUnreachableFakeValue() {
 }
 }  // namespace mozilla
 #endif  // __cplusplus
+
+#undef MOZ_GET_PID
 
 #endif /* mozilla_Assertions_h */

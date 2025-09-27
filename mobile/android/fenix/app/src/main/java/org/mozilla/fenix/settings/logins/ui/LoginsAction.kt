@@ -39,9 +39,31 @@ internal data object LearnMoreAboutSync : LoginsAction
 
 internal data class LoginClicked(val item: LoginItem) : LoginsAction
 
+internal sealed class BiometricAuthenticationAction : LoginsAction {
+    data object AuthenticationSucceeded : BiometricAuthenticationAction()
+    data object AuthenticationInProgress : BiometricAuthenticationAction()
+    data object AuthenticationFailed : BiometricAuthenticationAction()
+}
+
+internal data class BiometricAuthenticationDialogAction(val shouldShowDialog: Boolean) :
+    LoginsAction
+
+internal sealed class PinVerificationAction : LoginsAction {
+    data object None : PinVerificationAction()
+    data object Start : PinVerificationAction()
+    data object Duplicate : PinVerificationAction()
+    data object Succeeded : PinVerificationAction()
+    data object Failed : PinVerificationAction()
+}
+
 internal sealed class DetailLoginMenuAction : LoginsAction {
     data class EditLoginMenuItemClicked(val item: LoginItem) : DetailLoginMenuAction()
     data class DeleteLoginMenuItemClicked(val item: LoginItem) : DetailLoginMenuAction()
+}
+
+internal sealed class LoginDeletionDialogAction : LoginsAction {
+    data object CancelTapped : LoginDeletionDialogAction()
+    data object DeleteTapped : LoginDeletionDialogAction()
 }
 
 internal data object LoginsDetailBackClicked : LoginsAction

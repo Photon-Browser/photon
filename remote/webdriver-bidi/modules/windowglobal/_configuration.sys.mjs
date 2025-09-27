@@ -7,6 +7,8 @@ import { WindowGlobalBiDiModule } from "chrome://remote/content/webdriver-bidi/m
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ContextDescriptorType:
+    "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   RootMessageHandler:
     "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs",
   WindowGlobalMessageHandler:
@@ -21,6 +23,9 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
   #localeOverride;
   #preloadScripts;
   #resolveBlockerPromise;
+  #screenOrientationOverride;
+  #timezoneOverride;
+  #userAgentOverride;
   #viewportConfiguration;
 
   constructor(messageHandler) {
@@ -29,6 +34,9 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
     this.#geolocationConfiguration = undefined;
     this.#localeOverride = null;
     this.#preloadScripts = new Set();
+    this.#screenOrientationOverride = undefined;
+    this.#timezoneOverride = null;
+    this.#userAgentOverride = null;
     this.#viewportConfiguration = new Map();
 
     Services.obs.addObserver(this, "document-element-inserted");
@@ -59,7 +67,10 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
         this.#preloadScripts.size === 0 &&
         this.#viewportConfiguration.size === 0 &&
         this.#geolocationConfiguration === undefined &&
-        this.#localeOverride === null
+        this.#localeOverride === null &&
+        this.#screenOrientationOverride === undefined &&
+        this.#timezoneOverride === null &&
+        this.#userAgentOverride === null
       ) {
         this.#onConfigurationComplete(window);
         return;
@@ -104,6 +115,48 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
           params: {
             context: this.messageHandler.context,
             locale: this.#localeOverride,
+          },
+        });
+      }
+
+      if (this.#timezoneOverride !== null) {
+        await this.messageHandler.forwardCommand({
+          moduleName: "emulation",
+          commandName: "_setTimezoneOverride",
+          destination: {
+            type: lazy.RootMessageHandler.type,
+          },
+          params: {
+            context: this.messageHandler.context,
+            timezone: this.#timezoneOverride,
+          },
+        });
+      }
+
+      if (this.#userAgentOverride !== null) {
+        await this.messageHandler.forwardCommand({
+          moduleName: "emulation",
+          commandName: "_setUserAgentOverride",
+          destination: {
+            type: lazy.RootMessageHandler.type,
+          },
+          params: {
+            context: this.messageHandler.context,
+            userAgent: this.#userAgentOverride,
+          },
+        });
+      }
+
+      if (this.#screenOrientationOverride !== undefined) {
+        await this.messageHandler.forwardCommand({
+          moduleName: "emulation",
+          commandName: "_setEmulatedScreenOrientation",
+          destination: {
+            type: lazy.RootMessageHandler.type,
+          },
+          params: {
+            context: this.messageHandler.context,
+            orientationOverride: this.#screenOrientationOverride,
           },
         });
       }
@@ -161,11 +214,18 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
       }
     }
 
-    // Geolocation, locale and viewport overrides apply only to top-level traversables.
+    let userAgentOverrideGlobal = null;
+    let userAgentOverridePerUserContext = null;
+    let userAgentOverridePerContext = null;
+
+    // The following overrides apply only to top-level traversables.
     if (
       (category === "geolocation-override" ||
+        category === "viewport-overrides" ||
         category === "locale-override" ||
-        category === "viewport-overrides") &&
+        category === "screen-orientation-override" ||
+        category === "timezone-override" ||
+        category === "user-agent-override") &&
       !this.messageHandler.context.parent
     ) {
       for (const { contextDescriptor, value } of sessionData) {
@@ -176,10 +236,6 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
         switch (category) {
           case "geolocation-override": {
             this.#geolocationConfiguration = value;
-            break;
-          }
-          case "locale-override": {
-            this.#localeOverride = value;
             break;
           }
           case "viewport-overrides": {
@@ -195,9 +251,59 @@ class _ConfigurationModule extends WindowGlobalBiDiModule {
             }
             break;
           }
+          case "locale-override": {
+            this.#localeOverride = value;
+            break;
+          }
+          case "screen-orientation-override": {
+            this.#screenOrientationOverride = value;
+            break;
+          }
+          case "timezone-override": {
+            this.#timezoneOverride = value;
+            break;
+          }
+          case "user-agent-override": {
+            switch (contextDescriptor.type) {
+              case lazy.ContextDescriptorType.TopBrowsingContext: {
+                userAgentOverridePerContext = value;
+                break;
+              }
+              case lazy.ContextDescriptorType.UserContext: {
+                userAgentOverridePerUserContext = value;
+                break;
+              }
+              case lazy.ContextDescriptorType.All: {
+                userAgentOverrideGlobal = value;
+              }
+            }
+            break;
+          }
         }
       }
     }
+
+    this.#userAgentOverride = this.#findCorrectOverrideValue(
+      userAgentOverridePerContext,
+      userAgentOverridePerUserContext,
+      userAgentOverrideGlobal
+    );
+  }
+
+  // For some emulations a value set per a browsing context overrides
+  // a value set per a user context or set globally. And a value set per
+  // a user context overrides a global value.
+  #findCorrectOverrideValue(contextValue, userContextValue, globalValue) {
+    if (typeof contextValue === "string") {
+      return contextValue;
+    }
+    if (typeof userContextValue === "string") {
+      return userContextValue;
+    }
+    if (typeof globalValue === "string") {
+      return globalValue;
+    }
+    return null;
   }
 
   async #onConfigurationComplete(window) {

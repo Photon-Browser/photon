@@ -62,12 +62,9 @@ class WaylandBuffer {
     return aSize == mSize;
   }
 
-  bool IsAttached() const { return mIsAttachedToCompositor; }
-  void SetAttachedLocked(const WaylandSurfaceLock& aSurfaceLock) {
-    mIsAttachedToCompositor = true;
-  }
+  bool IsAttached() const;
 
-  BufferTransaction* GetTransaction();
+  BufferTransaction* GetTransaction(const WaylandSurfaceLock& aSurfaceLock);
   void RemoveTransaction(RefPtr<BufferTransaction> aTransaction);
 
 #ifdef MOZ_LOGGING
@@ -90,10 +87,6 @@ class WaylandBuffer {
   wl_buffer* mExternalWlBuffer = nullptr;
 
   AutoTArray<RefPtr<BufferTransaction>, 3> mBufferTransactions;
-
-  // Indicates that wl_buffer is actively used by Wayland compositor.
-  // We can't delete such wl_buffer.
-  mozilla::Atomic<bool, mozilla::Relaxed> mIsAttachedToCompositor{false};
 
   LayoutDeviceIntSize mSize;
 
@@ -203,16 +196,22 @@ class BufferTransaction {
   void BufferDetachCallback();
   void BufferDeleteCallback();
 
-  bool IsFinished() { return mBufferState == BufferState::Detached; }
-
-  enum class BufferState {
-    Detached,
-    Deleted,
-    WaitingForDetach,
-    WaitingForDelete
-  };
+  bool IsAttached() {
+    return mBufferState == BufferState::WaitingForDetach ||
+           mBufferState == BufferState::WaitingForDelete;
+  }
+  bool IsDetached() { return mBufferState == BufferState::Detached; }
+  bool IsDeleted() { return mBufferState == BufferState::Deleted; }
 
   void DeleteTransactionLocked(const WaylandSurfaceLock& aSurfaceLock);
+
+  bool MatchesBuffer(uintptr_t aBuffer) {
+    return aBuffer == reinterpret_cast<uintptr_t>(mBuffer.get());
+  }
+
+  bool CanRecycle(WaylandSurface* aSurface) {
+    return IsDetached() && (!mSurface || mSurface == aSurface);
+  }
 
  private:
   ~BufferTransaction();
@@ -222,6 +221,13 @@ class BufferTransaction {
 
   RefPtr<WaylandSurface> mSurface;
   RefPtr<WaylandBuffer> mBuffer;
+
+  enum class BufferState {
+    Detached,
+    Deleted,
+    WaitingForDetach,
+    WaitingForDelete
+  };
 
   BufferState mBufferState{BufferState::Detached};
   wl_buffer* mWLBuffer = nullptr;

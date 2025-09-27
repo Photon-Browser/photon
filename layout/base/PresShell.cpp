@@ -168,6 +168,7 @@
 #include "nsIFrameInlines.h"
 #include "nsILayoutHistoryState.h"
 #include "nsILineIterator.h"  // for ScrollContentIntoView
+#include "nsIMutationObserver.h"
 #include "nsIObserverService.h"
 #include "nsIReflowCallback.h"
 #include "nsIScreen.h"
@@ -1155,7 +1156,7 @@ void PresShell::Destroy() {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "destroy called on presshell while scripts not blocked");
 
-  [[maybe_unused]] nsIURI* uri = mDocument->GetDocumentURI();
+  nsIURI* uri = mDocument->GetDocumentURI();
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
       "Layout tree destruction", LAYOUT_Destroy,
       uri ? uri->GetSpecOrDefault() : "N/A"_ns);
@@ -1726,7 +1727,7 @@ void PresShell::InitPaintSuppressionTimer() {
         self->UnsuppressPainting();
       },
       this, delay, nsITimer::TYPE_ONE_SHOT,
-      "PresShell::sPaintSuppressionCallback");
+      "PresShell::sPaintSuppressionCallback"_ns);
 }
 
 nsresult PresShell::Initialize() {
@@ -3230,12 +3231,9 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName,
   }
 
   if (target) {
-    // 3.4 Run the ancestor details revealing algorithm on target.
-    target->RevealAncestorClosedDetails();
-    // 3.5 Run the ancestor hidden-until-found revealing algorithm on target.
-    // https://html.spec.whatwg.org/#ancestor-hidden-until-found-revealing-algorithm
+    // 3.4 Run the ancestor revealing algorithm on target.
     ErrorResult rv;
-    target->RevealAncestorHiddenUntilFoundAndFireBeforematchEvent(rv);
+    target->AncestorRevealingAlgorithm(rv);
     if (MOZ_UNLIKELY(rv.Failed())) {
       return rv.StealNSResult();
     }
@@ -4752,7 +4750,7 @@ void PresShell::DocumentStatesChanged(DocumentState aStateMask) {
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::AttributeWillChange(
     Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute,
-    int32_t aModType) {
+    AttrModType aModType) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected AttributeWillChange");
   MOZ_ASSERT(aElement->OwnerDoc() == mDocument, "Unexpected document");
@@ -4769,7 +4767,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::AttributeWillChange(
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::AttributeChanged(
     Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute,
-    int32_t aModType, const nsAttrValue* aOldValue) {
+    AttrModType aModType, const nsAttrValue* aOldValue) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected AttributeChanged");
   MOZ_ASSERT(aElement->OwnerDoc() == mDocument, "Unexpected document");
@@ -4784,8 +4782,28 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::AttributeChanged(
   }
 }
 
+static void MaybeDestroyFramesAndStyles(nsIContent* aContent,
+                                        nsPresContext& aPresContext) {
+  if (!aContent->IsElement()) {
+    return;
+  }
+
+  Element* element = aContent->AsElement();
+  if (!element->HasServoData()) {
+    return;
+  }
+
+  Element* parent =
+      Element::FromNodeOrNull(element->GetFlattenedTreeParentNode());
+  if (!parent || !parent->HasServoData() ||
+      Servo_Element_IsDisplayNone(parent)) {
+    DestroyFramesAndStyleDataFor(element, aPresContext,
+                                 RestyleManager::IncludeRoot::Yes);
+  }
+}
+
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentAppended(
-    nsIContent* aFirstNewContent, const ContentAppendInfo&) {
+    nsIContent* aFirstNewContent, const ContentAppendInfo& aInfo) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected ContentAppended");
   MOZ_ASSERT(aFirstNewContent->OwnerDoc() == mDocument, "Unexpected document");
@@ -4800,6 +4818,12 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentAppended(
     return;
   }
 
+  mPresContext->EventStateManager()->ContentAppended(aFirstNewContent, aInfo);
+
+  if (aInfo.mOldParent) {
+    MaybeDestroyFramesAndStyles(aFirstNewContent, *mPresContext);
+  }
+
   nsAutoCauseReflowNotifier crNotifier(this);
 
   // Call this here so it only happens for real content mutations and
@@ -4812,13 +4836,19 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentAppended(
 }
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentInserted(
-    nsIContent* aChild, const ContentInsertInfo&) {
+    nsIContent* aChild, const ContentInsertInfo& aInfo) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected ContentInserted");
   MOZ_ASSERT(aChild->OwnerDoc() == mDocument, "Unexpected document");
 
   if (!mDidInitialize) {
     return;
+  }
+
+  mPresContext->EventStateManager()->ContentInserted(aChild, aInfo);
+
+  if (aInfo.mOldParent) {
+    MaybeDestroyFramesAndStyles(aChild, *mPresContext);
   }
 
   nsAutoCauseReflowNotifier crNotifier(this);
@@ -4833,14 +4863,14 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentInserted(
 }
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentWillBeRemoved(
-    nsIContent* aChild, const ContentRemoveInfo&) {
+    nsIContent* aChild, const ContentRemoveInfo& aInfo) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected ContentRemoved");
   MOZ_ASSERT(aChild->OwnerDoc() == mDocument, "Unexpected document");
   // Notify the ESM that the content has been removed, so that
   // it can clean up any state related to the content.
 
-  mPresContext->EventStateManager()->ContentRemoved(mDocument, aChild);
+  mPresContext->EventStateManager()->ContentRemoved(mDocument, aChild, aInfo);
 
   nsAutoCauseReflowNotifier crNotifier(this);
 
@@ -4848,6 +4878,15 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentWillBeRemoved(
        tracker; tracker = tracker->mPreviousTracker) {
     if (tracker->ConnectedNode().IsInclusiveFlatTreeDescendantOf(aChild)) {
       tracker->mConnectedAncestor = aChild->GetFlattenedTreeParentElement();
+    }
+  }
+
+  if (aInfo.mNewParent && aChild->IsElement()) {
+    if (aInfo.mNewParent->IsElement() &&
+        aInfo.mNewParent->AsElement()->HasServoData() &&
+        !Servo_Element_IsDisplayNone(aInfo.mNewParent->AsElement())) {
+      DestroyFramesForAndRestyle(aChild->AsElement());
+      return;
     }
   }
 
@@ -5253,9 +5292,9 @@ UniquePtr<RangePaintInfo> PresShell::CreateRangePaintInfo(
         rootScrollContainerFrame->GetContent());
 
     nsDisplayList wrapped(&info->mBuilder);
-    wrapped.AppendNewToTop<nsDisplayAsyncZoom>(&info->mBuilder,
-                                               rootScrollContainerFrame,
-                                               &info->mList, nullptr, zoomedId);
+    wrapped.AppendNewToTop<nsDisplayAsyncZoom>(
+        &info->mBuilder, rootScrollContainerFrame, &info->mList, nullptr,
+        nsDisplayItem::ContainerASRType::Constant, zoomedId);
     info->mList.AppendToTop(&wrapped);
   }
 
@@ -5881,7 +5920,7 @@ void PresShell::SynthesizeMouseMove(bool aFromScroll) {
     return;
   }
 
-  if (mLastMousePointerId.isNothing() && !mPointerIds.IsEmpty()) {
+  if (mLastMousePointerId.isNothing() && mPointerIds.IsEmpty()) {
     return;
   }
 
@@ -6093,11 +6132,15 @@ void PresShell::ProcessSynthMouseOrPointerMoveEvent(
   NS_ASSERTION(IsRoot(), "Only a root pres shell should be here");
 
 #ifdef DEBUG
-  if (aMoveMessage == eMouseMove) {
-    MOZ_LOG(PointerEventHandler::MouseLocationLogRef(), LogLevel::Info,
-            ("[ps=%p]synthesizing %s to (%d,%d)\n", this, ToChar(aMoveMessage),
-             aPointerInfo.mLastRefPointInRootDoc.x,
-             aPointerInfo.mLastRefPointInRootDoc.y));
+  if (aMoveMessage == eMouseMove || aMoveMessage == ePointerMove) {
+    MOZ_LOG(aMoveMessage == eMouseMove
+                ? PointerEventHandler::MouseLocationLogRef()
+                : PointerEventHandler::PointerLocationLogRef(),
+            LogLevel::Info,
+            ("[ps=%p]synthesizing %s to (%d,%d) (pointerId=%u, source=%s)\n",
+             this, ToChar(aMoveMessage), aPointerInfo.mLastRefPointInRootDoc.x,
+             aPointerInfo.mLastRefPointInRootDoc.y, aPointerId,
+             InputSourceToString(aPointerInfo.mInputSource).get()));
   }
 #endif
 
@@ -6172,12 +6215,14 @@ void PresShell::ProcessSynthMouseOrPointerMoveEvent(
   if (aMoveMessage == eMouseMove) {
     mouseMoveEvent.emplace(true, eMouseMove, view->GetWidget(),
                            WidgetMouseEvent::eSynthesized);
+    mouseMoveEvent->mButton = MouseButton::ePrimary;
     // We don't want to dispatch preceding pointer event since the caller
     // should've already been dispatched it.  However, if the target is an OOP
     // iframe, we'll set this to true again below.
     mouseMoveEvent->convertToPointer = false;
   } else {
     pointerMoveEvent.emplace(true, ePointerMove, view->GetWidget());
+    pointerMoveEvent->mButton = MouseButton::eNotPressed;
     pointerMoveEvent->mReason = WidgetMouseEvent::eSynthesized;
   }
   WidgetMouseEvent& event =
@@ -10736,7 +10781,7 @@ DOMHighResTimeStamp PresShell::GetPerformanceNowUnclamped() {
 
 bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
                          OverflowChangedTracker* aOverflowTracker) {
-  [[maybe_unused]] nsIURI* uri = mDocument->GetDocumentURI();
+  nsIURI* uri = mDocument->GetDocumentURI();
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
       "Reflow", LAYOUT_Reflow, uri ? uri->GetSpecOrDefault() : "N/A"_ns);
 
@@ -12017,15 +12062,17 @@ nsIFrame* PresShell::GetAbsoluteContainingBlock(nsIFrame* aFrame) {
 nsIFrame* PresShell::GetAnchorPosAnchor(
     const nsAtom* aName, const nsIFrame* aPositionedFrame) const {
   MOZ_ASSERT(aName);
+  MOZ_ASSERT(mLazyAnchorPosAnchorChanges.IsEmpty());
   if (const auto& entry = mAnchorPosAnchors.Lookup(aName)) {
-    return AnchorPositioningUtils::FindFirstAcceptableAnchor(aPositionedFrame,
-                                                             entry.Data());
+    return AnchorPositioningUtils::FindFirstAcceptableAnchor(
+        aName, aPositionedFrame, entry.Data());
   }
 
   return nullptr;
 }
 
-void PresShell::AddAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame) {
+template <bool AreWeMerging>
+void PresShell::AddAnchorPosAnchorImpl(const nsAtom* aName, nsIFrame* aFrame) {
   MOZ_ASSERT(aName);
 
   auto& entry = mAnchorPosAnchors.LookupOrInsertWith(
@@ -12040,7 +12087,7 @@ void PresShell::AddAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame) {
     nsIFrame* mFrame;
 
     int32_t operator()(nsIFrame* aOther) const {
-      return nsLayoutUtils::CompareTreePosition(aOther, mFrame, nullptr);
+      return nsLayoutUtils::CompareTreePosition(mFrame, aOther, nullptr);
     }
   };
 
@@ -12050,15 +12097,49 @@ void PresShell::AddAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame) {
   // If the same element is already in the array,
   // someone forgot to call RemoveAnchorPosAnchor.
   if (BinarySearchIf(entry, 0, entry.Length(), cmp, &matchOrInsertionIdx)) {
-    MOZ_ASSERT_UNREACHABLE("Anchor added already");
+    if (entry.ElementAt(matchOrInsertionIdx) == aFrame) {
+      // nsLayoutUtils::CompareTreePosition() returns 0 when the frames are
+      // in different documents or child lists. This indicates that
+      // the tree is being restructured and we can defer anchor insertion
+      // to a MergeAnchorPosAnchors call after the restructuring is complete.
+      MOZ_ASSERT_UNREACHABLE("Attempt to insert a frame twice was made");
+      return;
+    }
+    MOZ_ASSERT(!entry.Contains(aFrame));
+
+    if constexpr (AreWeMerging) {
+      MOZ_ASSERT_UNREACHABLE(
+          "A frame may not be in a different child list at merge time");
+    } else {
+      // nsLayoutUtils::CompareTreePosition() returns 0 when the frames are
+      // in different documents or child lists. This indicates that
+      // the tree is being restructured and we can defer anchor insertion
+      // to a MergeAnchorPosAnchors call after the restructuring is complete.
+      mLazyAnchorPosAnchorChanges.AppendElement(
+          AnchorPosAnchorChange{RefPtr<const nsAtom>(aName), aFrame});
+    }
+
     return;
   }
 
+  MOZ_ASSERT(!entry.Contains(aFrame));
   *entry.InsertElementAt(matchOrInsertionIdx) = aFrame;
+}
+
+void PresShell::AddAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame) {
+  AddAnchorPosAnchorImpl</* AreWeMerging */ false>(aName, aFrame);
 }
 
 void PresShell::RemoveAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame) {
   MOZ_ASSERT(aName);
+
+  if (!mLazyAnchorPosAnchorChanges.IsEmpty()) {
+    mLazyAnchorPosAnchorChanges.RemoveElementsBy(
+        [&](const AnchorPosAnchorChange& change) {
+          return change.mFrame == aFrame;
+        });
+  }
+
   auto entry = mAnchorPosAnchors.Lookup(aName);
   if (!entry) {
     return;  // Nothing to remove.
@@ -12073,6 +12154,248 @@ void PresShell::RemoveAnchorPosAnchor(const nsAtom* aName, nsIFrame* aFrame) {
   anchorArray.RemoveElement(aFrame);
   if (anchorArray.IsEmpty()) {
     entry.Remove();
+  }
+}
+
+void PresShell::MergeAnchorPosAnchorChanges() {
+  for (const auto& [name, frame] : mLazyAnchorPosAnchorChanges) {
+    AddAnchorPosAnchorImpl</* AreWeMerging */ true>(name, frame);
+  }
+
+  mLazyAnchorPosAnchorChanges.Clear();
+}
+
+static bool NeedReflowForAnchorPos(
+    const nsIFrame* aAnchor, const nsIFrame* aPositioned,
+    const Maybe<AnchorPosResolutionData>& aData) {
+  const bool validityChanged = (aAnchor && !aData) || (!aAnchor && aData);
+  if (validityChanged) {
+    return true;
+  }
+  if (!aData) {
+    // Was invalid, still invalid. No more consideration needed.
+    return false;
+  }
+  // Was valid, still valid Did the referenced value change?
+  if (!aAnchor) {
+    MOZ_ASSERT_UNREACHABLE("Anchor is supposed to be valid");
+    return false;
+  }
+  const auto& anchorReference = aData.ref();
+  const auto anchorSize = aAnchor->GetSize();
+  if (anchorReference.mSize != anchorSize) {
+    // Size changed, needs reflow.
+    return true;
+  }
+  if (!anchorReference.mOrigin) {
+    // Didn't resolve offsets, no need to reflow based on it.
+    return false;
+  }
+  const auto posInfo = AnchorPositioningUtils::GetAnchorPosRect(
+      aPositioned->GetParent(), aAnchor, true, nullptr);
+  MOZ_ASSERT(posInfo, "Can't resolve anchor rect?");
+  const auto newOrigin = posInfo.ref().mRect.TopLeft();
+  const auto& prevOrigin = anchorReference.mOrigin.ref();
+  // Did the offset change?
+  return newOrigin != prevOrigin;
+}
+
+PresShell::AnchorPosUpdateResult PresShell::UpdateAnchorPosLayout() {
+  if (mAnchorPosPositioned.IsEmpty()) {
+    return AnchorPosUpdateResult::NotApplicable;
+  }
+
+  // Flush the layout, so that positioned frames' anchor references are valid.
+  DoFlushLayout(/* aInterruptible = */ false);
+
+  auto result = AnchorPosUpdateResult::Flushed;
+  AUTO_PROFILER_MARKER_UNTYPED("UpdateAnchorPosLayout", LAYOUT, {});
+  for (auto* positioned : mAnchorPosPositioned) {
+    MOZ_ASSERT(positioned->IsAbsolutelyPositioned(),
+               "Anchor positioned frame is not absolutely positioned?");
+    const auto* anchorPosReferenceData =
+        positioned->GetProperty(nsIFrame::AnchorPosReferences());
+    // Note that it's possible (Though unlikely) to register as anchor
+    // positioned but not actually make any anchor resolution - e.g.
+    // `position-anchor` is set, but no other anchor positioning property is
+    // used.
+    if (!anchorPosReferenceData || anchorPosReferenceData->IsEmpty()) {
+      continue;
+    }
+    if (positioned->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
+      // Already marked for reflow.
+      continue;
+    }
+    for (const auto& kv : *anchorPosReferenceData) {
+      const auto& data = kv.GetData();
+      const auto& anchorName = kv.GetKey();
+      const auto* anchor = GetAnchorPosAnchor(anchorName, positioned);
+      if (NeedReflowForAnchorPos(anchor, positioned, data)) {
+        result = AnchorPosUpdateResult::NeedReflow;
+        // Abspos frames should not affect ancestor intrinsics.
+        FrameNeedsReflow(positioned, IntrinsicDirty::None,
+                         NS_FRAME_HAS_DIRTY_CHILDREN);
+      }
+    }
+  }
+  return result;
+}
+
+static ScrollContainerFrame* FindScrollContainerFrameOf(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame, "NULL frame for FindScrollContainerFrameOf()");
+  auto* parent = aFrame->GetParent();
+  return nsLayoutUtils::GetNearestScrollContainerFrame(
+      parent, nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                  nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+}
+
+static bool UnderScrollContainer(nsIFrame* aFrame,
+                                 ScrollContainerFrame* aScrollContainer) {
+  MOZ_ASSERT(aFrame);
+  MOZ_ASSERT(aScrollContainer);
+  return aFrame == aScrollContainer ||
+         nsLayoutUtils::IsProperAncestorFrame(aScrollContainer, aFrame);
+}
+
+void PresShell::UpdateAnchorPosLayoutForScroll(
+    ScrollContainerFrame* aScrollContainer) {
+  if (mAnchorPosAnchors.IsEmpty()) {
+    return;
+  }
+
+  AUTO_PROFILER_MARKER_UNTYPED("UpdateAnchorPosLayoutForScroll", LAYOUT, {});
+  // TODO(dshin, bug 1923401): What follows is a non-spec compliant
+  // implementation of scroll handling for anchor positioning. Specifically, it
+  // will compensate for any offset between anchor and all positioned elements,
+  // instead of compensating in axes anchoring to elements in the same scroller
+  // as the default anchor. As a result, positioned elements will resize to
+  // stay attached to all anchors. This needs to be adressed after we stop
+  // storing anchor offset that includes scroll offsets.
+  // TODO(dshin, bug 1987463): After bug 1923401, we still need this code path
+  // to update the scroll offset, so it's worth investigating further
+  // optimizations.
+  struct AffectedAnchor {
+    const nsIFrame* mFrame;
+    ScrollContainerFrame* mNearestScrollContainer;
+  };
+  struct AffectedAnchorGroup {
+    const nsAtom* mAnchorName;
+    nsTArray<AffectedAnchor> mFrames;
+  };
+  struct Comparator {
+    bool Equals(const AffectedAnchor& aEntry, const nsIFrame* aFrame) const {
+      return aEntry.mFrame == aFrame;
+    }
+  };
+
+  // First, find all anchors under this scroll container. Can look at positioned
+  // frames' anchor references first, but we want to avoid anchor lookups if we
+  // can.
+  nsTArray<AffectedAnchorGroup> affectedAnchors;
+  for (const auto& kv : mAnchorPosAnchors) {
+    const auto& anchorFrames = kv.GetData();
+    Maybe<nsTArray<AffectedAnchor>> affected;
+    for (const auto& frame : anchorFrames) {
+      auto* nearestScrollFrame = FindScrollContainerFrameOf(frame);
+      if (!nearestScrollFrame) {
+        // Fixed-pos anchor.
+        continue;
+      }
+      if (!UnderScrollContainer(nearestScrollFrame, aScrollContainer)) {
+        continue;
+      }
+      if (affected.isNothing()) {
+        affected = Some(nsTArray<AffectedAnchor>{anchorFrames.Length()});
+      }
+      affected.ref().AppendElement(AffectedAnchor{frame, nearestScrollFrame});
+    }
+    if (affected.isSome()) {
+      affectedAnchors.AppendElement(
+          AffectedAnchorGroup{kv.GetKey(), std::move(*affected)});
+    }
+  }
+
+  if (affectedAnchors.IsEmpty()) {
+    return;
+  }
+
+  // Now, find positioned frames that depend on anchors under the scroll frame.
+  for (auto* positioned : mAnchorPosPositioned) {
+    MOZ_ASSERT(positioned->IsAbsolutelyPositioned(),
+               "Anchor positioned frame is not absolutely positioned?");
+    if (positioned->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
+      // Already dirty? Skip.
+      continue;
+    }
+
+    const auto* stylePos = positioned->StylePosition();
+    if (!stylePos->mPositionAnchor.IsIdent()) {
+      // If it doesn't have a default anchor then it doesn't compensate for
+      // scroll.
+      continue;
+    }
+
+    const auto* anchorPosReferenceData =
+        positioned->GetProperty(nsIFrame::AnchorPosReferences());
+    if (!anchorPosReferenceData || anchorPosReferenceData->IsEmpty()) {
+      // If it doesn't reference any anchors then it doesn't compensate for
+      // scroll.
+      continue;
+    }
+
+    const nsAtom* defaultAnchorName =
+        stylePos->mPositionAnchor.AsIdent().AsAtom();
+    // We might not need to do this GetAnchorPosAnchor call at all if none of
+    // the affected anchors are referenced by positioned below. We could
+    // improve this.
+    auto* defaultAnchorFrame =
+        GetAnchorPosAnchor(defaultAnchorName, positioned);
+    if (!defaultAnchorFrame) {
+      continue;
+    }
+    auto* nearestScrollToDefaultAnchor =
+        FindScrollContainerFrameOf(defaultAnchorFrame);
+
+    auto* absoluteContainingBlock = positioned->GetParent();
+
+    if (UnderScrollContainer(absoluteContainingBlock,
+                             nearestScrollToDefaultAnchor)) {
+      // If the positioned element's containing block is under the only possible
+      // anchor scroll container that it can scroll with, they'll scroll
+      // together without intervention, so skip the update.
+      continue;
+    }
+
+    for (const auto& entry : affectedAnchors) {
+      const auto* anchorName = entry.mAnchorName;
+      const auto& anchors = entry.mFrames;
+      const auto* data = anchorPosReferenceData->Lookup(anchorName);
+      if (!data) {
+        continue;
+      }
+      const auto* anchorFrame =
+          anchorName == defaultAnchorName
+              ? defaultAnchorFrame
+              : GetAnchorPosAnchor(anchorName, positioned);
+      const auto idx = anchors.IndexOf(anchorFrame, 0, Comparator{});
+      if (idx == anchors.NoIndex) {
+        // Referring to an anchor of the same name but unaffected by scrolling -
+        // skip.
+        continue;
+      }
+      auto* anchorScrollContainer =
+          anchors.ElementAt(idx).mNearestScrollContainer;
+      if (anchorScrollContainer != nearestScrollToDefaultAnchor) {
+        // We do not compensate for scroll for this anchor
+        continue;
+      }
+
+      if (NeedReflowForAnchorPos(anchorFrame, positioned, *data)) {
+        // Abspos frames should not affect ancestor intrinsics.
+        FrameNeedsReflow(positioned, IntrinsicDirty::None,
+                         NS_FRAME_HAS_DIRTY_CHILDREN);
+      }
+    }
   }
 }
 
@@ -12405,8 +12728,7 @@ void PresShell::MarkStickyFramesForReflow() {
     return;
   }
 
-  StickyScrollContainer* ssc =
-      StickyScrollContainer::GetStickyScrollContainerForScrollFrame(sc);
+  StickyScrollContainer* ssc = sc->GetStickyContainer();
   if (!ssc) {
     return;
   }
@@ -12625,6 +12947,13 @@ nsSize PresShell::GetLayoutViewportSize() const {
   return result;
 }
 
+nsSize PresShell::GetInnerSize() const {
+  if (ScrollContainerFrame* sf = GetRootScrollContainerFrame()) {
+    return sf->GetSizeForWindowInnerSize();
+  }
+  return mPresContext->GetVisibleArea().Size();
+}
+
 nsSize PresShell::GetVisualViewportSizeUpdatedByDynamicToolbar() const {
   NS_ASSERTION(mVisualViewportSizeSet,
                "asking for visual viewport size when its not set?");
@@ -12761,22 +13090,19 @@ PresShell::WindowSizeConstraints PresShell::GetWindowSizeConstraints() {
   const auto* pos = rootFrame->StylePosition();
   const auto anchorResolutionParams =
       AnchorPosResolutionParams::From(rootFrame);
-  if (const auto styleMinWidth =
-          pos->GetMinWidth(anchorResolutionParams.mPosition);
+  if (const auto styleMinWidth = pos->GetMinWidth(anchorResolutionParams);
       styleMinWidth->ConvertsToLength()) {
     minSize.width = styleMinWidth->ToLength();
   }
-  if (const auto styleMinHeight =
-          pos->GetMinHeight(anchorResolutionParams.mPosition);
+  if (const auto styleMinHeight = pos->GetMinHeight(anchorResolutionParams);
       styleMinHeight->ConvertsToLength()) {
     minSize.height = styleMinHeight->ToLength();
   }
-  if (const auto maxWidth = pos->GetMaxWidth(anchorResolutionParams.mPosition);
+  if (const auto maxWidth = pos->GetMaxWidth(anchorResolutionParams);
       maxWidth->ConvertsToLength()) {
     maxSize.width = maxWidth->ToLength();
   }
-  if (const auto maxHeight =
-          pos->GetMaxHeight(anchorResolutionParams.mPosition);
+  if (const auto maxHeight = pos->GetMaxHeight(anchorResolutionParams);
       maxHeight->ConvertsToLength()) {
     maxSize.height = maxHeight->ToLength();
   }

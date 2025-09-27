@@ -85,19 +85,21 @@ nsMathMLmmultiscriptsFrame::TransmitAutomaticData() {
     count++;
     childFrame = childFrame->GetNextSibling();
   }
-  for (int32_t i = subScriptFrames.Length() - 1; i >= 0; i--) {
-    childFrame = subScriptFrames[i];
-    PropagatePresentationDataFor(childFrame, NS_MATHML_COMPRESSED,
-                                 NS_MATHML_COMPRESSED);
+  if (!StaticPrefs::mathml_math_shift_enabled()) {
+    for (int32_t i = subScriptFrames.Length() - 1; i >= 0; i--) {
+      childFrame = subScriptFrames[i];
+      PropagatePresentationDataFor(childFrame, NS_MATHML_COMPRESSED,
+                                   NS_MATHML_COMPRESSED);
+    }
   }
 
   return NS_OK;
 }
 
 /* virtual */
-nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
-                                           const PlaceFlags& aFlags,
-                                           ReflowOutput& aDesiredSize) {
+void nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
+                                       const PlaceFlags& aFlags,
+                                       ReflowOutput& aDesiredSize) {
   nscoord subScriptShift = 0;
   nscoord supScriptShift = 0;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
@@ -109,7 +111,7 @@ nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
 
 // exported routine that both munderover and mmultiscripts share.
 // munderover uses this when movablelimits is set.
-nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
+void nsMathMLmmultiscriptsFrame::PlaceMultiScript(
     nsPresContext* aPresContext, DrawTarget* aDrawTarget,
     const PlaceFlags& aFlags, ReflowOutput& aDesiredSize,
     nsMathMLContainerFrame* aFrame, nscoord aUserSubScriptShift,
@@ -213,13 +215,15 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
   nscoord supScriptShift;
   nsPresentationData presentationData;
   aFrame->GetPresentationData(presentationData);
+  bool compressed = StaticPrefs::mathml_math_shift_enabled()
+                        ? font->mMathShift == StyleMathShift::Compact
+                        : NS_MATHML_IS_COMPRESSED(presentationData.flags);
   if (mathFont) {
     // Try and get the super script shift from the MATH table. Note that
     // contrary to TeX we only have two parameters.
     supScriptShift = mathFont->MathTable()->Constant(
-        NS_MATHML_IS_COMPRESSED(presentationData.flags)
-            ? gfxMathTable::SuperscriptShiftUpCramped
-            : gfxMathTable::SuperscriptShiftUp,
+        compressed ? gfxMathTable::SuperscriptShiftUpCramped
+                   : gfxMathTable::SuperscriptShiftUp,
         oneDevPixel);
   } else {
     // supScriptShift{1,2,3}
@@ -235,10 +239,10 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
     // get sup script shift depending on current script level and display style
     // Rule 18c, App. G, TeXbook
     if (font->mMathDepth == 0 && font->mMathStyle == StyleMathStyle::Normal &&
-        !NS_MATHML_IS_COMPRESSED(presentationData.flags)) {
+        !compressed) {
       // Style D in TeXbook
       supScriptShift = supScriptShift1;
-    } else if (NS_MATHML_IS_COMPRESSED(presentationData.flags)) {
+    } else if (compressed) {
       // Style C' in TeXbook = D',T',S',SS'
       supScriptShift = supScriptShift3;
     } else {
@@ -701,6 +705,4 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
       childFrame = childFrame->GetNextSibling();
     } while (prescriptsFrame != childFrame);
   }
-
-  return NS_OK;
 }

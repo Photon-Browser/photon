@@ -14,9 +14,9 @@
 #endif
 
 #include "MFMediaEngineExtension.h"
-#include "MFMediaEngineVideoStream.h"
-#include "MFMediaEngineUtils.h"
 #include "MFMediaEngineStream.h"
+#include "MFMediaEngineUtils.h"
+#include "MFMediaEngineVideoStream.h"
 #include "MFMediaSource.h"
 #include "RemoteMediaManagerParent.h"
 #include "WMF.h"
@@ -28,6 +28,8 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/ipc/UtilityMediaServiceParent.h"
+#include "mozilla/ipc/UtilityProcessChild.h"
 
 namespace mozilla {
 
@@ -300,6 +302,11 @@ void MFMediaEngineParent::NotifyError(MF_MEDIA_ENGINE_ERR aError,
       MediaResult error(NS_ERROR_DOM_MEDIA_DECODE_ERR,
                         nsPrintfCString("Decoder error (hr=%lx)", aResult),
                         Some(static_cast<int32_t>(aResult)));
+#ifdef MOZ_WMF_CDM
+      if (aResult == MSPR_E_NO_DECRYPTOR_AVAILABLE) {
+        NotifyDisableHWDRM();
+      }
+#endif
       Unused << SendNotifyError(error);
       return;
     }
@@ -729,6 +736,27 @@ void MFMediaEngineParent::UpdateStatisticsData() {
         StatisticData{totalRenderedFrames, totalDroppedFrames});
   }
 }
+
+#ifdef MOZ_WMF_CDM
+void MFMediaEngineParent::NotifyDisableHWDRM() {
+  AssertOnManagerThread();
+  RefPtr<ipc::UtilityProcessChild> upc =
+      ipc::UtilityProcessChild::GetSingleton();
+  if (!upc) {
+    return;
+  }
+
+  RefPtr<ipc::UtilityMediaServiceParent> umsp = upc->GetMediaService();
+  if (!umsp) {
+    return;
+  }
+
+  ENGINE_MARKER("MFMediaEngineParent::NotifyDisableHWDRM");
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "MFMediaEngineParent::NotifyDisableHWDRM",
+      [umsp]() { Unused << umsp->SendDisableHardwareDRM(); }));
+}
+#endif
 
 #undef LOG
 #undef RETURN_IF_FAILED

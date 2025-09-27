@@ -28,11 +28,49 @@ add_task(async function click_toolbar_button() {
   button.click();
   await panelShownPromise;
 
-  let header = panelView.querySelector(lazy.IPProtectionPanel.HEADER_TAGNAME);
+  let component = panelView.querySelector(
+    lazy.IPProtectionPanel.CONTENT_TAGNAME
+  );
+  Assert.ok(
+    BrowserTestUtils.isVisible(component),
+    "ipprotection-content component should be present"
+  );
+
+  let header = panelView.querySelector(
+    lazy.IPProtectionPanel.CONTENT_TAGNAME
+  ).headerEl;
   Assert.ok(
     BrowserTestUtils.isVisible(header),
     "ipprotection-header component should be present"
   );
+
+  // Close the panel
+  let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
+  EventUtils.synthesizeKey("KEY_Escape");
+  await panelHiddenPromise;
+});
+
+/**
+ * Tests that the panel also loads the custom elements in a new window.
+ */
+add_task(async function test_panel_in_new_window() {
+  let newWindow = await BrowserTestUtils.openNewBrowserWindow({
+    url: "about:newtab",
+  });
+  newWindow.focus();
+
+  let button = newWindow.document.getElementById(
+    lazy.IPProtectionWidget.WIDGET_ID
+  );
+  let panelView = PanelMultiView.getViewNode(
+    newWindow.document,
+    lazy.IPProtectionWidget.PANEL_ID
+  );
+
+  let panelShownPromise = waitForPanelEvent(newWindow.document, "popupshown");
+  // Open the panel
+  button.click();
+  await panelShownPromise;
 
   let component = panelView.querySelector(
     lazy.IPProtectionPanel.CONTENT_TAGNAME
@@ -42,10 +80,15 @@ add_task(async function click_toolbar_button() {
     "ipprotection-content component should be present"
   );
 
-  // Close the panel
-  let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape");
-  await panelHiddenPromise;
+  let header = panelView.querySelector(
+    lazy.IPProtectionPanel.CONTENT_TAGNAME
+  ).headerEl;
+  Assert.ok(
+    BrowserTestUtils.isVisible(header),
+    "ipprotection-header component should be present"
+  );
+
+  await BrowserTestUtils.closeWindow(newWindow);
 });
 
 /**

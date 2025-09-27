@@ -265,7 +265,10 @@ bool ConnectionEntry::RestrictConnections() {
   // There is a concern that a host is using a mix of HTTP/1 and SPDY.
   // In that case we don't want to restrict connections just because
   // there is a single active HTTP/1 session in use.
-  if (mUsingSpdy && mActiveConns.Length()) {
+  // When a tunnel is used, we should avoid bypassing connection restrictions.
+  // Otherwise, we might create too many unused tunnels.
+  if (mUsingSpdy && mActiveConns.Length() &&
+      !(mConnInfo->UsingHttpsProxy() && mConnInfo->UsingConnect())) {
     bool confirmedRestrict = false;
     for (uint32_t index = 0; index < mActiveConns.Length(); ++index) {
       HttpConnectionBase* conn = mActiveConns[index];
@@ -924,42 +927,14 @@ Http3ConnectionStatsParams ConnectionEntry::GetHttp3ConnectionStatsData() {
 }
 
 void ConnectionEntry::LogConnections() {
-  if (!mConnInfo->IsHttp3()) {
-    LOG(("active urgent conns ["));
-    for (HttpConnectionBase* conn : mActiveConns) {
-      RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
-      MOZ_ASSERT(connTCP);
-      if (connTCP->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
-    LOG(("] active regular conns ["));
-    for (HttpConnectionBase* conn : mActiveConns) {
-      RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
-      MOZ_ASSERT(connTCP);
-      if (!connTCP->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
+  LOG(("active conns ["));
+  for (HttpConnectionBase* conn : mActiveConns) {
+    LOG(("  %p", conn));
+  }
 
-    LOG(("] idle urgent conns ["));
-    for (nsHttpConnection* conn : mIdleConns) {
-      if (conn->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
-    LOG(("] idle regular conns ["));
-    for (nsHttpConnection* conn : mIdleConns) {
-      if (!conn->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
-  } else {
-    LOG(("active conns ["));
-    for (HttpConnectionBase* conn : mActiveConns) {
-      LOG(("  %p", conn));
-    }
-    MOZ_ASSERT(mIdleConns.Length() == 0);
+  LOG(("] idle conns ["));
+  for (nsHttpConnection* conn : mIdleConns) {
+    LOG(("  %p", conn));
   }
   LOG(("]"));
 }
@@ -1102,7 +1077,7 @@ bool ConnectionEntry::AllowToRetryDifferentIPFamilyForHttp3(nsresult aError) {
       ("ConnectionEntry::AllowToRetryDifferentIPFamilyForHttp3 %p "
        "error=%" PRIx32,
        this, static_cast<uint32_t>(aError)));
-  if (!IsHttp3()) {
+  if (!mConnInfo->IsHttp3() && !mConnInfo->IsHttp3ProxyConnection()) {
     MOZ_ASSERT(false, "Should not be called for non Http/3 connection");
     return false;
   }

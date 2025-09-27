@@ -17,7 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.RadioGroup
 import androidx.activity.result.ActivityResultLauncher
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -32,11 +32,14 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.toColorInt
@@ -54,24 +57,22 @@ import androidx.navigation.fragment.findNavController
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Dispatchers.IO
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import mozilla.components.browser.state.action.AwesomeBarAction
+import mozilla.components.browser.state.action.AwesomeBarAction.EngagementFinished
 import mozilla.components.browser.state.action.EngineAction
-import mozilla.components.browser.state.action.HistoryMetadataAction
 import mozilla.components.browser.state.action.RecentlyClosedAction
 import mozilla.components.browser.state.state.searchEngines
-import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.browser.storage.sync.PlacesHistoryStorage
 import mozilla.components.compose.base.theme.AcornTheme
+import mozilla.components.compose.base.utils.BackInvokedHandler
 import mozilla.components.compose.browser.awesomebar.AwesomeBar
 import mozilla.components.compose.browser.awesomebar.AwesomeBarDefaults
 import mozilla.components.compose.browser.awesomebar.AwesomeBarOrientation
 import mozilla.components.compose.browser.toolbar.BrowserToolbar
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.EnvironmentCleared
@@ -82,40 +83,42 @@ import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.lib.state.ext.observeAsComposableState
 import mozilla.components.support.base.feature.UserInteractionHandler
-import mozilla.components.support.ktx.kotlin.toShortUrl
+import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavHostActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.addons.showSnackBar
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.QrScanFenixFeature
 import org.mozilla.fenix.components.StoreProvider
+import org.mozilla.fenix.components.VoiceSearchFeature
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.history.DefaultPagedHistoryProvider
 import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.components.search.HISTORY_SEARCH_ENGINE_ID
+import org.mozilla.fenix.components.toolbar.BrowserToolbarEnvironment
 import org.mozilla.fenix.databinding.FragmentHistoryBinding
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.getRootView
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.setTextColor
 import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.home.toolbar.HomeToolbarEnvironment
 import org.mozilla.fenix.library.LibraryPageFragment
 import org.mozilla.fenix.library.history.HistoryFragmentAction.SearchClicked
 import org.mozilla.fenix.library.history.HistoryFragmentAction.SearchDismissed
 import org.mozilla.fenix.library.history.state.HistoryTelemetryMiddleware
 import org.mozilla.fenix.library.history.state.bindings.MenuBinding
 import org.mozilla.fenix.library.history.state.bindings.PendingDeletionBinding
-import org.mozilla.fenix.lifecycle.registerForVerification
-import org.mozilla.fenix.lifecycle.verifyUser
+import org.mozilla.fenix.pbmlock.registerForVerification
+import org.mozilla.fenix.pbmlock.verifyUser
 import org.mozilla.fenix.search.BrowserStoreToFenixSearchMapperMiddleware
 import org.mozilla.fenix.search.BrowserToolbarSearchMiddleware
+import org.mozilla.fenix.search.BrowserToolbarSearchStatusSyncMiddleware
 import org.mozilla.fenix.search.BrowserToolbarToFenixSearchMapperMiddleware
 import org.mozilla.fenix.search.FenixSearchMiddleware
 import org.mozilla.fenix.search.SearchFragmentAction
@@ -123,10 +126,8 @@ import org.mozilla.fenix.search.SearchFragmentAction.SuggestionClicked
 import org.mozilla.fenix.search.SearchFragmentAction.SuggestionSelected
 import org.mozilla.fenix.search.SearchFragmentStore
 import org.mozilla.fenix.search.createInitialSearchFragmentState
-import org.mozilla.fenix.tabstray.DefaultTabManagementFeatureHelper
 import org.mozilla.fenix.tabstray.Page
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.utils.allowUndo
 import org.mozilla.fenix.GleanMetrics.History as GleanHistory
 
 private const val MATERIAL_DESIGN_SCRIM = "#52000000"
@@ -134,7 +135,7 @@ private const val MATERIAL_DESIGN_SCRIM = "#52000000"
 @SuppressWarnings("TooManyFunctions", "LargeClass")
 class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, MenuProvider {
     private lateinit var historyStore: HistoryFragmentStore
-    private val toolbarStore by lazy { buildToolbarStore() }
+    private lateinit var toolbarStore: BrowserToolbarStore
     private val searchStore by lazy { buildSearchStore(toolbarStore) }
 
     private lateinit var historyProvider: DefaultPagedHistoryProvider
@@ -157,12 +158,22 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
     private val binding get() = _binding!!
     private var searchLayout: ComposeView? = null
 
-    private val pendingDeletionBinding by lazy {
-        PendingDeletionBinding(requireContext().components.appStore, historyView)
-    }
+    private val pendingDeletionBinding = ViewBoundFeatureWrapper<PendingDeletionBinding>()
 
     private var verificationResultLauncher: ActivityResultLauncher<Intent> =
         registerForVerification(onVerified = ::openHistoryInPrivate)
+    private var qrScanFenixFeature: ViewBoundFeatureWrapper<QrScanFenixFeature>? =
+        ViewBoundFeatureWrapper<QrScanFenixFeature>()
+    private val qrScanLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            qrScanFenixFeature?.get()?.handleToolbarQrScanResults(result.resultCode, result.data)
+        }
+    private var voiceSearchFeature: ViewBoundFeatureWrapper<VoiceSearchFeature>? =
+        ViewBoundFeatureWrapper<VoiceSearchFeature>()
+    private val voiceSearchLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            voiceSearchFeature?.get()?.handleVoiceSearchResult(result.resultCode, result.data)
+        }
 
     private val menuBinding by lazy {
         MenuBinding(
@@ -231,28 +242,6 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
         GleanHistory.opened.record(NoExtras())
     }
 
-    private fun showDeleteSnackbar(
-        items: Set<History>,
-    ) {
-        val appStore = requireComponents.appStore
-        val browserStore = requireComponents.core.store
-        val historyStorage = requireComponents.core.historyStorage
-
-        CoroutineScope(Dispatchers.Main).allowUndo(
-            view = requireActivity().getRootView()!!,
-            message = getMultiSelectSnackBarMessage(items),
-            undoActionTitle = getString(R.string.snackbar_deleted_undo),
-            onCancel = { undo(appStore = appStore, items = items) },
-            operation = {
-                delete(
-                    browserStore = browserStore,
-                    historyStorage = historyStorage,
-                    items = items,
-                )
-            },
-        )
-    }
-
     private fun onTimeFrameDeleted() {
         runIfFragmentIsAttached {
             historyView.historyAdapter.refresh()
@@ -266,6 +255,12 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         requireActivity().addMenuProvider(this, viewLifecycleOwner, Lifecycle.State.RESUMED)
+
+        if (requireContext().settings().shouldUseComposableToolbar) {
+            toolbarStore = buildToolbarStore()
+            qrScanFenixFeature = QrScanFenixFeature.register(this, qrScanLauncher)
+            voiceSearchFeature = VoiceSearchFeature.register(this, voiceSearchLauncher)
+        }
 
         consumeFrom(historyStore) {
             historyView.update(it)
@@ -287,15 +282,19 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
         }
 
         startStateBindings()
+
+        pendingDeletionBinding.set(
+            feature = PendingDeletionBinding(requireContext().components.appStore, historyView),
+            owner = this,
+            view = view,
+        )
     }
 
     private fun startStateBindings() {
-        pendingDeletionBinding.start()
         menuBinding.start()
     }
 
     private fun stopStateBindings() {
-        pendingDeletionBinding.stop()
         menuBinding.stop()
     }
 
@@ -312,7 +311,14 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
     override fun onResume() {
         super.onResume()
 
-        (activity as NavHostActivity).getSupportActionBarAndInflateIfNecessary().show()
+        val shouldUseComposableToolbar = context?.settings()?.shouldUseComposableToolbar == true
+        val isSearchActive = context?.components?.appStore?.state?.searchState?.isSearchActive == true
+
+        if (shouldUseComposableToolbar && isSearchActive) {
+            handleShowingSearchUX()
+        } else {
+            (activity as NavHostActivity).getSupportActionBarAndInflateIfNecessary().show()
+        }
     }
 
     override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
@@ -422,17 +428,18 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
                             }
                         }
 
+                        val view = LocalView.current
                         val focusManager = LocalFocusManager.current
                         val keyboardController = LocalSoftwareKeyboardController.current
 
                         LaunchedEffect(historyState.isSearching) {
                             if (!historyState.isSearching) {
-                                (activity as? AppCompatActivity)?.supportActionBar?.show()
-                                binding.historyLayout.updateLayoutParams {
-                                    (this as? ViewGroup.MarginLayoutParams)?.topMargin = 0
-                                }
-                                searchLayout?.isVisible = false
+                                closeSearchUx(searchLayout, focusManager, keyboardController)
                             }
+                        }
+
+                        BackInvokedHandler(historyState.isSearching) {
+                            historyStore.dispatch(SearchDismissed)
                         }
 
                         Column {
@@ -443,59 +450,87 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
                                     .fillMaxSize()
                                     .pointerInput(WindowInsets.isImeVisible) {
                                         detectTapGestures(
-                                            // Hide the keyboard for any touches in the empty area of the awesomebar
+                                            // Exit search for any touches in the empty area of the awesomebar
                                             onPress = {
-                                                keyboardController?.hide()
                                                 focusManager.clearFocus()
-                                                if (searchState.query.isEmpty()) {
-                                                    historyStore.dispatch(SearchDismissed)
-                                                }
+                                                keyboardController?.hide()
+                                                historyStore.dispatch(SearchDismissed)
                                             },
                                         )
                                     },
                             ) {
-                                AwesomeBar(
-                                    text = searchState.query,
-                                    providers = searchState.searchSuggestionsProviders,
-                                    orientation = AwesomeBarOrientation.TOP,
-                                    colors = AwesomeBarDefaults.colors(
-                                        background = Color.Transparent,
-                                        title = FirefoxTheme.colors.textPrimary,
-                                        description = FirefoxTheme.colors.textSecondary,
-                                        autocompleteIcon = FirefoxTheme.colors.textSecondary,
-                                        groupTitle = FirefoxTheme.colors.textSecondary,
-                                    ),
-                                    onSuggestionClicked = { suggestion ->
-                                        searchStore.dispatch(SuggestionClicked(suggestion))
-                                    },
-                                    onAutoComplete = { suggestion ->
-                                        searchStore.dispatch(SuggestionSelected(suggestion))
-                                    },
-                                    onVisibilityStateUpdated = {},
-                                    onScroll = { keyboardController?.hide() },
-                                    profiler = requireComponents.core.engine.profiler,
-                                )
+                                if (searchState.shouldShowSearchSuggestions) {
+                                    AwesomeBar(
+                                        text = searchState.query,
+                                        providers = searchState.searchSuggestionsProviders,
+                                        orientation = AwesomeBarOrientation.TOP,
+                                        colors = AwesomeBarDefaults.colors(
+                                            background = Color.Transparent,
+                                            title = FirefoxTheme.colors.textPrimary,
+                                            description = FirefoxTheme.colors.textSecondary,
+                                            autocompleteIcon = FirefoxTheme.colors.textSecondary,
+                                            groupTitle = FirefoxTheme.colors.textSecondary,
+                                        ),
+                                        onSuggestionClicked = { suggestion ->
+                                            searchStore.dispatch(SuggestionClicked(suggestion))
+                                        },
+                                        onAutoComplete = { suggestion ->
+                                            searchStore.dispatch(SuggestionSelected(suggestion))
+                                        },
+                                        onVisibilityStateUpdated = {
+                                            requireComponents.core.store.dispatch(
+                                                AwesomeBarAction.VisibilityStateUpdated(it),
+                                            )
+                                        },
+                                        onScroll = { view.hideKeyboard() },
+                                        profiler = requireComponents.core.engine.profiler,
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        val appStore = requireComponents.appStore
+        if (!appStore.state.searchState.isSearchActive) {
+            val historySearchEngine = requireComponents.core.store.state.search.searchEngines.firstOrNull {
+                it.id == HISTORY_SEARCH_ENGINE_ID
+            }
+            historySearchEngine?.let {
+                appStore.dispatch(AppAction.SearchAction.SearchEngineSelected(it, false))
+            }
+            appStore.dispatch(AppAction.SearchAction.SearchStarted())
+        }
+
+        showSearchUx()
+    }
+
+    private fun showSearchUx() {
         (activity as? AppCompatActivity)?.supportActionBar?.hide()
         binding.historyLayout.updateLayoutParams {
             (this as? ViewGroup.MarginLayoutParams)?.topMargin =
-                requireContext().resources.getDimensionPixelSize(R.dimen.browser_toolbar_height)
+                pixelSizeFor(R.dimen.composable_browser_toolbar_height)
         }
         searchLayout?.isVisible = true
+    }
 
-        val appStore = requireComponents.appStore
-        val historySearchEngine = requireComponents.core.store.state.search.searchEngines.firstOrNull {
-            it.id == HISTORY_SEARCH_ENGINE_ID
+    private fun closeSearchUx(
+        searchLayout: ComposeView?,
+        focusManager: FocusManager,
+        keyboardController: SoftwareKeyboardController?,
+    ) {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+
+        (activity as NavHostActivity).getSupportActionBarAndInflateIfNecessary().show()
+        binding.historyLayout.updateLayoutParams {
+            (this as? ViewGroup.MarginLayoutParams)?.topMargin = 0
         }
-        historySearchEngine?.let {
-            appStore.dispatch(AppAction.SearchEngineSelected(it, false))
-        }
-        appStore.dispatch(AppAction.UpdateSearchBeingActiveState(true))
+        searchLayout?.isVisible = false
+        requireComponents.appStore.dispatch(AppAction.SearchAction.SearchEnded)
+        toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(""))
+        requireComponents.core.store.dispatch(EngagementFinished(abandoned = true))
     }
 
     private fun handleOpenHistoryInPrivateTabsMultiSelectMenuItem() {
@@ -527,7 +562,7 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
     }
 
     private fun showTabTray(openInPrivate: Boolean = false) {
-        if (DefaultTabManagementFeatureHelper.enhancementsEnabled) {
+        if (requireContext().settings().tabManagerEnhancementsEnabled) {
             findNavController().nav(
                 R.id.historyFragment,
                 HistoryFragmentDirections.actionGlobalTabManagementFragment(
@@ -548,23 +583,6 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
                         Page.NormalTabs
                     },
                 ),
-            )
-        }
-    }
-
-    private fun getMultiSelectSnackBarMessage(historyItems: Set<History>): String {
-        return if (historyItems.size > 1) {
-            getString(R.string.history_delete_multiple_items_snackbar)
-        } else {
-            val historyItem = historyItems.first()
-
-            String.format(
-                requireContext().getString(R.string.history_delete_single_item_snackbar),
-                if (historyItem is History.Regular) {
-                    historyItem.url.toShortUrl(requireComponents.publicSuffixList)
-                } else {
-                    historyItem.title
-                },
             )
         }
     }
@@ -605,18 +623,18 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
     }
 
     private fun openRegularItem(item: History.Regular) = runIfFragmentIsAttached {
-        (activity as HomeActivity).openToBrowserAndLoad(
+        requireComponents.useCases.fenixBrowserUseCases.loadUrlOrSearch(
             searchTermOrURL = item.url,
-            newTab = true,
-            from = BrowserDirection.FromHistory,
+            newTab = requireComponents.settings.enableHomepageAsNewTab.not(),
+            private = (requireActivity() as HomeActivity).browsingModeManager.mode.isPrivate,
         )
+        findNavController().navigate(R.id.browserFragment)
     }
 
     private fun onDeleteInitiated(items: Set<History>) {
         val appStore = requireContext().components.appStore
 
         appStore.dispatch(AppAction.AddPendingDeletionSet(items.toPendingDeletionHistory()))
-        showDeleteSnackbar(items)
     }
 
     private fun share(data: List<ShareData>) {
@@ -639,34 +657,6 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
             HistoryFragmentDirections.actionGlobalRecentlyClosed(),
             NavOptions.Builder().setPopUpTo(R.id.recentlyClosedFragment, true).build(),
         )
-    }
-
-    private suspend fun undo(appStore: AppStore, items: Set<History>) = withContext(IO) {
-        val pendingDeletionItems = items.map { it.toPendingDeletionHistory() }.toSet()
-        appStore.dispatch(AppAction.UndoPendingDeletionSet(pendingDeletionItems))
-    }
-
-    private suspend fun delete(
-        browserStore: BrowserStore,
-        historyStorage: PlacesHistoryStorage,
-        items: Set<History>,
-    ) = withContext(IO) {
-        historyStore.dispatch(HistoryFragmentAction.EnterDeletionMode)
-        for (item in items) {
-            when (item) {
-                is History.Regular -> historyStorage.deleteVisitsFor(item.url)
-                is History.Group -> {
-                    // NB: If we have non-search groups, this logic needs to be updated.
-                    historyProvider.deleteMetadataSearchGroup(item)
-                    browserStore.dispatch(
-                        HistoryMetadataAction.DisbandSearchGroupAction(searchTerm = item.title),
-                    )
-                }
-                // We won't encounter individual metadata entries outside of groups.
-                is History.Metadata -> {}
-            }
-        }
-        historyStore.dispatch(HistoryFragmentAction.ExitDeletionMode)
     }
 
     private fun onDeleteTimeRange(selectedTimeFrame: RemoveTimeFrame?) {
@@ -698,7 +688,7 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
         private val onDeleteTimeRange: (selectedTimeFrame: RemoveTimeFrame?) -> Unit,
     ) : DialogFragment() {
         override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 val layout = getLayoutInflater().inflate(R.layout.delete_history_time_range_dialog, null)
                 val radioGroup = layout.findViewById<RadioGroup>(R.id.radio_group)
                 radioGroup.check(R.id.last_hour_button)
@@ -727,6 +717,8 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
         BrowserToolbarStore(
             initialState = BrowserToolbarState(mode = Mode.EDIT),
             middleware = listOf(
+                BrowserToolbarSyncToHistoryMiddleware(historyStore),
+                BrowserToolbarSearchStatusSyncMiddleware(requireComponents.appStore),
                 BrowserToolbarSearchMiddleware(
                     appStore = requireComponents.appStore,
                     browserStore = requireComponents.core.store,
@@ -738,9 +730,9 @@ class HistoryFragment : LibraryPageFragment<History>(), UserInteractionHandler, 
     }.also {
         it.dispatch(
             EnvironmentRehydrated(
-                HomeToolbarEnvironment(
+                BrowserToolbarEnvironment(
                     context = requireContext(),
-                    viewLifecycleOwner = viewLifecycleOwner,
+                    fragment = this,
                     navController = findNavController(),
                     browsingModeManager = (requireActivity() as HomeActivity).browsingModeManager,
                 ),

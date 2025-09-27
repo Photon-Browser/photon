@@ -7,6 +7,15 @@
     android:key="@string/pref_key_customization_preference_screen" >
     <androidx.preference.PreferenceCategory
         android:layout="@layout/preference_cat_style"
+        android:title="@string/preferences_app_icon"
+        android:key="@string/pref_key_customization_category_app_icon"
+        app:iconSpaceReserved="false">
+        <org.mozilla.fenix.iconpicker.ui.AppIconPreference
+            android:key="@string/pref_key_app_icon" />
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_theme"
         app:iconSpaceReserved="false">
         <org.mozilla.fenix.settings.RadioButtonPreference
@@ -67,22 +76,10 @@
         android:visible="false"
         app:iconSpaceReserved="false">
         <org.mozilla.fenix.settings.ToggleRadioButtonPreference
-            android:key="@string/pref_key_toolbar_simple"
-            app:sharedPreferenceKey="pref_key_toolbar_simple"
-            app:trueOptionTitle="@string/preference_simple_toolbar"
-            app:falseOptionTitle="@string/preference_expanded_toolbar"
-            app:trueOptionIconRes="@drawable/ic_toolbar_simple"
-            app:falseOptionIconRes="@drawable/ic_toolbar_expanded" />
-    </androidx.preference.PreferenceCategory>
-
-    <androidx.preference.PreferenceCategory
-        android:layout="@layout/preference_cat_style"
-        android:title="@string/preferences_app_icon"
-        android:key="@string/pref_key_customization_category_app_icon"
-        app:iconSpaceReserved="false">
-
-        <org.mozilla.fenix.iconpicker.ui.AppIconPreference
-            android:key="@string/pref_key_app_icon" />
+            android:key="@string/pref_key_toolbar_expanded"
+            app:sharedPreferenceKey="pref_key_toolbar_expanded"
+            app:falseOptionTitle="@string/preference_simple_toolbar"
+            app:trueOptionTitle="@string/preference_expanded_toolbar" />
     </androidx.preference.PreferenceCategory>
 
     <androidx.preference.PreferenceCategory

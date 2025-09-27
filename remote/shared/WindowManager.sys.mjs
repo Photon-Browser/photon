@@ -363,7 +363,7 @@ class WindowManager {
     } = options;
 
     switch (lazy.AppInfo.name) {
-      case "Firefox":
+      case "Firefox": {
         if (openerWindow === null) {
           // If no opener was provided, fallback to the topmost window.
           openerWindow = Services.wm.getMostRecentBrowserWindow();
@@ -406,6 +406,7 @@ class WindowManager {
         }
 
         return browser.ownerGlobal;
+      }
 
       default:
         throw new lazy.error.UnsupportedOperationError(
@@ -536,6 +537,11 @@ class WindowManager {
     const { browsingContext } = data;
 
     const window = this.#getBrowsingContextWindow(browsingContext);
+    if (!window) {
+      // Short-lived iframes might already be disconnected from their parent
+      // window.
+      return;
+    }
     this.#clientWindowIds.set(browsingContext, this.getIdForWindow(window));
   };
 }

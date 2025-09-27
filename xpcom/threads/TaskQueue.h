@@ -13,9 +13,11 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/Queue.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/TargetShutdownTaskSet.h"
 #include "mozilla/TaskDispatcher.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "nsIDirectTaskDispatcher.h"
+#include "nsITargetShutdownTask.h"
 #include "nsThreadUtils.h"
 
 #define MOZILLA_TASKQUEUE_IID \
@@ -69,8 +71,15 @@ class TaskQueue final : public AbstractThread,
 
   TaskDispatcher& TailDispatcher() override;
 
+  NS_IMETHOD DispatchFromScript(nsIRunnable* aEvent,
+                                DispatchFlags aFlags) override {
+    return Dispatch(do_AddRef(aEvent), aFlags);
+  }
+
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                      uint32_t aFlags) override {
+                      DispatchFlags aFlags) override {
+    // NOTE: This dispatch implementation never leaks the runnable on failure,
+    // even if `NS_DISPATCH_FALLIBLE` is not specified.
     nsCOMPtr<nsIRunnable> runnable = aEvent;
     {
       MonitorAutoLock mon(mQueueMonitor);
@@ -152,14 +161,15 @@ class TaskQueue final : public AbstractThread,
   TaskQueue(already_AddRefed<nsIEventTarget> aTarget, const char* aName,
             bool aSupportsTailDispatch);
 
-  virtual ~TaskQueue();
+  virtual ~TaskQueue() = default;
 
   // Blocks until all task finish executing. Called internally by methods
   // that need to wait until the task queue is idle.
   // mQueueMonitor must be held.
   void AwaitIdleLocked();
 
-  nsresult DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable, uint32_t aFlags,
+  nsresult DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
+                          DispatchFlags aFlags,
                           DispatchReason aReason = NormalDispatch);
 
   void MaybeResolveShutdown();
@@ -176,15 +186,14 @@ class TaskQueue final : public AbstractThread,
 
   typedef struct TaskStruct {
     nsCOMPtr<nsIRunnable> event;
-    uint32_t flags;
+    DispatchFlags flags;
   } TaskStruct;
 
   // Queue of tasks to run.
   Queue<TaskStruct> mTasks MOZ_GUARDED_BY(mQueueMonitor);
 
   // List of tasks to run during shutdown.
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
-      MOZ_GUARDED_BY(mQueueMonitor);
+  TargetShutdownTaskSet mShutdownTasks MOZ_GUARDED_BY(mQueueMonitor);
 
   // The thread currently running the task queue. We store a reference
   // to this so that IsCurrentThreadIn() can tell if the current thread

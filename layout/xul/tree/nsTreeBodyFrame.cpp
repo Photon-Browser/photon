@@ -770,7 +770,7 @@ nsTreeBodyFrame::ScrollParts nsTreeBodyFrame::GetScrollParts() {
     // dumb! We should know where these frames are.
     FindScrollParts(treeFrame, &result);
     if (result.mVScrollbar) {
-      result.mVScrollbar->SetScrollbarMediatorContent(GetContent());
+      result.mVScrollbar->SetOverrideScrollbarMediator(this);
       result.mVScrollbarContent = result.mVScrollbar->GetContent()->AsElement();
     }
   }
@@ -778,19 +778,16 @@ nsTreeBodyFrame::ScrollParts nsTreeBodyFrame::GetScrollParts() {
 }
 
 void nsTreeBodyFrame::UpdateScrollbars(const ScrollParts& aParts) {
-  nscoord rowHeightAsPixels = nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
-
-  AutoWeakFrame weakFrame(this);
-
-  if (aParts.mVScrollbar) {
-    nsAutoString curPos;
-    curPos.AppendInt(mTopRowIndex * rowHeightAsPixels);
-    aParts.mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::curpos,
-                                       curPos, true);
-    // 'this' might be deleted here
+  if (!aParts.mVScrollbar) {
+    return;
   }
-
-  if (weakFrame.IsAlive() && mScrollbarActivity) {
+  CSSIntCoord rowHeightAsPixels =
+      nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
+  CSSIntCoord pos = mTopRowIndex * rowHeightAsPixels;
+  if (!aParts.mVScrollbar->SetCurPos(pos)) {
+    return;
+  }
+  if (mScrollbarActivity) {
     mScrollbarActivity->ActivityOccurred();
   }
 }
@@ -840,35 +837,17 @@ void nsTreeBodyFrame::CheckOverflow(const ScrollParts& aParts) {
 }
 
 void nsTreeBodyFrame::InvalidateScrollbars(const ScrollParts& aParts) {
-  if (mUpdateBatchNest || !mView) {
+  if (mUpdateBatchNest || !mView || !aParts.mVScrollbar) {
     return;
   }
-  AutoWeakFrame weakFrame(this);
-
-  if (aParts.mVScrollbar) {
-    // Do Vertical Scrollbar
-    nsAutoString maxposStr;
-
-    nscoord rowHeightAsPixels =
-        nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
-
-    int32_t size = rowHeightAsPixels *
-                   (mRowCount > mPageLength ? mRowCount - mPageLength : 0);
-    maxposStr.AppendInt(size);
-    aParts.mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::maxpos,
-                                       maxposStr, true);
-    NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
-
-    // Also set our page increment and decrement.
-    nscoord pageincrement = mPageLength * rowHeightAsPixels;
-    nsAutoString pageStr;
-    pageStr.AppendInt(pageincrement);
-    aParts.mVScrollbarContent->SetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::pageincrement, pageStr, true);
-    NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
-  }
-
-  if (weakFrame.IsAlive() && mScrollbarActivity) {
+  nscoord rowHeightAsPixels = nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
+  CSSIntCoord size = rowHeightAsPixels *
+                     (mRowCount > mPageLength ? mRowCount - mPageLength : 0);
+  CSSIntCoord pageincrement = mPageLength * rowHeightAsPixels;
+  bool changed = false;
+  changed |= aParts.mVScrollbar->SetMaxPos(size);
+  changed |= aParts.mVScrollbar->SetPageIncrement(pageincrement);
+  if (changed && mScrollbarActivity) {
     mScrollbarActivity->ActivityOccurred();
   }
 }
@@ -1580,7 +1559,8 @@ nsresult nsTreeBodyFrame::IsCellCropped(int32_t aRow, nsTreeColumn* aCol,
 
 nsresult nsTreeBodyFrame::CreateTimer(const LookAndFeel::IntID aID,
                                       nsTimerCallbackFunc aFunc, int32_t aType,
-                                      nsITimer** aTimer, const char* aName) {
+                                      nsITimer** aTimer,
+                                      const nsACString& aName) {
   // Get the delay from the look and feel service.
   int32_t delay = LookAndFeel::GetInt(aID, 0);
 
@@ -1664,6 +1644,12 @@ nsresult nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount) {
       }
       needsInvalidation = true;
     }
+  }
+
+  int32_t lastPageTopRow = std::max(0, mRowCount - mPageLength);
+  if (mTopRowIndex > lastPageTopRow) {
+    mTopRowIndex = lastPageTopRow;
+    needsInvalidation = true;
   }
 
   FullScrollbarsUpdate(needsInvalidation);
@@ -1947,7 +1933,7 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
   const nsStylePosition* myPosition = aComputedStyle->StylePosition();
   const AnchorPosResolutionParams anchorResolutionParams{
       this, aComputedStyle->StyleDisplay()->mPosition};
-  const auto width = myPosition->GetWidth(anchorResolutionParams.mPosition);
+  const auto width = myPosition->GetWidth(anchorResolutionParams);
   if (width->ConvertsToLength()) {
     int32_t val = width->ToLength();
     r.width += val;
@@ -1955,7 +1941,7 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
     needWidth = true;
   }
 
-  const auto height = myPosition->GetHeight(anchorResolutionParams.mPosition);
+  const auto height = myPosition->GetHeight(anchorResolutionParams);
   if (height->ConvertsToLength()) {
     int32_t val = height->ToLength();
     r.height += val;
@@ -2009,7 +1995,7 @@ nsSize nsTreeBodyFrame::GetImageDestSize(ComputedStyle* aComputedStyle,
   const nsStylePosition* myPosition = aComputedStyle->StylePosition();
   const AnchorPosResolutionParams anchorResolutionParams{
       this, aComputedStyle->StyleDisplay()->mPosition};
-  const auto width = myPosition->GetWidth(anchorResolutionParams.mPosition);
+  const auto width = myPosition->GetWidth(anchorResolutionParams);
   if (width->ConvertsToLength()) {
     // CSS has specified the destination width.
     size.width = width->ToLength();
@@ -2018,7 +2004,7 @@ nsSize nsTreeBodyFrame::GetImageDestSize(ComputedStyle* aComputedStyle,
     needWidth = true;
   }
 
-  const auto height = myPosition->GetHeight(anchorResolutionParams.mPosition);
+  const auto height = myPosition->GetHeight(anchorResolutionParams);
   if (height->ConvertsToLength()) {
     // CSS has specified the destination height.
     size.height = height->ToLength();
@@ -2103,14 +2089,13 @@ int32_t nsTreeBodyFrame::GetRowHeight() {
 
     nscoord minHeight = 0;
     const auto styleMinHeight =
-        myPosition->GetMinHeight(anchorResolutionParams.mPosition);
+        myPosition->GetMinHeight(anchorResolutionParams);
     if (styleMinHeight->ConvertsToLength()) {
       minHeight = styleMinHeight->ToLength();
     }
 
     nscoord height = 0;
-    const auto styleHeight =
-        myPosition->GetHeight(anchorResolutionParams.mPosition);
+    const auto styleHeight = myPosition->GetHeight(anchorResolutionParams);
     if (styleHeight->ConvertsToLength()) {
       height = styleHeight->ToLength();
     }
@@ -2148,7 +2133,7 @@ int32_t nsTreeBodyFrame::GetIndentation() {
     const nsStylePosition* myPosition = indentContext->StylePosition();
     const AnchorPosResolutionParams anchorResolutionParams{
         this, indentContext->StyleDisplay()->mPosition};
-    const auto width = myPosition->GetWidth(anchorResolutionParams.mPosition);
+    const auto width = myPosition->GetWidth(anchorResolutionParams);
     if (width->ConvertsToLength()) {
       return width->ToLength();
     }
@@ -2289,7 +2274,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
         // Set a timer to trigger the tree scrolling.
         CreateTimer(LookAndFeel::IntID::TreeLazyScrollDelay, LazyScrollCallback,
                     nsITimer::TYPE_ONE_SHOT, getter_AddRefs(mSlots->mTimer),
-                    "nsTreeBodyFrame::LazyScrollCallback");
+                    "nsTreeBodyFrame::LazyScrollCallback"_ns);
       }
 #endif
       // Bail out to prevent spring loaded timer and feedback line settings.
@@ -2329,7 +2314,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
               CreateTimer(LookAndFeel::IntID::TreeOpenDelay, OpenCallback,
                           nsITimer::TYPE_ONE_SHOT,
                           getter_AddRefs(mSlots->mTimer),
-                          "nsTreeBodyFrame::OpenCallback");
+                          "nsTreeBodyFrame::OpenCallback"_ns);
             }
           }
         }
@@ -2407,7 +2392,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
       // Close all spring loaded folders except the drop folder.
       CreateTimer(LookAndFeel::IntID::TreeCloseDelay, CloseCallback,
                   nsITimer::TYPE_ONE_SHOT, getter_AddRefs(mSlots->mTimer),
-                  "nsTreeBodyFrame::CloseCallback");
+                  "nsTreeBodyFrame::CloseCallback"_ns);
     }
   }
 
@@ -2780,8 +2765,7 @@ ImgDrawResult nsTreeBodyFrame::PaintSeparator(int32_t aRowIndex,
 
   // Obtain the height for the separator or use the default value.
   nscoord height;
-  const auto styleHeight =
-      stylePosition->GetHeight(anchorResolutionParams.mPosition);
+  const auto styleHeight = stylePosition->GetHeight(anchorResolutionParams);
   if (styleHeight->ConvertsToLength()) {
     height = styleHeight->ToLength();
   } else {
@@ -3519,8 +3503,7 @@ ImgDrawResult nsTreeBodyFrame::PaintDropFeedback(
     nscoord width;
     const AnchorPosResolutionParams anchorResolutionParams{
         this, feedbackContext->StyleDisplay()->mPosition};
-    const auto styleWidth =
-        stylePosition->GetWidth(anchorResolutionParams.mPosition);
+    const auto styleWidth = stylePosition->GetWidth(anchorResolutionParams);
     if (styleWidth->ConvertsToLength()) {
       width = styleWidth->ToLength();
     } else {
@@ -3530,8 +3513,7 @@ ImgDrawResult nsTreeBodyFrame::PaintDropFeedback(
 
     // Obtain the height for the drop feedback or use default value.
     nscoord height;
-    const auto styleHeight =
-        stylePosition->GetHeight(anchorResolutionParams.mPosition);
+    const auto styleHeight = stylePosition->GetHeight(anchorResolutionParams);
     if (styleHeight->ConvertsToLength()) {
       height = styleHeight->ToLength();
     } else {
@@ -3696,22 +3678,17 @@ void nsTreeBodyFrame::ScrollByLine(nsScrollbarFrame* aScrollbar,
   ScrollByLines(aDirection);
 }
 
-void nsTreeBodyFrame::ScrollByUnit(
-    nsScrollbarFrame* aScrollbar, ScrollMode aMode, int32_t aDirection,
-    ScrollUnit aUnit, ScrollSnapFlags aSnapFlags /* = Disabled */) {
-  MOZ_ASSERT_UNREACHABLE("Can't get here, we pass false to MoveToNewPosition");
+void nsTreeBodyFrame::ScrollByUnit(nsScrollbarFrame* aScrollbar,
+                                   ScrollMode aMode, int32_t aDirection,
+                                   ScrollUnit aUnit,
+                                   ScrollSnapFlags aSnapFlags) {
+  MOZ_ASSERT_UNREACHABLE("Can't get here, we don't call MoveToNewPosition");
 }
 
 void nsTreeBodyFrame::RepeatButtonScroll(nsScrollbarFrame* aScrollbar) {
   MOZ_ASSERT(!aScrollbar->IsHorizontal());
   ScrollParts parts = GetScrollParts();
-  int32_t increment = aScrollbar->GetIncrement();
-  int32_t direction = 0;
-  if (increment < 0) {
-    direction = -1;
-  } else if (increment > 0) {
-    direction = 1;
-  }
+  int32_t direction = aScrollbar->GetButtonScrollDirection();
   AutoWeakFrame weakFrame(this);
   ScrollToRowInternal(parts, mTopRowIndex + direction);
 
@@ -3975,7 +3952,7 @@ void nsTreeBodyFrame::LazyScrollCallback(nsITimer* aTimer, void* aClosure) {
       self->CreateTimer(LookAndFeel::IntID::TreeScrollDelay, ScrollCallback,
                         nsITimer::TYPE_REPEATING_SLACK,
                         getter_AddRefs(self->mSlots->mTimer),
-                        "nsTreeBodyFrame::ScrollCallback");
+                        "nsTreeBodyFrame::ScrollCallback"_ns);
       self->ScrollByLines(self->mSlots->mScrollLines);
       // ScrollByLines may have deleted |self|.
     }

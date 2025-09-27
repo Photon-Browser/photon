@@ -1624,32 +1624,34 @@ class RtlAllocPolicy {
  public:
   template <typename T>
   T* maybe_pod_malloc(size_t aNumElems) {
-    if (aNumElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+    size_t size;
+    if (MOZ_UNLIKELY(__builtin_mul_overflow(aNumElems, sizeof(T), &size))) {
       return nullptr;
     }
 
-    return static_cast<T*>(
-        ::RtlAllocateHeap(RtlGetProcessHeap(), 0, aNumElems * sizeof(T)));
+    return static_cast<T*>(::RtlAllocateHeap(RtlGetProcessHeap(), 0, size));
   }
 
   template <typename T>
   T* maybe_pod_calloc(size_t aNumElems) {
-    if (aNumElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+    size_t size;
+    if (MOZ_UNLIKELY(__builtin_mul_overflow(aNumElems sizeof(T), &size))) {
       return nullptr;
     }
 
-    return static_cast<T*>(::RtlAllocateHeap(
-        RtlGetProcessHeap(), HEAP_ZERO_MEMORY, aNumElems * sizeof(T)));
+    return static_cast<T*>(
+        ::RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, size));
   }
 
   template <typename T>
   T* maybe_pod_realloc(T* aPtr, size_t aOldSize, size_t aNewSize) {
-    if (aNewSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value) {
+    size_t size;
+    if (MOZ_UNLIKELY(__builtin_mul_overflow(aNewSize, sizeof(T), &size))) {
       return nullptr;
     }
 
-    return static_cast<T*>(::RtlReAllocateHeap(RtlGetProcessHeap(), 0, aPtr,
-                                               aNewSize * sizeof(T)));
+    return static_cast<T*>(
+        ::RtlReAllocateHeap(RtlGetProcessHeap(), 0, aPtr, size));
   }
 
   template <typename T>

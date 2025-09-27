@@ -29,6 +29,7 @@
 #include "mozilla/dom/PolicyContainerMessageUtils.h"
 #include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/NavigationAPIIPCUtils.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
@@ -253,6 +254,11 @@ bool SessionHistoryInfo::IsSubFrame() const {
 
 nsStructuredCloneContainer* SessionHistoryInfo::GetNavigationState() const {
   return mSharedState.Get()->mNavigationState.get();
+}
+
+void SessionHistoryInfo::SetNavigationState(
+    nsStructuredCloneContainer* aState) {
+  mSharedState.Get()->mNavigationState = aState;
 }
 
 void SessionHistoryInfo::SetSaveLayoutStateFlag(bool aSaveLayoutStateFlag) {
@@ -1540,6 +1546,22 @@ void SessionHistoryEntry::SetInfo(SessionHistoryInfo* aInfo) {
   mInfo = MakeUnique<SessionHistoryInfo>(*aInfo);
 }
 
+already_AddRefed<nsIURI> SessionHistoryInfo::GetURIOrInheritedForAboutBlank()
+    const {
+  if (mURI && NS_IsAboutBlankAllowQueryAndFragment(mURI)) {
+    auto* principal = GetPrincipalToInherit();
+    if (principal) {
+      return principal->GetURI();
+    }
+  }
+  return do_AddRef(mURI);
+}
+
+already_AddRefed<nsIURI> SessionHistoryEntry::GetURIOrInheritedForAboutBlank()
+    const {
+  return mInfo->GetURIOrInheritedForAboutBlank();
+}
+
 }  // namespace dom
 
 namespace ipc {
@@ -1558,6 +1580,17 @@ void IPDLParamTraits<dom::SessionHistoryInfo>::Write(
         aParam.mStateData->GetFormatVersion(&std::get<0>(*stateData)));
     NS_ENSURE_TRUE_VOID(
         aParam.mStateData->BuildClonedMessageData(std::get<1>(*stateData)));
+  }
+
+  Maybe<std::tuple<uint32_t, dom::ClonedMessageData>> navigationState;
+  if (aParam.mSharedState.Get()->mNavigationState) {
+    navigationState.emplace();
+    NS_ENSURE_SUCCESS_VOID(
+        aParam.mSharedState.Get()->mNavigationState->GetFormatVersion(
+            &std::get<0>(*navigationState)));
+    NS_ENSURE_TRUE_VOID(
+        aParam.mSharedState.Get()->mNavigationState->BuildClonedMessageData(
+            std::get<1>(*navigationState)));
   }
 
   WriteIPDLParam(aWriter, aActor, aParam.mURI);
@@ -1597,6 +1630,7 @@ void IPDLParamTraits<dom::SessionHistoryInfo>::Write(
   WriteIPDLParam(aWriter, aActor,
                  aParam.mSharedState.Get()->mIsFrameNavigation);
   WriteIPDLParam(aWriter, aActor, aParam.mSharedState.Get()->mSaveLayoutState);
+  WriteIPDLParam(aWriter, aActor, navigationState);
 }
 
 bool IPDLParamTraits<dom::SessionHistoryInfo>::Read(
@@ -1702,6 +1736,7 @@ bool IPDLParamTraits<dom::SessionHistoryInfo>::Read(
     aResult->mSharedState.Get()->mContentType = contentType;
   }
 
+  Maybe<std::tuple<uint32_t, dom::ClonedMessageData>> navigationState;
   if (!ReadIPDLParam(aReader, aActor,
                      &aResult->mSharedState.Get()->mLayoutHistoryState) ||
       !ReadIPDLParam(aReader, aActor,
@@ -1709,7 +1744,8 @@ bool IPDLParamTraits<dom::SessionHistoryInfo>::Read(
       !ReadIPDLParam(aReader, aActor,
                      &aResult->mSharedState.Get()->mIsFrameNavigation) ||
       !ReadIPDLParam(aReader, aActor,
-                     &aResult->mSharedState.Get()->mSaveLayoutState)) {
+                     &aResult->mSharedState.Get()->mSaveLayoutState) ||
+      !ReadIPDLParam(aReader, aActor, &navigationState)) {
     aActor->FatalError("Error reading fields for SessionHistoryInfo");
     return false;
   }
@@ -1720,6 +1756,17 @@ bool IPDLParamTraits<dom::SessionHistoryInfo>::Read(
     aResult->mStateData->StealFromClonedMessageData(std::get<1>(*stateData));
   }
   MOZ_ASSERT_IF(stateData.isNothing(), !aResult->mStateData);
+
+  if (navigationState.isSome()) {
+    uint32_t version = std::get<0>(*navigationState);
+    aResult->mSharedState.Get()->mNavigationState =
+        new nsStructuredCloneContainer(version);
+    aResult->mSharedState.Get()->mNavigationState->StealFromClonedMessageData(
+        std::get<1>(*navigationState));
+  }
+  MOZ_ASSERT_IF(navigationState.isNothing(),
+                !aResult->mSharedState.Get()->mNavigationState);
+
   return true;
 }
 
@@ -1727,6 +1774,9 @@ void IPDLParamTraits<dom::LoadingSessionHistoryInfo>::Write(
     IPC::MessageWriter* aWriter, IProtocol* aActor,
     const dom::LoadingSessionHistoryInfo& aParam) {
   WriteIPDLParam(aWriter, aActor, aParam.mInfo);
+  WriteIPDLParam(aWriter, aActor, aParam.mContiguousEntries);
+  WriteIPDLParam(aWriter, aActor, aParam.mTriggeringEntry);
+  WriteIPDLParam(aWriter, aActor, aParam.mTriggeringNavigationType);
   WriteIPDLParam(aWriter, aActor, aParam.mLoadId);
   WriteIPDLParam(aWriter, aActor, aParam.mLoadIsFromSessionHistory);
   WriteIPDLParam(aWriter, aActor, aParam.mOffset);
@@ -1738,6 +1788,9 @@ bool IPDLParamTraits<dom::LoadingSessionHistoryInfo>::Read(
     IPC::MessageReader* aReader, IProtocol* aActor,
     dom::LoadingSessionHistoryInfo* aResult) {
   if (!ReadIPDLParam(aReader, aActor, &aResult->mInfo) ||
+      !ReadIPDLParam(aReader, aActor, &aResult->mContiguousEntries) ||
+      !ReadIPDLParam(aReader, aActor, &aResult->mTriggeringEntry) ||
+      !ReadIPDLParam(aReader, aActor, &aResult->mTriggeringNavigationType) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mLoadId) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mLoadIsFromSessionHistory) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mOffset) ||

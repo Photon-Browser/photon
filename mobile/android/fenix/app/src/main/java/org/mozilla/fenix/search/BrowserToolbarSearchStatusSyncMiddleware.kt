@@ -24,8 +24,8 @@ import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.ext.flow
 import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.appstate.AppAction.UpdateSearchBeingActiveState
-import org.mozilla.fenix.home.toolbar.HomeToolbarEnvironment
+import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
+import org.mozilla.fenix.components.toolbar.BrowserToolbarEnvironment
 import mozilla.components.lib.state.Action as MVIAction
 
 /**
@@ -37,7 +37,7 @@ class BrowserToolbarSearchStatusSyncMiddleware(
     private val appStore: AppStore,
 ) : Middleware<BrowserToolbarState, BrowserToolbarAction> {
     @VisibleForTesting
-    internal var environment: HomeToolbarEnvironment? = null
+    internal var environment: BrowserToolbarEnvironment? = null
     private var syncSearchActiveJob: Job? = null
 
     override fun invoke(
@@ -48,40 +48,34 @@ class BrowserToolbarSearchStatusSyncMiddleware(
         next(action)
 
         if (action is EnvironmentRehydrated) {
-            environment = action.environment as? HomeToolbarEnvironment
-
-            if (appStore.state.isSearchActive) {
-                syncSearchActive(context.store)
-            }
+            environment = action.environment as? BrowserToolbarEnvironment
+            syncSearchActive(context)
         }
         if (action is EnvironmentCleared) {
+            syncSearchActiveJob?.cancel()
             environment = null
         }
 
-        if (action is ToggleEditMode) {
-            when (action.editMode) {
-                true -> syncSearchActive(context.store)
-                false -> syncSearchActiveJob?.cancel()
-            }
-            appStore.dispatch(UpdateSearchBeingActiveState(isSearchActive = action.editMode))
+        if (action is ToggleEditMode && !action.editMode) {
+            // Only support the toolbar triggering exiting search mode in the application.
+            // Entering search mode in the application needs more parameters and so
+            // this must happen through a specifically configured action, not through an automated one.
+            appStore.dispatch(SearchEnded)
         }
     }
 
-    private fun syncSearchActive(store: Store<BrowserToolbarState, BrowserToolbarAction>) {
-        syncSearchActiveJob?.cancel()
+    private fun syncSearchActive(context: MiddlewareContext<BrowserToolbarState, BrowserToolbarAction>) {
         syncSearchActiveJob = appStore.observeWhileActive {
-            distinctUntilChangedBy { it.isSearchActive }
+            distinctUntilChangedBy { it.searchState.isSearchActive }
                 .collect {
-                    if (!it.isSearchActive) {
-                        store.dispatch(ToggleEditMode(false))
-                    }
+                    context.dispatch(ToggleEditMode(it.searchState.isSearchActive))
                 }
         }
     }
 
     private inline fun <S : State, A : MVIAction> Store<S, A>.observeWhileActive(
         crossinline observe: suspend (Flow<S>.() -> Unit),
-    ): Job? = environment?.viewLifecycleOwner?.run {
+    ): Job? = environment?.fragment?.viewLifecycleOwner?.run {
         lifecycleScope.launch {
             repeatOnLifecycle(RESUMED) {
                 flow().observe()

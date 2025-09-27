@@ -92,6 +92,12 @@ support-files = [
 
 ["browser_fixed_ABA_partitionKey.js"]
 
+["browser_foreignWorker_eventSource.js"]
+support-files= [
+  "eventsource_worker.js",
+  "eventsource_message.sjs",
+]
+
 ["browser_hasStorageAccess.js"]
 
 ["browser_iframe_document_open.js"]
@@ -224,9 +230,7 @@ support-files = [
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.xhr.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.xhr.html",
 ]
-skip-if = [
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1775745
-]
+skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug"] # Bug 1775745
 
 ["browser_staticPartition_network.js"]
 
@@ -241,7 +245,6 @@ support-files = [
 ["browser_staticPartition_tls_session.js"]
 
 ["browser_staticPartition_websocket.js"]
-skip-if = ["os == 'mac' && verify"] # Bug 1721210
 support-files = ["file_ws_handshake_delay_wsh.py"]
 
 ["browser_storageAccessAutograntFromFedCM.js"]

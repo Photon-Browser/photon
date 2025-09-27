@@ -6,6 +6,7 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   RemoteL10n: "resource:///modules/asrouter/RemoteL10n.sys.mjs",
   SpecialMessageActions:
@@ -20,6 +21,7 @@ const TYPES = {
 const FTL_FILES = [
   "browser/newtab/asrouter.ftl",
   "browser/defaultBrowserNotification.ftl",
+  "browser/profiles.ftl",
   "browser/termsofuse.ftl",
   "preview/termsOfUse.ftl",
 ];
@@ -32,6 +34,9 @@ class InfoBarNotification {
     this.infobarCallback = this.infobarCallback.bind(this);
     this.message = message;
     this.notification = null;
+    // If set, this is the pref to watch for changes to auto-dismiss the infobar.
+    this._dismissPref = message?.content?.dismissOnPrefChange || null;
+    this._prefObserver = null;
   }
 
   /**
@@ -104,6 +109,8 @@ class InfoBarNotification {
         }
         anchors.push(...importedNode.querySelectorAll("a[data-l10n-name]"));
 
+        const linkActions = this.message.content.linkActions || {};
+
         for (const a of anchors) {
           const name = a.dataset.l10nName;
           const template = doc
@@ -115,10 +122,35 @@ class InfoBarNotification {
           a.href = template.href;
           a.addEventListener("click", e => {
             e.preventDefault();
-            lazy.SpecialMessageActions.handleAction(
-              { type: "OPEN_URL", data: { args: a.href, where: "tab" } },
-              browser
-            );
+            // Open link URL
+            try {
+              lazy.SpecialMessageActions.handleAction(
+                {
+                  type: "OPEN_URL",
+                  data: { args: a.href, where: args?.where || "tab" },
+                },
+                browser
+              );
+            } catch (err) {
+              console.error(`Error handling OPEN_URL action:`, err);
+            }
+            // Then fire the defined actions for that link, if applicable
+            if (linkActions[name]) {
+              try {
+                lazy.SpecialMessageActions.handleAction(
+                  linkActions[name],
+                  browser
+                );
+              } catch (err) {
+                console.error(
+                  `Error handling ${linkActions[name]} action:`,
+                  err
+                );
+              }
+              if (linkActions[name].dismiss) {
+                this.notification?.dismiss();
+              }
+            }
           });
         }
       }
@@ -170,20 +202,23 @@ class InfoBarNotification {
       content.type !== TYPES.UNIVERSAL ||
       !InfoBar._universalInfobars.length
     ) {
-      this.addImpression();
+      this.addImpression(browser);
     }
 
     // Only add if the universal infobar is still active. Prevents race condition
     // where a notification could add itself after removeUniversalInfobars().
     if (
       content.type === TYPES.UNIVERSAL &&
-      InfoBar._activeInfobar?.message.content.type === TYPES.UNIVERSAL
+      InfoBar._activeInfobar?.message?.id === this.message.id
     ) {
       InfoBar._universalInfobars.push({
         box: notificationContainer,
         notification: this.notification,
       });
     }
+
+    // After the notification exists, attach a pref observer if applicable.
+    this._maybeAttachPrefObserver();
   }
 
   _createLinkNode(doc, browser, { href, where = "tab", string_id, args, raw }) {
@@ -258,7 +293,43 @@ class InfoBarNotification {
     return btnConfig;
   }
 
-  addImpression() {
+  handleImpressionAction(browser) {
+    const ALLOWED_IMPRESSION_ACTIONS = ["SET_PREF"];
+    const impressionAction = this.message.content.impression_action;
+    const actions =
+      impressionAction.type === "MULTI_ACTION"
+        ? impressionAction.data.actions
+        : [impressionAction];
+
+    actions.forEach(({ type, data, once }) => {
+      if (!ALLOWED_IMPRESSION_ACTIONS.includes(type)) {
+        return;
+      }
+
+      let { messageImpressions } = lazy.ASRouter.state;
+      // If we only want to perform the action on first impression, ensure no
+      // impressions exist for this message.
+      if (once && messageImpressions[this.message.id]?.length) {
+        return;
+      }
+
+      data.onImpression = true;
+      try {
+        lazy.SpecialMessageActions.handleAction({ type, data }, browser);
+      } catch (err) {
+        console.error(`Error handling ${type} impression action:`, err);
+      }
+    });
+  }
+
+  addImpression(browser) {
+    // If the message has an impression action, handle it before dispatching the
+    // impression. `this._dispatch` may be async and we want to ensure we have a
+    // consistent impression count when handling impression actions that should
+    // only occur once.
+    if (this.message.content.impression_action) {
+      this.handleImpressionAction(browser);
+    }
     // Record an impression in ASRouter for frequency capping
     this._dispatch({ type: "IMPRESSION", data: this.message });
     // Send a user impression telemetry ping
@@ -300,20 +371,76 @@ class InfoBarNotification {
    * @param {string} eventType - The type of event (e.g., "removed").
    */
   infobarCallback(eventType) {
-    const wasUniversal =
-      InfoBar._activeInfobar?.message.content.type === TYPES.UNIVERSAL;
+    // Clean up the pref observer on any removal/dismissal path.
+    this._removePrefObserver();
+    const wasUniversal = this.message.content.type === TYPES.UNIVERSAL;
+    const isActiveMessage =
+      InfoBar._activeInfobar?.message?.id === this.message.id;
     if (eventType === "removed") {
       this.notification = null;
-      InfoBar._activeInfobar = null;
+      if (isActiveMessage) {
+        InfoBar._activeInfobar = null;
+      }
     } else if (this.notification) {
       this.sendUserEventTelemetry("DISMISSED");
       this.notification = null;
-      InfoBar._activeInfobar = null;
+
+      if (isActiveMessage) {
+        InfoBar._activeInfobar = null;
+      }
     }
     // If one instance of universal infobar is removed, remove all instances and
     // the new window observer
-    if (wasUniversal) {
+    if (wasUniversal && isActiveMessage && InfoBar._universalInfobars.length) {
       this.removeUniversalInfobars();
+    }
+  }
+
+  /**
+   * If content.dismissOnPrefChange is set, observe that pref and dismiss the
+   * infobar whenever it changes (including when it is set for the first time).
+   */
+  _maybeAttachPrefObserver() {
+    if (!this._dismissPref || this._prefObserver) {
+      return;
+    }
+    // Weak observer to avoid leaks.
+    this._prefObserver = {
+      QueryInterface: ChromeUtils.generateQI([
+        "nsIObserver",
+        "nsISupportsWeakReference",
+      ]),
+      observe: (subject, topic, data) => {
+        if (topic === "nsPref:changed" && data === this._dismissPref) {
+          try {
+            this.notification?.dismiss();
+          } catch (e) {
+            console.error("Failed to dismiss infobar on pref change:", e);
+          }
+        }
+      },
+    };
+    try {
+      // Hold weak so we don't retain the infobar if something goes wrong.
+      Services.prefs.addObserver(this._dismissPref, this._prefObserver, true);
+    } catch (e) {
+      console.error(
+        `Failed to add prefs observer for ${this._dismissPref}:`,
+        e
+      );
+    }
+  }
+
+  _removePrefObserver() {
+    if (!this._dismissPref || !this._prefObserver) {
+      return;
+    }
+    try {
+      Services.prefs.removeObserver(this._dismissPref, this._prefObserver);
+    } catch (e) {
+      // Ignore remove errors as observer might already be gone during shutdown.
+    } finally {
+      this._prefObserver = null;
     }
   }
 
@@ -422,6 +549,29 @@ export const InfoBar = {
     }
   },
 
+  _maybeReplaceActiveInfoBar(nextMessage) {
+    if (!this._activeInfobar) {
+      return false;
+    }
+    const replacementEligible = nextMessage?.content?.canReplace || [];
+    const activeId = this._activeInfobar.message?.id;
+    if (!replacementEligible.includes(activeId)) {
+      return false;
+    }
+    const activeType = this._activeInfobar.message?.content?.type;
+    if (activeType === TYPES.UNIVERSAL) {
+      this._activeInfobar.notification?.removeUniversalInfobars();
+    } else {
+      try {
+        this._activeInfobar.notification?.notification.dismiss();
+      } catch (e) {
+        console.error("Failed to dismiss active infobar:", e);
+      }
+    }
+    this._activeInfobar = null;
+    return true;
+  },
+
   /**
    * Displays an infobar notification in the specified browser window.
    * For the first universal infobar, shows the notification in all open browser windows
@@ -444,16 +594,21 @@ export const InfoBar = {
     const isFirstUniversal = !universalInNewWin && isUniversal;
     // Prevent stacking multiple infobars
     if (this._activeInfobar && !universalInNewWin) {
-      return null;
-    }
-    if (!universalInNewWin) {
-      this._activeInfobar = { message, dispatch };
+      // Check if infobar is configured to replace the current infobar.
+      if (!this._maybeReplaceActiveInfoBar(message)) {
+        return null;
+      }
     }
 
     this.maybeLoadCustomElement(win);
     this.maybeInsertFTL(win);
 
     let notification = new InfoBarNotification(message, dispatch);
+
+    if (!universalInNewWin) {
+      this._activeInfobar = { message, dispatch, notification };
+    }
+
     if (isFirstUniversal) {
       await this.showNotificationAllWindows(notification);
       Services.obs.addObserver(this, "domwindowopened");
@@ -462,7 +617,7 @@ export const InfoBar = {
     }
 
     if (!universalInNewWin) {
-      this._activeInfobar = { message, dispatch };
+      this._activeInfobar = { message, dispatch, notification };
       // If the window closes before the user interacts with the active infobar,
       // clear it
       win.addEventListener(
@@ -479,7 +634,10 @@ export const InfoBar = {
             const nextEntry = InfoBar._universalInfobars.find(
               ({ box }) => !box.ownerGlobal?.closed
             );
-            InfoBar._activeInfobar = nextEntry ? { message, dispatch } : null;
+            const nextNotification = nextEntry?.notification;
+            InfoBar._activeInfobar = nextNotification
+              ? { message, dispatch, nextNotification }
+              : null;
           } else {
             // Non-universal always clears on unload
             InfoBar._activeInfobar = null;

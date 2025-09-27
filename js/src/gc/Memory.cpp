@@ -32,6 +32,11 @@
 #  include <errno.h>
 #  include <unistd.h>
 
+#  ifdef XP_LINUX
+// For SYS_gettid. Older glibc does not provide gettid() wrapper.
+#    include <sys/syscall.h>
+#  endif
+
 #  if !defined(__wasi__)
 #    include <sys/mman.h>
 #    include <sys/resource.h>
@@ -466,11 +471,18 @@ void InitMemorySubsystem() {
 }
 
 void MapStack(size_t stackSize) {
-  // Main thread only of the main runtime only.
+  // Main thread only of the main runtime only. Note: these are insufficient
+  // tests. In Firefox, for instance, the ProxyAutoConfig code starts up a
+  // "main" JS runtime on a thread.
   MOZ_ASSERT(js::CurrentThreadIsMainThread());
   MOZ_ASSERT(MaybeGetJSContext()->runtime()->isMainRuntime());
 
-#if defined(FUZZING) && defined(__linux__)
+#if defined(FUZZING) && defined(XP_LINUX)
+  // Test whether we're *really* on the process's main thread.
+  if (getpid() != (pid_t)syscall(SYS_gettid)) {
+    return;
+  }
+
   // Allocate the full maximum allowed stack region immediately, to prevent heap
   // mmaps from grabbing pages from within this region when virtual memory gets
   // tight.
@@ -487,13 +499,29 @@ void MapStack(size_t stackSize) {
   stackBase = RoundDown(stackBase, pageSize);
   stackTop = RoundDown(stackTop, pageSize);
 
-  void* result = mmap(
-      reinterpret_cast<void*>(stackBase), stackTop - stackBase,
-      PROT_READ | PROT_WRITE,
-      MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS | MAP_GROWSDOWN | MAP_NORESERVE,
-      -1, 0);
+  // It is possible that deeper parts of the stack have already been reserved
+  // (due to an initial stack reservation, or because something ran that used
+  // more of the stack even though it has all been popped off now.) Make space
+  // for a guard page so that the stack is allowed to grow. The rest of the
+  // stack mapping will be clobbered by the mmap below.
+  uintptr_t guardBase = stackBase - pageSize;
+  if (munmap(reinterpret_cast<void*>(guardBase), pageSize) < 0) {
+    MOZ_CRASH("unable to unmap guard page in unused portion of existing stack");
+  }
+
+  int flags =
+      MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS | MAP_GROWSDOWN | MAP_NORESERVE;
+#  ifdef MAP_STACK
+  flags |= MAP_STACK;
+#  endif
+
+  void* result = mmap(reinterpret_cast<void*>(stackBase), stackTop - stackBase,
+                      PROT_READ | PROT_WRITE, flags, -1, 0);
   if (result == MAP_FAILED) {
     MOZ_CRASH("mmap of stack failed");
+  }
+  if (result != reinterpret_cast<void*>(stackBase)) {
+    MOZ_CRASH("(old kernel) interfering mapping exists");
   }
 #endif
 }
@@ -642,7 +670,16 @@ static void* MapAlignedPagesRandom(size_t length, size_t alignment) {
   for (size_t i = 1; i <= 1024; ++i) {
     if (i & 0xf) {
       uint64_t desired = alignment * GetNumberInRange(minNum, maxNum);
+#  if defined(__FreeBSD__)
+      int flags = MAP_PRIVATE | MAP_ANON |
+                  MAP_ALIGNED(mozilla::CeilingLog2Size(alignment));
+      region = MozTaggedAnonymousMmap((void*)(uintptr_t)desired, length,
+                                      int(PageAccess::ReadWrite), flags, -1, 0,
+                                      "js-gc-heap");
+#  else
       region = MapMemoryAtFuzzy(reinterpret_cast<void*>(desired), length);
+
+#  endif
       if (!region) {
         continue;
       }

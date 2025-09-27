@@ -267,9 +267,9 @@ void nsMathMLmencloseFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 }
 
 /* virtual */
-nsresult nsMathMLmencloseFrame::Place(DrawTarget* aDrawTarget,
-                                      const PlaceFlags& aFlags,
-                                      ReflowOutput& aDesiredSize) {
+void nsMathMLmencloseFrame::Place(DrawTarget* aDrawTarget,
+                                  const PlaceFlags& aFlags,
+                                  ReflowOutput& aDesiredSize) {
   ///////////////
   // Measure the size of our content using the base class to format like an
   // inferred mrow, without border/padding.
@@ -277,12 +277,7 @@ nsresult nsMathMLmencloseFrame::Place(DrawTarget* aDrawTarget,
   PlaceFlags flags = aFlags + PlaceFlag::MeasureOnly +
                      PlaceFlag::IgnoreBorderPadding +
                      PlaceFlag::DoNotAdjustForWidthAndHeight;
-  nsresult rv = nsMathMLContainerFrame::Place(aDrawTarget, flags, baseSize);
-
-  if (NS_FAILED(rv)) {
-    DidReflowChildren(PrincipalChildList().FirstChild());
-    return rv;
-  }
+  nsMathMLContainerFrame::Place(aDrawTarget, flags, baseSize);
 
   nsBoundingMetrics bmBase = baseSize.mBoundingMetrics;
   nscoord dx_left = 0, dx_right = 0;
@@ -571,8 +566,6 @@ nsresult nsMathMLmencloseFrame::Place(DrawTarget* aDrawTarget,
     PositionRowChildFrames(dx_left + borderPadding.left,
                            aDesiredSize.BlockStartAscent());
   }
-
-  return NS_OK;
 }
 
 nscoord nsMathMLmencloseFrame::FixInterFrameSpacing(
@@ -595,7 +588,7 @@ nscoord nsMathMLmencloseFrame::FixInterFrameSpacing(
 
 nsresult nsMathMLmencloseFrame::AttributeChanged(int32_t aNameSpaceID,
                                                  nsAtom* aAttribute,
-                                                 int32_t aModType) {
+                                                 AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::notation) {
     InitNotations();
     PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,

@@ -35,8 +35,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -48,8 +51,8 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.MenuBadgeItem
 import org.mozilla.fenix.components.menu.compose.MenuGroup
 import org.mozilla.fenix.components.menu.compose.MenuItem
+import org.mozilla.fenix.components.menu.compose.MenuItemState
 import org.mozilla.fenix.components.menu.compose.MenuScaffold
-import org.mozilla.fenix.components.menu.compose.MenuTextItem
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.settings.PhoneFeature
@@ -57,23 +60,26 @@ import org.mozilla.fenix.settings.trustpanel.store.AutoplayValue
 import org.mozilla.fenix.settings.trustpanel.store.WebsiteInfoState
 import org.mozilla.fenix.settings.trustpanel.store.WebsitePermission
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 private val BANNER_ROUNDED_CORNER_SHAPE = RoundedCornerShape(
     topStart = 28.dp, topEnd = 28.dp, bottomStart = 4.dp, bottomEnd = 4.dp,
 )
+
+private const val DROPDOWN_TEXT_WIDTH_FRACTION = 0.5f
 
 @Suppress("LongParameterList", "LongMethod")
 @Composable
 internal fun ProtectionPanel(
     icon: Bitmap?,
     isTrackingProtectionEnabled: Boolean,
+    isLocalPdf: Boolean,
     numberOfTrackersBlocked: Int,
     websiteInfoState: WebsiteInfoState,
     websitePermissions: List<WebsitePermission>,
     onTrackerBlockedMenuClick: () -> Unit,
     onTrackingProtectionToggleClick: () -> Unit,
     onClearSiteDataMenuClick: () -> Unit,
-    onConnectionSecurityClick: () -> Unit,
     onPrivacySecuritySettingsClick: () -> Unit,
     onAutoplayValueClick: (AutoplayValue) -> Unit,
     onToggleablePermissionClick: (WebsitePermission.Toggleable) -> Unit,
@@ -88,40 +94,82 @@ internal fun ProtectionPanel(
     ) {
         MenuGroup {
             ProtectionPanelBanner(
-                isSecured = websiteInfoState.isSecured,
-                isTrackingProtectionEnabled = isTrackingProtectionEnabled,
+                isSecured = websiteInfoState.isSecured || isLocalPdf,
+                isTrackingProtectionEnabled = isTrackingProtectionEnabled || isLocalPdf,
             )
 
-            MenuBadgeItem(
-                label = stringResource(id = R.string.protection_panel_etp_toggle_label),
-                checked = isTrackingProtectionEnabled,
-                description = if (isTrackingProtectionEnabled) {
-                    stringResource(id = R.string.protection_panel_etp_toggle_enabled_description_2)
-                } else {
-                    stringResource(id = R.string.protection_panel_etp_toggle_disabled_description_2)
-                },
-                badgeText = if (isTrackingProtectionEnabled) {
-                    stringResource(id = R.string.protection_panel_etp_toggle_on)
-                } else {
-                    stringResource(id = R.string.protection_panel_etp_toggle_off)
-                },
-                onClick = onTrackingProtectionToggleClick,
-            )
+            if (!isLocalPdf) {
+                MenuBadgeItem(
+                    label = stringResource(id = R.string.protection_panel_etp_toggle_label),
+                    checked = isTrackingProtectionEnabled,
+                    description = if (isTrackingProtectionEnabled) {
+                        stringResource(id = R.string.protection_panel_etp_toggle_enabled_description_2)
+                    } else {
+                        stringResource(id = R.string.protection_panel_etp_toggle_disabled_description_2)
+                    },
+                    badgeText = if (isTrackingProtectionEnabled) {
+                        stringResource(id = R.string.protection_panel_etp_toggle_on)
+                    } else {
+                        stringResource(id = R.string.protection_panel_etp_toggle_off)
+                    },
+                    onClick = onTrackingProtectionToggleClick,
+                )
 
-            if (numberOfTrackersBlocked == 0) {
+                if (!isTrackingProtectionEnabled) {
+                    MenuItem(
+                        label = stringResource(id = R.string.protection_panel_etp_disabled_no_trackers_blocked),
+                        beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_shield_slash_critical_24),
+                        state = MenuItemState.CRITICAL,
+                    )
+                } else if (numberOfTrackersBlocked == 0) {
+                    MenuItem(
+                        label = stringResource(id = R.string.protection_panel_no_trackers_blocked),
+                        beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_shield_checkmark_24),
+                    )
+                } else {
+                    MenuItem(
+                        label = stringResource(
+                            id = R.string.protection_panel_num_trackers_blocked,
+                            numberOfTrackersBlocked,
+                        ),
+                        beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_shield_checkmark_24),
+                        onClick = onTrackerBlockedMenuClick,
+                        afterIconPainter = painterResource(id = iconsR.drawable.mozac_ic_chevron_right_24),
+                    )
+                }
+            }
+        }
+
+        MenuGroup {
+            if (isLocalPdf) {
                 MenuItem(
-                    label = stringResource(id = R.string.protection_panel_no_trackers_blocked),
-                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_shield_24),
+                    label = stringResource(id = R.string.connection_security_panel_local_pdf),
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_save_file_24),
+                )
+            } else if (websiteInfoState.isSecured) {
+                MenuItem(
+                    label = stringResource(id = R.string.connection_security_panel_secure),
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_lock_24),
+                    description = stringResource(
+                        id = R.string.connection_security_panel_verified_by,
+                        websiteInfoState.certificateName,
+                    ),
                 )
             } else {
                 MenuItem(
-                    label = stringResource(
-                        id = R.string.protection_panel_num_trackers_blocked,
-                        numberOfTrackersBlocked,
-                    ),
-                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_shield_24),
-                    onClick = onTrackerBlockedMenuClick,
-                    afterIconPainter = painterResource(id = R.drawable.mozac_ic_chevron_right_24),
+                    label = stringResource(id = R.string.connection_security_panel_not_secure),
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_lock_slash_critical_24),
+                    state = MenuItemState.CRITICAL,
+                )
+            }
+        }
+
+        if (!isLocalPdf) {
+            MenuGroup {
+                MenuItem(
+                    label = stringResource(id = R.string.clear_site_data),
+                    onClick = onClearSiteDataMenuClick,
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_delete_24),
                 )
             }
         }
@@ -131,33 +179,6 @@ internal fun ProtectionPanel(
                 websitePermissions = websitePermissions,
                 onAutoplayValueClick = onAutoplayValueClick,
                 onToggleablePermissionClick = onToggleablePermissionClick,
-            )
-        }
-
-        MenuGroup {
-            if (websiteInfoState.isSecured) {
-                MenuItem(
-                    label = stringResource(id = R.string.connection_security_panel_secure),
-                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_lock_24),
-                    description = stringResource(
-                        id = R.string.connection_security_panel_verified_by,
-                        websiteInfoState.certificateName,
-                    ),
-                    onClick = onConnectionSecurityClick,
-                )
-            } else {
-                MenuItem(
-                    label = stringResource(id = R.string.connection_security_panel_not_secure),
-                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_lock_slash_24),
-                    onClick = onConnectionSecurityClick,
-                )
-            }
-        }
-
-        MenuGroup {
-            MenuTextItem(
-                label = stringResource(id = R.string.clear_site_data),
-                onClick = onClearSiteDataMenuClick,
             )
         }
 
@@ -208,7 +229,11 @@ private fun ProtectionPanelBanner(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .clearAndSetSemantics {
+                contentDescription = "$title. $description"
+            }
+            .fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = BANNER_ROUNDED_CORNER_SHAPE,
     ) {
@@ -262,9 +287,30 @@ private fun WebsitePermissionsMenuGroup(
 
         MenuGroup {
             websitePermissions.forEachIndexed { index, websitePermission ->
+                val stateDescription: String = when (websitePermission) {
+                    is WebsitePermission.Autoplay -> {
+                        AutoplayValue.entries.find { it == websitePermission.autoplayValue }?.title?.let {
+                            stringResource(
+                                it,
+                            )
+                        } ?: ""
+                    }
+
+                    is WebsitePermission.Toggleable -> {
+                         if (websitePermission.isBlockedByAndroid) {
+                            stringResource(id = R.string.phone_feature_blocked_by_android)
+                        } else if (websitePermission.isEnabled) {
+                            stringResource(id = R.string.preference_option_phone_feature_allowed)
+                        } else {
+                            stringResource(id = R.string.preference_option_phone_feature_blocked)
+                        }
+                    }
+                }
+
                 MenuItem(
                     label = stringResource(id = websitePermission.deviceFeature.getLabelId()),
                     beforeIconPainter = painterResource(id = websitePermission.deviceFeature.getIconId()),
+                    stateDescription = stateDescription,
                     afterContent = when (websitePermission) {
                         is WebsitePermission.Autoplay -> {
                             { AutoplayDropdownMenu(websitePermission, onAutoplayValueClick) }
@@ -274,6 +320,7 @@ private fun WebsitePermissionsMenuGroup(
                             {
                                 WebsitePermissionToggle(
                                     websitePermission,
+                                    stateDescription,
                                     onToggleablePermissionClick,
                                 )
                             }
@@ -288,16 +335,9 @@ private fun WebsitePermissionsMenuGroup(
 @Composable
 private fun WebsitePermissionToggle(
     websitePermission: WebsitePermission.Toggleable,
+    toggleLabel: String,
     onToggleablePermissionClick: (WebsitePermission.Toggleable) -> Unit,
 ) {
-    val toggleLabel = if (websitePermission.isBlockedByAndroid) {
-        stringResource(id = R.string.phone_feature_blocked_by_android)
-    } else if (websitePermission.isEnabled) {
-        stringResource(id = R.string.preference_option_phone_feature_allowed)
-    } else {
-        stringResource(id = R.string.preference_option_phone_feature_blocked)
-    }
-
     Column(
         modifier = Modifier
             .clickable { onToggleablePermissionClick(websitePermission) }
@@ -305,7 +345,10 @@ private fun WebsitePermissionToggle(
     ) {
         Text(
             text = toggleLabel,
+            modifier = Modifier.fillMaxWidth(DROPDOWN_TEXT_WIDTH_FRACTION),
             color = FirefoxTheme.colors.textAccent,
+            textAlign = TextAlign.End,
+            maxLines = 2,
             style = FirefoxTheme.typography.body1,
         )
     }
@@ -340,7 +383,10 @@ private fun AutoplayDropdownMenu(
         ) {
             Text(
                 text = placeholderText,
+                modifier = Modifier.fillMaxWidth(DROPDOWN_TEXT_WIDTH_FRACTION),
                 color = FirefoxTheme.colors.textAccent,
+                textAlign = TextAlign.End,
+                maxLines = 2,
                 style = FirefoxTheme.typography.body1,
             )
 
@@ -348,7 +394,7 @@ private fun AutoplayDropdownMenu(
 
             Box {
                 Icon(
-                    painter = painterResource(id = R.drawable.mozac_ic_dropdown_arrow),
+                    painter = painterResource(id = iconsR.drawable.mozac_ic_dropdown_arrow),
                     contentDescription = null,
                     tint = FirefoxTheme.colors.iconAccentViolet,
                 )
@@ -388,6 +434,7 @@ private fun ProtectionPanelPreview() {
                     certificateName = "",
                 ),
                 isTrackingProtectionEnabled = true,
+                isLocalPdf = false,
                 numberOfTrackersBlocked = 5,
                 websitePermissions = listOf(
                     WebsitePermission.Autoplay(
@@ -399,7 +446,6 @@ private fun ProtectionPanelPreview() {
                 onTrackerBlockedMenuClick = {},
                 onTrackingProtectionToggleClick = {},
                 onClearSiteDataMenuClick = {},
-                onConnectionSecurityClick = {},
                 onPrivacySecuritySettingsClick = {},
                 onAutoplayValueClick = {},
                 onToggleablePermissionClick = {},

@@ -3,9 +3,15 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-from typing import Any, Optional
+
+# ruff linter deprecates Dict required for Python 3.8 compatibility
+from typing import Any, Dict, Optional  # noqa UP035
 
 import yaml
+
+DictAny = Dict[str, Any]
+DictStr = Dict[str, str]
+OptTestSettings = Optional[Dict[str, Any]]
 
 
 class PlatformInfo:
@@ -24,6 +30,7 @@ class PlatformInfo:
         "12.0": "31",
         "12L": "32",
         "13.0": "33",
+        "14": "34",
         "14.0": "34",
     }
 
@@ -31,14 +38,14 @@ class PlatformInfo:
         "debug-isolated-process": "isolated_process",
     }
 
-    def __init__(self, test_settings: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, test_settings: OptTestSettings = None) -> None:
         if not test_settings:
             return
 
-        self._platform: dict[str, Any] = test_settings["platform"]
-        self._platform_os: dict[str, str] = self._platform["os"]
-        self._build: dict[str, str] = test_settings["build"]
-        self._runtime: dict[str, str] = test_settings.get("runtime", {})
+        self._platform: DictAny = test_settings["platform"]
+        self._platform_os: DictStr = self._platform["os"]
+        self._build: DictStr = test_settings["build"]
+        self._runtime: DictStr = test_settings.get("runtime", {})
 
         self.build = self._platform_os.get("build")
         self.display = self._platform.get("display")
@@ -80,6 +87,8 @@ class PlatformInfo:
             # Hack for macosx 11.20 reported as 11.00
             if cleaned_name == "mac" and version == "1100":
                 return "11.20"
+            if len(version) == 5 and version[2] == ".":
+                return version  # already has a dot
             return version[0:2] + "." + version[2:4]
         if cleaned_name == "android":
             android_version = self.android_os_to_sdk_map.get(version)
@@ -141,7 +150,7 @@ class PlatformInfo:
 
         # if running locally via `./mach ...`, assuming running from root of repo
         filename = (
-            os.environ.get("GECKO_PATH", ".") + "/taskcluster/kinds/test/variants.yml"
+            os.environ.get("GECKO_PATH", ".") + "/taskcluster/test_configs/variants.yml"
         )
         with open(filename) as f:
             PlatformInfo.variant_data = yaml.safe_load(f.read())
@@ -173,7 +182,7 @@ class PlatformInfo:
         return test_variant
 
     # Used for test data
-    def from_dict(self, data: dict[str, Any]):
+    def from_dict(self, data: DictAny):
         self.os = data["os"]
         self.os_version = data["os_version"]
         self.arch = data["arch"]

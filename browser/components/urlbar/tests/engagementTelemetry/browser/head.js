@@ -9,7 +9,7 @@ Services.scriptloader.loadSubScript(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -134,6 +134,24 @@ async function ensureQuickSuggestInit({ ...args } = {}) {
             data: {
               result: {
                 isHiddenExposure: true,
+              },
+            },
+          },
+        ],
+      },
+      {
+        type: "dynamic-suggestions",
+        suggestion_type: "important_dates",
+        score: 1.0,
+        attachment: [
+          {
+            keywords: ["important dates"],
+            data: {
+              result: {
+                payload: {
+                  dates: ["2025-03-05", "2026-02-18"],
+                  name: "Event 1",
+                },
               },
             },
           },

@@ -13,6 +13,46 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v145
+- Added [`WebNotification.show`][145.1]. Implementations of `WebNotificationDelegate.onShowNotification` should now call either `show` when the notification is successfully opened, or `dismiss` if it failed.
+
+[145.1]: {{javadoc_uri}}/WebNotification.html#show
+
+## v144
+- Added [`GeckoSession.flushSessionState()`][144.1] to immediately notify the registered [`GeckoSession.ProgressDelegate`][144.2] and [`GeckoSession.HistoryDelegate`][144.3] of the current session state.
+- Added [`GeckoRuntimeSettings.getIsolatedProcessEnabled`][144.4] and [`GeckoRuntimeSettings.Builder.isolatedProcessEnabled`][144.5] to control whether content service runs on isolated process or not.
+- Added [`ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER`][144.6] for the configuration of the SafeBrowsing V5 provider
+- ⚠️ Removed deprecated `onOptionalPrompt` function signature. ([bug 1972510]({{bugzilla}}1972510))
+- ⚠️ Removed deprecated `onUpdatePrompt` function signature. ([bug 1974744]({{bugzilla}}1974744))
+- Added [`RequiresApi`][144.7] annotations to APIs.
+- Added `appLinkLaunchType` to [`GeckoSession.Loader`][144.8] to set the launch type of the app session for the load.([bug 1982622]({{bugzilla}}1982622))
+- Added [`GeckoSession.PromptDelegate.RedirectPrompt`][144.9] to display a prompt when a third-party redirect is blocked.
+
+[144.1]: {{javadoc_uri}}/GeckoSession.html#flushSessionState()
+[144.2]: {{javadoc_uri}}/GeckoSession.ProgressDelegate.html
+[144.3]: {{javadoc_uri}}/GeckoSession.HistoryDelegate.html
+[144.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getIsolatedProcessEnabled
+[144.5]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#isolatedProcessEnabled(boolean)
+[144.6]: {{javadoc_uri}}/ContentBlocking.SafeBrowsingProvider.html
+[144.7]: https://developer.android.com/reference/androidx/annotation/RequiresApi
+[144.8]: {{javadoc_uri}}/GeckoSession.Loader.html#appLinkLaunchType(int)
+[144.9]: {{javadoc_uri}}/GeckoSession.PromptDelegate.RedirectPrompt.html
+
+## v143
+- Added an option to set multiple preferences on [`GeckoPreferenceController`][140.1] as [`checkStateAndSetGeckoPrefs`][143.1].
+- Added [`WebNotification.origin`][143.2] that shows the origin of the notification. ([bug 1976269]({{bugzilla}}1976269))
+- ⚠️ Removed deprecated functions that were scheduled for removal in GeckoView 143. Includes deprecations to versions of `onInstallPromptRequest`, `removeOptionalPermissions`, `addOptionalPermissions`, `PermissionPromptResponse()`, and `CertificateRequest()`. ([bug 1980176]({{bugzilla}}1980176))
+- Added [`GeckoRuntimeSettings#setLnaBlockingEnabled`][143.3], [`GeckoRuntimeSettings#getLnaBlockingEnabled`][143.4] and [`GeckoRuntimeSettings.Builder#setLnaBlockingEnabled`][143.5] to enable LNA blocking.
+- Added new permissions [`GeckoSession.PermissionDelegate#PERMISSION_LOCAL_DEVICE_ACCESS`][143.6] and [`GeckoSession.PermissionDelegate#PERMISSION_LOCAL_NETWORK_ACCESS`][143.7]
+
+[143.1]: {{javadoc_uri}}/GeckoPreferenceController.html#setGeckoPrefs(java.util.List)
+[143.2]: {{javadoc_uri}}/WebNotification.html#origin
+[143.3]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setLnaBlockingEnabled(boolean)
+[143.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getLnaBlockingEnabled
+[143.5]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#setLnaBlockingEnabled(boolean)
+[143.6]: {{javadoc_uri}}/GeckoSession.PermissionDelegate.html#PERMISSION_LOCAL_DEVICE_ACCESS
+[143.7]: {{javadoc_uri}}/GeckoSession.PermissionDelegate.html#PERMISSION_LOCAL_NETWORK_ACCESS
+
 ## v142
 - Added support for data collection permissions to [`WebExtensionController.onOptionalPrompt`][142.1] ([bug 1964999]({{bugzilla}}1964999))
 - ⚠️ Removed deprecated functions that were scheduled for removal in GeckoView 142. ([bug 1963053]({{bugzilla}}1963053))
@@ -1798,4 +1838,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: f97051e0321472fb865c7f70a56e579387b407e5
+[api-version]: 7688eae06f3f585d981c93bd1cabe99120ba19b5

@@ -39,6 +39,7 @@ import {
   textureViewDimensionAndFormatCompatibleForDevice,
   textureDimensionAndFormatCompatibleForDevice,
   isTextureFormatUsableWithStorageAccessMode,
+  isTextureFormatUsableWithCopyExternalImageToTexture,
 } from './format_info.js';
 import { checkElementsEqual, checkElementsBetween } from './util/check_contents.js';
 import { CommandBufferMaker, EncoderType } from './util/command_buffer_maker.js';
@@ -637,6 +638,20 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
     }
   }
 
+  skipIfTextureFormatDoesNotSupportCopyTextureToBuffer(format: GPUTextureFormat) {
+    this.skipIf(
+      !this.canCallCopyTextureToBufferWithTextureFormat(format),
+      `can not use copyTextureToBuffer with ${format}`
+    );
+  }
+
+  skipIfTextureFormatPossiblyNotUsableWithCopyExternalImageToTexture(format: GPUTextureFormat) {
+    this.skipIf(
+      !isTextureFormatUsableWithCopyExternalImageToTexture(this.device, format),
+      `can not use copyExternalImageToTexture with ${format}`
+    );
+  }
+
   /** Skips this test case if the `langFeature` is *not* supported. */
   skipIfLanguageFeatureNotSupported(langFeature: WGSLLanguageFeature) {
     if (!this.hasLanguageFeature(langFeature)) {
@@ -1201,6 +1216,23 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
           this.rec.debug(niceStack);
         }
       });
+    }
+  }
+
+  /**
+   * Expect a validation error or exception inside the callback.
+   *
+   * Tests should always do just one WebGPU call in the callback, to make sure that's what's tested.
+   */
+  expectValidationErrorOrException(
+    fn: () => void,
+    shouldError: boolean = true,
+    shouldThrow: boolean = true
+  ): void {
+    if (shouldThrow) {
+      this.shouldThrow(shouldError, fn);
+    } else {
+      this.expectValidationError(fn, shouldError);
     }
   }
 

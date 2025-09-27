@@ -44,7 +44,6 @@
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsRange.h"  //for selection setting helper func
-#include "nsTextFragment.h"
 #include "nsTextNode.h"
 
 using namespace mozilla;
@@ -949,7 +948,7 @@ nsresult nsTextControlFrame::OffsetToDOMPoint(uint32_t aOffset,
 ////NSIFRAME
 nsresult nsTextControlFrame::AttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType) {
+                                              AttrModType aModType) {
   if (aAttribute == nsGkAtoms::value && !mEditorHasBeenInitialized) {
     UpdateValueDisplay(true);
     return NS_OK;
@@ -1128,6 +1127,10 @@ void nsTextControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DO_GLOBAL_REFLOW_COUNT_DSP("nsTextControlFrame");
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  if (HidesContent()) {
+    return;
+  }
 
   // Redirect all lists to the Content list so that nothing can escape, ie
   // opacity creating stacking contexts that then get sorted with stacking

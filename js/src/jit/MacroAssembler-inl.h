@@ -203,6 +203,8 @@ ABIFunctionType MacroAssembler::signature() const {
     case Args_Double_DoubleDoubleDouble:
     case Args_Double_DoubleDoubleDoubleDouble:
     case Args_Int64_GeneralGeneral:
+    case Args_General_GeneralInt64GeneralGeneral:
+    case Args_General_GeneralFloat32GeneralGeneral:
       break;
     default:
       MOZ_CRASH("Unexpected type");
@@ -253,46 +255,43 @@ uint32_t MacroAssembler::callJit(ImmPtr callee) {
   return currentOffset();
 }
 
-void MacroAssembler::pushFrameDescriptor(FrameType type) {
-  uint32_t descriptor = MakeFrameDescriptor(type);
-  push(Imm32(descriptor));
+void MacroAssembler::push(FrameDescriptor descriptor) {
+  push(Imm32(descriptor.value()));
 }
 
-void MacroAssembler::PushFrameDescriptor(FrameType type) {
-  uint32_t descriptor = MakeFrameDescriptor(type);
-  Push(Imm32(descriptor));
+void MacroAssembler::Push(FrameDescriptor descriptor) {
+  Push(Imm32(descriptor.value()));
 }
 
-void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
-                                                   uint32_t argc) {
-  uint32_t descriptor = MakeFrameDescriptorForJitCall(type, argc);
-  push(Imm32(descriptor));
-}
-
-void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
-                                                   uint32_t argc) {
-  uint32_t descriptor = MakeFrameDescriptorForJitCall(type, argc);
-  Push(Imm32(descriptor));
+void MacroAssembler::makeFrameDescriptorForJitCall(FrameType type,
+                                                   Register argc, Register dest,
+                                                   bool hasInlineICScript) {
+  lshift32(Imm32(FrameDescriptor::NumActualArgsShift), argc, dest);
+  FrameDescriptor base(type, 0, hasInlineICScript);
+  if (base.value()) {
+    or32(Imm32(base.value()), dest);
+  }
 }
 
 void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
                                                    Register argc,
-                                                   Register scratch) {
-  lshift32(Imm32(NUMACTUALARGS_SHIFT), argc, scratch);
-  or32(Imm32(int32_t(type)), scratch);
+                                                   Register scratch,
+                                                   bool hasInlineICScript) {
+  makeFrameDescriptorForJitCall(type, argc, scratch, hasInlineICScript);
   push(scratch);
 }
 
 void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
                                                    Register argc,
-                                                   Register scratch) {
-  pushFrameDescriptorForJitCall(type, argc, scratch);
+                                                   Register scratch,
+                                                   bool hasInlineICScript) {
+  pushFrameDescriptorForJitCall(type, argc, scratch, hasInlineICScript);
   framePushed_ += sizeof(uintptr_t);
 }
 
 void MacroAssembler::loadNumActualArgs(Register framePtr, Register dest) {
   loadPtr(Address(framePtr, JitFrameLayout::offsetOfDescriptor()), dest);
-  rshift32(Imm32(NUMACTUALARGS_SHIFT), dest);
+  rshift32(Imm32(FrameDescriptor::NumActualArgsShift), dest);
 }
 
 void MacroAssembler::PushCalleeToken(Register callee, bool constructing) {
@@ -325,7 +324,7 @@ void MacroAssembler::loadFunctionFromCalleeToken(Address token, Register dest) {
 uint32_t MacroAssembler::buildFakeExitFrame(Register scratch) {
   mozilla::DebugOnly<uint32_t> initialDepth = framePushed();
 
-  PushFrameDescriptor(FrameType::IonJS);
+  Push(FrameDescriptor(FrameType::IonJS));
   uint32_t retAddr = pushFakeReturnAddress(scratch);
   Push(FramePointer);
 
@@ -551,9 +550,8 @@ void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
 
   Label done;
 
-  loadPtr(
-      AbsoluteAddress(runtime()->addressOfHasSeenObjectEmulateUndefinedFuse()),
-      scratch);
+  loadRuntimeFuse(RuntimeFuses::FuseIndex::HasSeenObjectEmulateUndefinedFuse,
+                  scratch);
   branchPtr(Assembler::Equal, scratch, ImmPtr(nullptr), &done);
 
   loadObjClassUnsafe(objReg, scratch);

@@ -10,6 +10,7 @@
 #include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/NavigationBinding.h"
 #include "nsILayoutHistoryState.h"
 #include "nsISHEntry.h"
 #include "nsSHEntryShared.h"
@@ -169,6 +170,9 @@ class SessionHistoryInfo {
   const nsID& NavigationId() const { return mNavigationId; }
 
   nsStructuredCloneContainer* GetNavigationState() const;
+  void SetNavigationState(nsStructuredCloneContainer* aState);
+
+  already_AddRefed<nsIURI> GetURIOrInheritedForAboutBlank() const;
 
  private:
   friend class SessionHistoryEntry;
@@ -253,6 +257,14 @@ struct LoadingSessionHistoryInfo {
   already_AddRefed<nsDocShellLoadState> CreateLoadInfo() const;
 
   SessionHistoryInfo mInfo;
+
+  // The same origin (to mInfo) preceeding entries.
+  CopyableTArray<SessionHistoryInfo> mContiguousEntries;
+
+  // The entry that triggered the navigation to this entry.
+  Maybe<SessionHistoryInfo> mTriggeringEntry;
+  // The type of navigation which triggered this load.
+  Maybe<NavigationType> mTriggeringNavigationType;
 
   uint64_t mLoadId = 0;
 
@@ -369,10 +381,9 @@ class HistoryEntryCounterForBrowsingContext {
 #define NS_SESSIONHISTORYENTRY_IID \
   {0x5b66a244, 0x8cec, 0x4caa, {0xaa, 0x0a, 0x78, 0x92, 0xfd, 0x17, 0xa6, 0x67}}
 
-class SessionHistoryEntry
-    : public nsISHEntry,
-      public nsSupportsWeakReference,
-      public LinkedListElement<RefPtr<SessionHistoryEntry>> {
+class SessionHistoryEntry : public nsISHEntry,
+                            public nsSupportsWeakReference,
+                            public LinkedListElement<SessionHistoryEntry> {
  public:
   SessionHistoryEntry(nsDocShellLoadState* aLoadState, nsIChannel* aChannel);
   SessionHistoryEntry();
@@ -449,6 +460,8 @@ class SessionHistoryEntry
   static void RemoveLoadId(uint64_t aLoadId);
 
   const nsTArray<RefPtr<SessionHistoryEntry>>& Children() { return mChildren; }
+
+  already_AddRefed<nsIURI> GetURIOrInheritedForAboutBlank() const;
 
  private:
   friend struct LoadingSessionHistoryInfo;

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -28,7 +29,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -44,7 +44,7 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.Dropdown
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.modifier.thenConditional
@@ -63,6 +63,7 @@ import org.mozilla.fenix.webcompat.store.WebCompatReporterAction
 import org.mozilla.fenix.webcompat.store.WebCompatReporterState
 import org.mozilla.fenix.webcompat.store.WebCompatReporterState.BrokenSiteReason
 import org.mozilla.fenix.webcompat.store.WebCompatReporterStore
+import mozilla.components.ui.icons.R as iconsR
 
 private const val PROBLEM_DESCRIPTION_MAX_LINES = 5
 
@@ -71,7 +72,6 @@ private const val PROBLEM_DESCRIPTION_MAX_LINES = 5
  *
  * @param store [WebCompatReporterStore] used to manage the state of the Web Compat Reporter feature.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Suppress("LongMethod")
 @Composable
 fun WebCompatReporter(
@@ -101,8 +101,9 @@ fun WebCompatReporter(
         ) {
             LinkText(
                 text = stringResource(
-                    id = R.string.webcompat_reporter_description_2,
+                    R.string.webcompat_reporter_description_3,
                     stringResource(R.string.app_name),
+                    stringResource(R.string.webcompat_reporter_learn_more),
                 ),
                 linkTextStates = listOf(
                     LinkTextState(
@@ -191,7 +192,7 @@ fun WebCompatReporter(
             ) {
                 if (Config.channel.isBeta || Config.channel.isNightlyOrDebug) {
                     Text(
-                        text = stringResource(id = R.string.webcompat_reporter_send_more_info),
+                        text = stringResource(id = R.string.webcompat_reporter_add_more_info),
                         modifier = Modifier
                             .clickable {
                                 store.dispatch(WebCompatReporterAction.SendMoreInfoClicked)
@@ -213,12 +214,11 @@ fun WebCompatReporter(
                         onClick = {
                             store.dispatch(WebCompatReporterAction.CancelClicked)
                         },
-                        upperCaseText = false,
                     )
 
                     Spacer(modifier = Modifier.width(10.dp))
 
-                    PrimaryButton(
+                    FilledButton(
                         text = stringResource(id = R.string.webcompat_reporter_send),
                         modifier = Modifier
                             .wrapContentSize()
@@ -273,12 +273,16 @@ private fun TempAppBar(
         navigationIcon = {
             IconButton(onClick = onBackClick) {
                 Icon(
-                    painter = painterResource(R.drawable.mozac_ic_back_24),
+                    painter = painterResource(iconsR.drawable.mozac_ic_back_24),
                     contentDescription = stringResource(R.string.bookmark_navigate_back_button_content_description),
                     tint = FirefoxTheme.colors.iconPrimary,
                 )
             }
         },
+        windowInsets = WindowInsets(
+            top = 0.dp,
+            bottom = 0.dp,
+        ),
     )
 }
 
